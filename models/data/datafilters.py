@@ -158,24 +158,30 @@ def _make_missing_pct(cfg):
         torch.Tensor
             Binary mask tensor of shape [n_frames, n_units] where 1 indicates valid frames
         """
-        # Use the cluster IDs that correspond 1-to-1 with robs columns.
-        # 'all_cids' is set by get_dataset() from the stored 'cluster_ids' metadata
-        # so it matches exactly the columns in robs (depth-band-filtered, etc.).
-        # Fall back to get_cluster_ids() for Yates sessions that don't store all_cids.
-        all_cids = dset.metadata.get('all_cids', None)
-        if all_cids is not None:
-            cids = np.asarray(all_cids)
+        # Use stored dataset cluster IDs when they exist so missing_pct is aligned
+        # with robs columns for regenerated Rowley datasets.
+        stored_cids = dset.metadata.get('cluster_ids', None)
+        if stored_cids is None:
+            stored_cids = dset.metadata.get('all_cids', None)
+        if stored_cids is not None:
+            cids = np.asarray(stored_cids)
         else:
             cids = dset.metadata['sess'].get_cluster_ids()
         times = dset.covariates['t_bins']
 
         missing_pct_fun = dset.metadata['sess'].get_missing_pct_interp(cids)
-        pct = missing_pct_fun(times)  # torch.Tensor (T, N_cids)
+        pct = missing_pct_fun(times)
+        if isinstance(pct, torch.Tensor):
+            pct_tensor = pct
+            pct_np = pct.detach().cpu().numpy()
+        else:
+            pct_np = np.asarray(pct)
+            pct_tensor = torch.as_tensor(pct_np)
 
-        mask = pct < threshold
+        mask = pct_tensor < threshold
 
         # Units with consistently high missing% are likely multi-units; keep them valid
-        multi_units = pct.median(dim=0).values >= threshold
+        multi_units = np.median(pct_np, axis=0) >= threshold
         mask[:, multi_units] = True
 
         return mask

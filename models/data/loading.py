@@ -83,13 +83,14 @@ def get_embedded_datasets(sess, types=None, keys_lags=None, train_val_split=None
         # Filter by cell IDs if specified
         if cids is not None:
             dset.metadata['cids'] = cids
-            # If all_cids is in metadata, cids are raw cluster IDs that need to be
-            # mapped to column indices via the sorted cluster-ID array stored at
-            # dataset generation time (Rowley sessions).  Otherwise treat cids
-            # directly as column indices (Yates sessions).
-            all_cids = dset.metadata.get('all_cids', None)
-            if all_cids is not None:
-                all_cids_arr = np.asarray(all_cids)
+            # Rowley datasets may store raw cluster IDs in metadata under either
+            # 'cluster_ids' or the legacy 'all_cids' key. When present, YAML cids
+            # are cluster IDs and must be mapped back onto robs column indices.
+            stored_cids = dset.metadata.get('cluster_ids', None)
+            if stored_cids is None:
+                stored_cids = dset.metadata.get('all_cids', None)
+            if stored_cids is not None:
+                all_cids_arr = np.asarray(stored_cids)
                 cids_arr = np.asarray(cids)
                 col_indices = np.searchsorted(all_cids_arr, cids_arr).astype(np.intp)
                 in_range = col_indices < len(all_cids_arr)
@@ -98,9 +99,9 @@ def get_embedded_datasets(sess, types=None, keys_lags=None, train_val_split=None
                 if not found.all():
                     missing = cids_arr[~found]
                     raise ValueError(
-                        f"Config cids not found in dataset all_cids: {missing}. "
-                        "Check that the session YAML cids match the sorted cluster IDs "
-                        "returned by sess.get_cluster_ids()."
+                        f"Config cids not found in dataset cluster IDs: {missing}. "
+                        "Check that the session YAML cids match the stored dataset "
+                        "cluster_ids ordering."
                     )
             else:
                 col_indices = np.asarray(cids)
