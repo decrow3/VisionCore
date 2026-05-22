@@ -265,10 +265,6 @@ def make_counterfactual_stim(full_stack, eyepos,
 
     return eye_stim
 
-import torch
-import torch.nn.functional as F
-from mcfarland_sim import eye_deg_to_norm, shift_movie_with_eye
-
 def make_integrated_counterfactual_stim(full_stack, eyepos, ppd=37.50476617, n_lags=32, sub_frames=10):
     """
     Reconstruct stimulus with sub-frame temporal integration (simulating retinal motion blur).

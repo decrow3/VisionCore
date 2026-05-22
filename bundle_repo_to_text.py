@@ -6,10 +6,7 @@ INCLUDE_EXTS = {
     '.pl', '.php', '.cs', '.swift', '.scala', '.r', '.jl', '.dart', '.md', '.rst', '.txt'
 }
 
-#add date to output file name
-from datetime import datetime
-date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-OUTPUT_FILE = "Vision_core_repo_bundle_" + date_str + ".txt"
+OUTPUT_FILE = "repo_bundle.txt"
 REPO_ROOT = "."  # Change if not running from repo root
 OUTPUT_PATH = os.path.abspath(os.path.join(REPO_ROOT, OUTPUT_FILE))
 

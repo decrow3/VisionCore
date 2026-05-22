@@ -5,6 +5,7 @@ Allows counterfactual analysis with real vs fake eye traces.
 #%% Imports
 import sys
 sys.path.append('..')
+from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
@@ -37,7 +38,8 @@ model, dataset_configs = get_model_and_dataset_configs()
 model = model.to(device)
 
 import dill
-with open('/home/jake/repos/VisionCore/scripts/mcfarland_outputs_mono.pkl', 'rb') as f:
+SCRIPT_DIR = Path(__file__).resolve().parent
+with open(SCRIPT_DIR / 'mcfarland_outputs_mono.pkl', 'rb') as f:
     outputs = dill.load(f)
 
 readout = get_spatial_readout(model, outputs).to(device)
@@ -45,7 +47,6 @@ readout = get_spatial_readout(model, outputs).to(device)
 sessions = [outputs[i]['sess'] for i in range(len(outputs))]
 #%% Helper functions
 
-from pathlib import Path
 import pickle, hashlib, json
 
 def cache_load_or_compute(cache_path: Path, compute_fn, *, meta: dict):

@@ -36,10 +36,8 @@ else:
 
 #%%
 # Computation parameters
-batch_size = 1000
-#device = 'cuda' if torch.cuda.is_available() else 'cpu'
-device = 'cpu'
-print(f'Using device: {device}')
+batch_size = 10000
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 #%%
 # Preprocess stimulus and create valid mask
 

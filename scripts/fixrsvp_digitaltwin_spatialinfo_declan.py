@@ -5,6 +5,7 @@ Allows counterfactual analysis with real vs fake eye traces.
 #%% Imports
 import sys
 sys.path.append('..')
+from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
@@ -30,7 +31,8 @@ model, dataset_configs = get_model_and_dataset_configs()
 model = model.to(device)
 
 import dill
-with open('/home/jake/repos/VisionCore/scripts/mcfarland_outputs_mono.pkl', 'rb') as f:
+SCRIPT_DIR = Path(__file__).resolve().parent
+with open(SCRIPT_DIR / 'mcfarland_outputs_mono.pkl', 'rb') as f:
     outputs = dill.load(f)
 
 readout = get_spatial_readout(model, outputs).to(device)
@@ -573,10 +575,6 @@ make_movie(stimulus_movie, save_path=f'../figures/spatial_info_fixrsvpstatic_{if
 
 #%% make a movie of the stimulus itself
 # import imageio.v2 as imageio
-
-frames = eye_stim[:,0,-1,:,:]
-# normalize from 0 to 1
-frames = (255*(frames - frames.min()) / (frames.max() - frames.min())).numpy().astype(np.uint8)
 # imageio.mimsave(f'../figures/spatial_info_fixrsvpstatic_{iframe}_{itrial}_stimulus.mp4', frames, fps=30, format="FFMPEG")
 # # make_movie(eye_stim, save_path=, n_units_to_show=units_to_show)
 
@@ -666,10 +664,6 @@ make_movie(y, save_path=f'spatial_info_natstatic_{iframe}_{itrial}_activations',
 
 #%% make a movie of the stimulus itself
 # import imageio.v2 as imageio
-
-frames = eye_stim[:,0,-1,:,:]
-# normalize from 0 to 1
-frames = (255*(frames - frames.min()) / (frames.max() - frames.min())).numpy().astype(np.uint8)
 # imageio.mimsave(f'../figures/spatial_info_natstatic_{iframe}_{itrial}_stimulus.mp4', frames, fps=30, format="FFMPEG")
 # # make_movie(eye_stim, save_path=, n_units_to_show=units_to_show)
 

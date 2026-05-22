@@ -18,7 +18,7 @@ from eval.eval_stack_multidataset import load_model
 def get_model_and_dataset_configs(mode='standard'):
 
     if mode == 'standard':
-        dataset_configs_path = "/home/jake/repos/VisionCore/experiments/dataset_configs/multi_basic_240_all.yaml"
+        dataset_configs_path = "experiments/dataset_configs/multi_basic_240_all.yaml"
         checkpoint_dir = "/mnt/ssd/YatesMarmoV1/conv_model_fits/experiments/multidataset_120_long/checkpoints"
 
         model_type = 'resnet_none_convgru'

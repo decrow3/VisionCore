@@ -401,22 +401,8 @@ ispike_null, irate_null, I_t_null = spatial_ssi_population(y_null)
 #%% make a movie of this trial
 n_units = 25 # number of units to show
 units_to_show = np.argsort(I_t.mean(0)-I_t_null.mean(0)).numpy()[::-1][:n_units] # the ones with the most gain in spatial info
-make_movie(y, save_path=f'spatial_info_fixrsvpstatic_{iframe}_{itrial}_activations', n_units_to_show=units_to_show)
-
-
-#%% make a movie of the stimulus itself
-import imageio.v2 as imageio
-
-frames = eye_stim[:,0,-1,:,:]
-# normalize from 0 to 1
-frames = (255*(frames - frames.min()) / (frames.max() - frames.min())).numpy().astype(np.uint8)
-imageio.mimsave(f'../figures/spatial_info_fixrsvpstatic_{iframe}_{itrial}_stimulus.mp4', frames, fps=15, format="FFMPEG")
-# make_movie(eye_stim, save_path=, n_units_to_show=units_to_show)
 
 #%%
-import imageio.v2 as imageio
-import numpy as np
-import imageio.v2 as imageio
 
 MOVIE_FPS = 15
 LAG_IDX = 1
@@ -551,17 +537,6 @@ ispike_null, irate_null, I_t_null = spatial_ssi_population(y_null)
 #%% make a movie of this trial
 n_units = 25 # number of units to show
 units_to_show = np.argsort(I_t.mean(0)-I_t_null.mean(0)).numpy()[::-1][:n_units] # the ones with the most gain in spatial info
-make_movie(y, save_path=f'spatial_info_natstatic_{iframe}_{itrial}_activations', n_units_to_show=units_to_show)
-
-
-#%% make a movie of the stimulus itself
-import imageio.v2 as imageio
-
-frames = eye_stim[:,0,-1,:,:]
-# normalize from 0 to 1
-frames = (255*(frames - frames.min()) / (frames.max() - frames.min())).numpy().astype(np.uint8)
-imageio.mimsave(f'../figures/spatial_info_natstatic_{iframe}_{itrial}_stimulus.mp4', frames, fps=15, format="FFMPEG")
-# make_movie(eye_stim, save_path=, n_units_to_show=units_to_show)
 
 #%% Natstatic movie with synced stimulus
 make_movie(

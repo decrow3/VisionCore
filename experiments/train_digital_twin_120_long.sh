@@ -209,7 +209,7 @@ echo ""
 
 # ===================== Launch training =====================
 
-TRAINING_CMD="python training/train_ddp_multidataset.py \
+TRAINING_CMD="uv run python training/train_ddp_multidataset.py \
     --model_config \"$MODEL_CONFIG\" \
     --dataset_configs_path \"$DATASET_CONFIGS_PATH\" \
     --max_datasets $MAX_DATASETS \
