@@ -1,0 +1,9 @@
+python scripts/backimage_long_sweep_20s.py \
+  --outputs /home/declan/VisionCore/scripts/mcfarland_outputs_standard.pkl \
+  --max-images 24 \
+  --save-dir /home/declan/VisionCore/declan/overnight_backimage_long_sweeps_20s_re \
+  --save-videos-dir /home/declan/VisionCore/declan/test_sweeps \
+  --max-videos 20 \
+  --trials-per-condition 10 \
+  --videos-per-image 5 \
+  --min-saccade-sep-deg 2

@@ -38,6 +38,63 @@ readout = get_spatial_readout(model, outputs).to(device)
 sessions = [outputs[i]['sess'] for i in range(len(outputs))]
 #%% Helper functions
 
+def debug_eye_units_and_bounds(eyedeg_xy: np.ndarray, img_hw: tuple[int, int], ppd: float) -> None:
+    """Sanity check: are eye positions (deg) consistent with an image centered at (0,0) deg?"""
+    H, W = img_hw
+    eyedeg_xy = np.asarray(eyedeg_xy)
+    x_deg = eyedeg_xy[:, 0]
+    y_deg = eyedeg_xy[:, 1]
+
+    extent_w = (W / float(ppd)) / 2.0
+    extent_h = (H / float(ppd)) / 2.0
+
+    in_deg = (
+        (x_deg >= -extent_w) & (x_deg <= extent_w) &
+        (y_deg >= -extent_h) & (y_deg <= extent_h)
+    )
+
+    # Map degrees -> pixel indices (origin upper-left). +y in deg usually means up, hence the minus.
+    x_pix = x_deg * float(ppd) + (W / 2.0)
+    y_pix = -y_deg * float(ppd) + (H / 2.0)
+    in_pix = (x_pix >= 0) & (x_pix < W) & (y_pix >= 0) & (y_pix < H)
+
+    print("\n=== EYE / IMAGE COORD CHECK ===")
+    print(f"Image (H,W): {(H, W)}, ppd={ppd:.3f}")
+    print(f"Deg extent: x±{extent_w:.2f}, y±{extent_h:.2f}")
+    print(
+        f"Eye deg range: x[{np.nanmin(x_deg):.2f},{np.nanmax(x_deg):.2f}] "
+        f"y[{np.nanmin(y_deg):.2f},{np.nanmax(y_deg):.2f}]"
+    )
+    print(f"In deg extent: {np.nanmean(in_deg) * 100:.1f}%")
+    print(f"In pixel bounds after deg->pix: {np.nanmean(in_pix) * 100:.1f}%")
+    print("If these % are low, you likely have a unit/sign/center mismatch.")
+
+
+def rescale_fixations_only(trace: np.ndarray, saccade_mask: np.ndarray, eye_scale: float) -> np.ndarray:
+    """Rescale only fixational jitter (within fixation runs), leaving saccade frames untouched.
+
+    trace: (T,2) in degrees
+    saccade_mask: (T,) bool (True during saccade frames)
+    eye_scale: scalar where 0 removes FEM, 1 keeps original
+    """
+    trace = np.asarray(trace, dtype=np.float32)
+    saccade_mask = np.asarray(saccade_mask, dtype=bool)
+    out = trace.copy()
+
+    fix_idx = np.where(~saccade_mask)[0]
+    if fix_idx.size == 0:
+        return out
+
+    split_pts = np.where(np.diff(fix_idx) != 1)[0] + 1
+    runs = np.split(fix_idx, split_pts)
+    scale = float(eye_scale)
+    for r in runs:
+        if r.size == 0:
+            continue
+        center = out[r].mean(axis=0, keepdims=True)
+        out[r] = center + (out[r] - center) * scale
+    return out
+
 
 
 """
@@ -252,7 +309,24 @@ Inputs:
 def get_trial_stim_and_rates(eyepos, full_stack,
                              out_size=(151, 151), n_lags=32, scale=1.0, plot=False):
 
-    T = np.where(np.isnan(eyepos[:,0]))[0][0]
+    # `make_counterfactual_stim` expects `full_stack` shaped (T,H,W)
+    if isinstance(full_stack, torch.Tensor):
+        full_stack = full_stack.detach().cpu().numpy()
+    full_stack = np.asarray(full_stack)
+    if full_stack.ndim == 4 and full_stack.shape[1] == 1:
+        full_stack = full_stack[:, 0]
+    if full_stack.ndim != 3:
+        raise ValueError(
+            f"full_stack must be (T,H,W) or (T,1,H,W); got shape {full_stack.shape}"
+        )
+
+    nan_idx = np.where(np.isnan(eyepos[:, 0]))[0]
+    T = int(nan_idx[0]) if nan_idx.size > 0 else int(eyepos.shape[0])
+
+    # Ensure we have enough stimulus frames for lag embedding: full_stack[:T + n_lags]
+    max_T = int(full_stack.shape[0] - n_lags)
+    if T > max_T:
+        T = max_T
     eyepos = eyepos[:T]
     eyepos = torch.from_numpy(eyepos).float()
 
@@ -293,7 +367,18 @@ Inputs:
 """
 def get_trial_stim_and_rates_eyescaled(eyepos, full_stack,
                              out_size=(151, 151), n_lags=32, stim_scale=1.0, eye_scale=[0, 0.5, 1.0, 2.0], plot=False):
-    T = np.where(np.isnan(eyepos[:,0]))[0][0]
+    if isinstance(full_stack, torch.Tensor):
+        full_stack = full_stack.detach().cpu().numpy()
+    full_stack = np.asarray(full_stack)
+    if full_stack.ndim == 4 and full_stack.shape[1] == 1:
+        full_stack = full_stack[:, 0]
+    if full_stack.ndim != 3:
+        raise ValueError(
+            f"full_stack must be (T,H,W) or (T,1,H,W); got shape {full_stack.shape}"
+        )
+
+    nan_idx = np.where(np.isnan(eyepos[:, 0]))[0]
+    T = int(nan_idx[0]) if nan_idx.size > 0 else int(eyepos.shape[0])
     #For very fast frame rates, we may have fewer frames our eyetrack supports
     if T > (full_stack.shape[0]-n_lags-1):
         #print(f"Warning: eyepos length {T} greater than full_stack length {full_stack.shape[0]}, truncating eyepos")
@@ -305,12 +390,17 @@ def get_trial_stim_and_rates_eyescaled(eyepos, full_stack,
     #scaled_eyepos= torch.zeros_like(eyepos) + eyepos.mean(0) * (1 - eye_scale) + eyepos * eye_scale
     #null_eyepos = torch.zeros_like(eyepos) + eyepos.mean(0) * (1 - eye_scale) + eyepos * eye_scale
 
-    for i in range(eye_scale.shape[0]):
-        scaled_eyepos = torch.zeros_like(eyepos) + eyepos * eye_scale[i] + (1 - eye_scale[i]) * eyepos.mean(0)
+    eye_scale = np.asarray(eye_scale, dtype=np.float32).reshape(-1)
+
+    for i in range(int(eye_scale.shape[0])):
+        scaled_eyepos = torch.zeros_like(eyepos) + eyepos * float(eye_scale[i]) + (1.0 - float(eye_scale[i])) * eyepos.mean(0)
         
         eye_stim_loop = make_counterfactual_stim(full_stack, scaled_eyepos, out_size=out_size, n_lags=n_lags, scale_factor=stim_scale)
-        # append to the output tensor
-        eye_stim = eye_stim_loop if i == 0 else torch.cat((eye_stim, eye_stim_loop), dim=4)
+        # Stack stimulus along a NEW final axis representing eye_scale.
+        # make_counterfactual_stim returns (T, 1, n_lags, H, W).
+        # We want (T, 1, n_lags, H, W, n_scales).
+        eye_stim_loop = eye_stim_loop.unsqueeze(-1)
+        eye_stim = eye_stim_loop if i == 0 else torch.cat((eye_stim, eye_stim_loop), dim=-1)
    
         #eye_stim_null = make_counterfactual_stim(full_stack, null_eyepos, out_size=out_size, n_lags=n_lags, scale_factor=stim_scale)
         # print(f"Reconstructed stim shape: {eye_stim.shape}")
@@ -323,14 +413,19 @@ def get_trial_stim_and_rates_eyescaled(eyepos, full_stack,
 
         # Compute rates on normalized stimulus
         # TODO: This assumes pixelnorm was called (which it almost certainly was, but we should do this better...)
+        if i == 0:
+            stim_min = float(eye_stim_loop.min())
+            stim_max = float(eye_stim_loop.max())
+            if stim_max <= 2.0:
+                print(f"WARNING: eye_stim_loop appears already normalized (min={stim_min:.3f}, max={stim_max:.3f}); (x-127)/255 may be wrong")
         #for i in range(eye_scale.shape[0]):
         y_loop = compute_rate_map_batched(model, readout, (eye_stim_loop - 127.0)/255.0)
         # y_loop should be (T, C, H_out, W_out), append to output tensor on new axis
         # y = y_loop if i == 0 else torch.cat((y, y_loop), dim=4)
         # but this errors "IndexError: Dimension out of range (expected to be in range of [-4, 3], but got 4)"
         # so we need to unsqueeze y_loop first
-        y_loop = y_loop.unsqueeze(4)
-        y = y_loop if i == 0 else torch.cat((y, y_loop), dim=4)
+        y_loop = y_loop.unsqueeze(-1)
+        y = y_loop if i == 0 else torch.cat((y, y_loop), dim=-1)
         
     #y_null = compute_rate_map_batched(model, readout, (eye_stim_null - 127.0)/255.0)
 
@@ -355,23 +450,27 @@ for name in sessions:
             dataset = train_data.shallow_copy()
             dataset.inds = inds
 
-            dset_idx = inds[:,0].unique().item()
-            trial_inds = dataset.dsets[dset_idx].covariates['trial_inds'].numpy()
-            trials = np.unique(trial_inds)
-            NT = len(trials)
+            # NOTE: dataset.inds often only affects __getitem__ / sampling; raw dataset.dsets access
+            # will still include all protocols unless we explicitly apply inds.
+            inds_np = inds.detach().cpu().numpy()
+            for dset_idx in np.unique(inds_np[:, 0]).astype(int):
+                eyepos_all = dataset.dsets[dset_idx]['eyepos'][:].numpy()
+                trial_inds_all = dataset.dsets[dset_idx].covariates['trial_inds'].numpy()
 
-            fixation = np.hypot(
-                dataset.dsets[dset_idx]['eyepos'][:,0].numpy(), 
-                dataset.dsets[dset_idx]['eyepos'][:,1].numpy()
-            ) < 1
+                in_fixrsvp = np.zeros(len(trial_inds_all), dtype=bool)
+                sample_idx = inds_np[inds_np[:, 0] == dset_idx, 1].astype(int)
+                sample_idx = sample_idx[(sample_idx >= 0) & (sample_idx < len(in_fixrsvp))]
+                in_fixrsvp[sample_idx] = True
 
-            for itrial in range(NT):
-                ix = (trials[itrial] == trial_inds) & fixation
-                ix = (trials[itrial] == trial_inds) & fixation
-                eyepos = dataset.dsets[dset_idx]['eyepos'][ix]
-                eyetrace = np.zeros((max_T, 2))*np.nan
-                eyetrace[:len(eyepos)] = eyepos.numpy()
-                eyetraces.append(eyetrace)
+                trials = np.unique(trial_inds_all[in_fixrsvp & ~np.isnan(trial_inds_all)])
+                fixation = (np.hypot(eyepos_all[:, 0], eyepos_all[:, 1]) < 1) & in_fixrsvp
+
+                for t in trials:
+                    ix = (trial_inds_all == t) & fixation
+                    eyepos = eyepos_all[ix]
+                    eyetrace = np.zeros((max_T, 2), dtype=np.float32) * np.nan
+                    eyetrace[:len(eyepos)] = eyepos
+                    eyetraces.append(eyetrace)
 
     except Exception as e:
         print(f"Failed to load dataset {name}: {e}")
@@ -452,7 +551,8 @@ plt.plot(eyepos[itrial])
 plt.show()
 
 #%% run one image to get a sense
-iframe = 43
+iframe = 3
+itrial = 579
 y, y_null, eye_stim, eye_stim_null = get_trial_stim_and_rates(eyepos[itrial], full_stack[[iframe]].repeat(fix_dur[itrial]+n_lags+1, axis=0), out_size=out_size, n_lags=n_lags, scale=scale)
 
 #%% Compute information from rate maps
@@ -464,6 +564,12 @@ n_units = 25 # number of units to show
 units_to_show = np.argsort(I_t.mean(0)-I_t_null.mean(0)).numpy()[::-1][:n_units] # the ones with the most gain in spatial info
 make_movie(y, save_path=f'spatial_info_fixrsvpstatic_{iframe}_{itrial}_activations', n_units_to_show=units_to_show)
 
+#%% Save the stimulus movie
+# Save out the stimulus movie using make_movie
+# eye_stim shape: (T, 1, n_lags, H, W)
+# Prepare stimulus for make_movie: (T, 1, H, W)
+stimulus_movie = eye_stim[:, 0, -1, :, :].unsqueeze(1) if hasattr(eye_stim, 'unsqueeze') else eye_stim[:, 0, -1, :, :][:, None, :, :]
+make_movie(stimulus_movie, save_path=f'../figures/spatial_info_fixrsvpstatic_{iframe}_{itrial}_stimulus', n_units_to_show=1)
 
 #%% make a movie of the stimulus itself
 # import imageio.v2 as imageio
@@ -590,7 +696,7 @@ full_stack = make_stimulus_stack(type=type,
         frame=frame, frames_per_im=frames_per_im)
 
 
-#%% sample with eye positions
+#%% sample with eye positions SUPER SLOW!!!!
 from tqdm import tqdm
 '''
 This analysis should loop over the frames per frame,
@@ -621,7 +727,9 @@ i_rates_null = []
 
 # this is currently looping over all frames, we also need to loop over 
 # 'frames per image' to get the different conditions, but this is a start
-for itrial in tqdm(range(eyepos.shape[0])):
+# run on 10 random trials for speed
+#for itrial in #tqdm(range(eyepos.shape[0])):
+for itrial in tqdm(range(10)):
     y, y_null, eye_stim, eye_stim_null = get_trial_stim_and_rates(eyepos[itrial], full_stack, out_size=out_size, n_lags=n_lags, scale=scale)
     ispike, irate, I_t = spatial_ssi_population(y)
     ispike_null, irate_null, I_t_null = spatial_ssi_population(y_null)
@@ -632,7 +740,7 @@ for itrial in tqdm(range(eyepos.shape[0])):
 
 
 #%%
-
+itrial=0
 itrial +=1
 if itrial > len(i_spikes):
     itrial = 0
@@ -1049,7 +1157,7 @@ plt.show()
 from DataYatesV1.exp import BackImageTrial, get_trial_protocols
 from DataYatesV1.utils.detect_saccades import detect_saccades
 def get_fixations_for_backimage_across_sessions(
-    model, sessions, image_file=None, n_images=6
+    model, sessions, image_file=None, n_images=27
 ):
     """
     Get fixation eye positions for multiple backimages across sessions.
@@ -1232,11 +1340,13 @@ def get_fixations_for_backimage_across_sessions(
 print("=" * 60)
 print("BACKIMAGE FIXATION ANALYSIS")
 print("=" * 60)
+import pickle
+rerun = False  # Set to False to load from pickle
 if rerun:
     results = get_fixations_for_backimage_across_sessions(
         model=model,
-        sessions=sessions[:3],  # First 3 sessions
-        n_images=6              # Top 6 most common images
+        sessions=sessions,  # First 3 sessions
+        n_images=27              # Top 27 most common images
     )
 
     # % Save results to pickle
@@ -1252,11 +1362,93 @@ else:
         results = pickle.load(f)
 
 # %% Visualize results
+# Cache images to avoid re-loading datasets on every kernel restart / subplot
+import os
+import pickle
+
+image_cache_path = '../declan/backimage_image_cache.pkl'
+
+# Try loading cached images first
+image_cache = {}
+if os.path.exists(image_cache_path):
+    try:
+        with open(image_cache_path, 'rb') as f:
+            image_cache = pickle.load(f)
+        print(f"✓ Loaded image cache: {image_cache_path} ({len(image_cache)} images)")
+    except Exception as e:
+        print(f"Warning: failed to load image cache ({image_cache_path}): {e}")
+        image_cache = {}
+
+# If cache missing or incomplete, build it (single pass over sessions)
+image_files_to_plot = [img for img, _ in sorted(results.items(), key=lambda x: -x[1]['n_trials'])]
+missing = [img for img in image_files_to_plot if img not in image_cache]
+
+if len(missing) > 0:
+    print(f"Building image cache for {len(missing)} missing images (this may load a few datasets once)...")
+
+    # NOTE: BackImageTrial and get_trial_protocols are already imported above in this section
+    for name in sessions[:3]:
+        try:
+            dataset_idx = model.names.index(name)
+            train_data, val_data, _ = load_single_dataset(model, dataset_idx)
+
+            inds = torch.concatenate([
+                train_data.get_dataset_inds('backimage'),
+                val_data.get_dataset_inds('backimage')
+            ], dim=0)
+
+            if len(inds) == 0:
+                continue
+
+            dataset = train_data.shallow_copy()
+            dataset.inds = inds
+            dset_idx = inds[:, 0].unique().item()
+
+            sess_obj = dataset.dsets[dset_idx].metadata['sess']
+            exp = sess_obj.exp
+            protocols = get_trial_protocols(exp)
+
+            trial_inds = dataset.dsets[dset_idx].covariates['trial_inds'].numpy()
+            unique_trial_inds = np.unique(trial_inds[~np.isnan(trial_inds)])
+
+            backimage_trial_inds = np.where(np.array(protocols) == 'BackImage')[0]
+            backimage_trial_inds = backimage_trial_inds[np.isin(backimage_trial_inds, unique_trial_inds)]
+            if len(backimage_trial_inds) == 0:
+                continue
+
+            backimage_trials = [BackImageTrial(exp['D'][iT], exp['S']) for iT in backimage_trial_inds]
+
+            # Fill cache for any images we still need
+            for trial_obj in backimage_trials:
+                imgf = trial_obj.image_file
+                if imgf in missing and imgf not in image_cache:
+                    image_cache[imgf] = trial_obj.get_image()
+
+            # Update missing list and early-exit if done
+            missing = [img for img in image_files_to_plot if img not in image_cache]
+            if len(missing) == 0:
+                break
+
+        except Exception as e:
+            print(f"  Warning: Failed to cache images from session {name}: {e}")
+            continue
+
+    # Save cache for future kernel restarts
+    try:
+        with open(image_cache_path, 'wb') as f:
+            pickle.dump(image_cache, f)
+        print(f"✓ Saved image cache: {image_cache_path} ({len(image_cache)} images)")
+        if len(missing) > 0:
+            print(f"  Note: still missing {len(missing)} images (not found in sessions[:3])")
+    except Exception as e:
+        print(f"Warning: failed to save image cache ({image_cache_path}): {e}")
+
+# --- Plotting ---
 n_images = len(results)
 sx = int(np.sqrt(n_images))
 sy = int(np.ceil(n_images / sx))
 
-fig, axes = plt.subplots(sy, sx, figsize=(4*sx, 5*sy))
+fig, axes = plt.subplots(sy, sx, figsize=(4 * sx, 5 * sy))
 axes = axes.flatten()
 
 for idx, (image_file, data) in enumerate(sorted(results.items(), key=lambda x: -x[1]['n_trials'])):
@@ -1264,82 +1456,48 @@ for idx, (image_file, data) in enumerate(sorted(results.items(), key=lambda x: -
     eyepos = data['eyepos']
     n_trials = data['n_trials']
     n_sessions = data['n_sessions']
-    
-    # Try to get the image (from first available session)
-    try:
-        # Find first session with this image
-        for name in sessions[:3]:
-            dataset_idx = model.names.index(name)
-            train_data, val_data, _ = load_single_dataset(model, dataset_idx)
-            
-            inds = torch.concatenate([
-                train_data.get_dataset_inds('backimage'),
-                val_data.get_dataset_inds('backimage')
-            ], dim=0)
-            
-            if len(inds) == 0:
-                continue
-            
-            dataset = train_data.shallow_copy()
-            dataset.inds = inds
-            dset_idx = inds[:,0].unique().item()
-            
-            sess_obj = dataset.dsets[dset_idx].metadata['sess']
-            exp = sess_obj.exp
-            protocols = get_trial_protocols(exp)
-            trial_inds = dataset.dsets[dset_idx].covariates['trial_inds'].numpy()
-            unique_trial_inds = np.unique(trial_inds[~np.isnan(trial_inds)])
-            
-            backimage_trial_inds = np.where(np.array(protocols) == 'BackImage')[0]
-            backimage_trial_inds = backimage_trial_inds[np.isin(backimage_trial_inds, unique_trial_inds)]
-            
-            backimage_trials = [BackImageTrial(exp['D'][iT], exp['S']) for iT in backimage_trial_inds]
-            
-            for trial_idx, trial_obj in zip(backimage_trial_inds, backimage_trials):
-                if trial_obj.image_file == image_file:
-                    image = trial_obj.get_image()
-                    break
-            else:
-                continue
-            break
-        
-        # Display image with fixation heatmap
-        img_height, img_width = image.shape
-        img_height_deg = img_height / 37.5  # ppd
-        img_width_deg = img_width / 37.5
-        
-        # Use actual image aspect ratio
-        extent_h = img_height_deg / 2
-        extent_w = img_width_deg / 2
-        
-        ax.imshow(image, cmap='gray', origin='upper',
-                  extent=[-extent_w, extent_w, -extent_h, extent_h])
-        
-        # Fixation heatmap
-        h, xedges, yedges = np.histogram2d(
-            eyepos[:, 0], eyepos[:, 1],
-            bins=50,
-            range=[[-extent_w, extent_w], [-extent_h, extent_h]]
-        )
-        
-        im = ax.imshow(h.T, extent=[-extent_w, extent_w, -extent_h, extent_h],
-                       origin='lower', cmap='hot', aspect='auto', alpha=0.6)
-        
-        ax.set_title(f'{image_file}\n{n_trials} trials, {n_sessions} sessions, {len(eyepos)} samples',
-                     fontsize=10)
-        ax.set_xlabel('X (deg)')
-        ax.set_ylabel('Y (deg)')
-        
-    except Exception as e:
-        ax.text(0.5, 0.5, f'Error loading\n{image_file}', 
+
+    image = image_cache.get(image_file, None)
+    if image is None:
+        ax.text(0.5, 0.5, f'Image not cached\n{image_file}',
                 ha='center', va='center', transform=ax.transAxes)
-        ax.set_title(f'{image_file} - {n_trials} trials', fontsize=10)
+        ax.set_title(f'{image_file}\n{n_trials} trials', fontsize=10)
+        ax.axis('off')
+        continue
+
+    # Display image with fixation heatmap
+    img_height, img_width = image.shape
+    img_height_deg = img_height / 37.5  # ppd (display only)
+    img_width_deg = img_width / 37.5
+
+    extent_h = img_height_deg / 2
+    extent_w = img_width_deg / 2
+
+    ax.imshow(image, cmap='gray', origin='upper',
+              extent=[-extent_w, extent_w, -extent_h, extent_h])
+
+    # Fixation heatmap
+    h, xedges, yedges = np.histogram2d(
+        eyepos[:, 0], eyepos[:, 1],
+        bins=50,
+        range=[[-extent_w, extent_w], [-extent_h, extent_h]]
+    )
+
+    ax.imshow(h.T, extent=[-extent_w, extent_w, -extent_h, extent_h],
+              origin='lower', cmap='hot', aspect='auto', alpha=0.6)
+
+    ax.set_title(
+        f'{image_file}\n{n_trials} trials, {n_sessions} sessions, {len(eyepos)} samples',
+        fontsize=10
+    )
+    ax.set_xlabel('X (deg)')
+    ax.set_ylabel('Y (deg)')
 
 # Hide unused subplots
 for idx in range(len(results), len(axes)):
     axes[idx].axis('off')
 
-plt.suptitle(f'Fixation Heatmaps - {len(results)} Images Across {len(sessions[:3])} Sessions', 
+plt.suptitle(f'Fixation Heatmaps - {len(results)} Images Across {len(sessions[:3])} Sessions',
              fontsize=14, y=0.995)
 plt.tight_layout()
 plt.savefig('../figures/backimage_fixation_heatmaps_multi_session.png', dpi=150, bbox_inches='tight')
@@ -1599,38 +1757,48 @@ def build_fixation_pool_from_fixrsvp(model, sessions, ppd=37.50476617, min_fix_f
 
             dataset = train_data.shallow_copy()
             dataset.inds = inds
-            dset_idx = inds[:,0].unique().item()
 
-            # Original timeline eyepos for this slice
-            eyepos_all = dataset.dsets[dset_idx]['eyepos'][:].numpy()  # (N_samples, 2)
-            trial_inds = dataset.dsets[dset_idx].covariates['trial_inds'].numpy()
-            trials = np.unique(trial_inds[~np.isnan(trial_inds)])
+            inds_np = inds.detach().cpu().numpy()
+            for dset_idx in np.unique(inds_np[:, 0]).astype(int):
+                # Original timeline eyepos for this dset (full length)
+                eyepos_all = dataset.dsets[dset_idx]['eyepos'][:].numpy()  # (N_samples, 2)
+                trial_inds = dataset.dsets[dset_idx].covariates['trial_inds'].numpy()
 
-            # Detect unit: pixels vs degrees. If typical magnitude >> 1, treat as pixels.
-            median_amp = np.nanmedian(np.hypot(eyepos_all[:,0], eyepos_all[:,1]))
-            if median_amp > 5.0:
-                print(f"[{name}] eyepos appears in pixels (median={median_amp:.2f}); converting to degrees (/ppd={ppd:.2f})")
-                eyepos_all = eyepos_all / ppd
+                in_fixrsvp = np.zeros(len(trial_inds), dtype=bool)
+                sample_idx = inds_np[inds_np[:, 0] == dset_idx, 1].astype(int)
+                sample_idx = sample_idx[(sample_idx >= 0) & (sample_idx < len(in_fixrsvp))]
+                in_fixrsvp[sample_idx] = True
 
-            # Fixation mask in degrees
-            fixation_mask_all = (np.hypot(eyepos_all[:,0], eyepos_all[:,1]) < amp_thresh_deg)
+                trials = np.unique(trial_inds[in_fixrsvp & ~np.isnan(trial_inds)])
 
-            # Extract contiguous fixation bouts per trial
-            for t in trials:
-                trial_mask = (trial_inds == t)
-                trial_trace = eyepos_all[trial_mask]               # (T_trial, 2)
-                trial_fix = fixation_mask_all[trial_mask].astype(bool)
+                # Detect unit: pixels vs degrees. If typical magnitude >> 1, treat as pixels.
+                median_amp = np.nanmedian(np.hypot(eyepos_all[:, 0], eyepos_all[:, 1]))
+                if median_amp > 5.0:
+                    print(
+                        f"[{name}] eyepos appears in pixels (median={median_amp:.2f}); "
+                        f"converting to degrees (/ppd={ppd:.2f})"
+                    )
+                    eyepos_all = eyepos_all / ppd
 
-                idx_true = np.where(trial_fix)[0]
-                if idx_true.size == 0:
-                    continue
-                split_pts = np.where(np.diff(idx_true) != 1)[0] + 1
-                runs = np.split(idx_true, split_pts)
+                # Fixation mask in degrees (only meaningful where in_fixrsvp)
+                fixation_mask_all = (np.hypot(eyepos_all[:, 0], eyepos_all[:, 1]) < amp_thresh_deg) & in_fixrsvp
 
-                for run in runs:
-                    if run.size >= min_fix_frames:
-                        bout = trial_trace[run]                    # (T_bout, 2) deg
-                        fixation_pool.append(bout)
+                # Extract contiguous fixation bouts per trial, preserving original sample adjacency
+                for t in trials:
+                    trial_mask = (trial_inds == t) & in_fixrsvp
+                    trial_sample_inds = np.where(trial_mask)[0]
+                    if trial_sample_inds.size == 0:
+                        continue
+
+                    fix_sample_inds = trial_sample_inds[fixation_mask_all[trial_sample_inds]]
+                    if fix_sample_inds.size == 0:
+                        continue
+
+                    split_pts = np.where(np.diff(fix_sample_inds) != 1)[0] + 1
+                    runs = np.split(fix_sample_inds, split_pts)
+                    for run_inds in runs:
+                        if run_inds.size >= min_fix_frames:
+                            fixation_pool.append(eyepos_all[run_inds])
 
         except Exception as e:
             print(f"Failed to load FIXRSVP from session {name}: {e}")
@@ -1655,7 +1823,7 @@ def build_fixation_pool_from_fixrsvp(model, sessions, ppd=37.50476617, min_fix_f
 print("\n" + "=" * 60)
 print("BUILDING FIXATION POOL FROM FIXRSVP DATA (contiguous bouts, degrees)")
 print("=" * 60)
-
+rerun = False  # Set to False to load from pickle
 if rerun:
     # Replace the old slicing-by-fix_dur logic with proper bout extraction
     fixation_pool = build_fixation_pool_from_fixrsvp(model, sessions, ppd=ppd, min_fix_frames=20, amp_thresh_deg=1.0)
@@ -1879,18 +2047,41 @@ print("\n" + "=" * 60)
 print("DEBUG: NATURAL IMAGE (STATIC) EYE TRACE VISUALIZATION")
 print("=" * 60)
 
-# Pick the first FIXRSVP natural image (frame=None will grab the default)
-nat_frames_per_im = 540  # static for entire trial
-nat_full_stack = make_stimulus_stack(
-    type='fixrsvp',
-    frame=None,           # first natural image
-    frames_per_im=nat_frames_per_im,
-    num_frames=540
+# Build a TRUE static natural-image stack MATCHED to the BackImage used for fixation targets.
+# We draw saccade targets from backimage fixation locations on `image_file`, so we should
+# reconstruct using pixels from that same `image_file`.
+n_frames = 540
+max_T = 600
+n_lags = 32
+stim_len = max_T + n_lags + 1
+
+backimage_image = None
+if 'image_cache' in globals():
+    backimage_image = image_cache.get(image_file, None)
+if backimage_image is None:
+    # Fallback: load from disk cache if present
+    import os
+    cache_path = '../declan/backimage_image_cache.pkl'
+    if os.path.exists(cache_path):
+        import pickle
+        with open(cache_path, 'rb') as f:
+            image_cache = pickle.load(f)
+        backimage_image = image_cache.get(image_file, None)
+
+if backimage_image is None:
+    raise ValueError(
+        f"No cached BackImage pixels found for {image_file}. "
+        f"Populate image_cache (../declan/backimage_image_cache.pkl) before running this block."
+    )
+
+nat_full_stack = np.repeat(
+    np.asarray(backimage_image, dtype=np.float32)[None, :, :],
+    stim_len,
+    axis=0,
 )
-print(f"Natural image stack shape: {nat_full_stack.shape}")
+print(f"Matched BackImage stack shape: {nat_full_stack.shape} (image_file={image_file})")
 
 # Trajectory plots
-n_frames = 540
 example_saccade_rates = [0, 2, 4]  # Hz
 example_eye_scales = [0.0, 1.0]
 
@@ -1900,25 +2091,26 @@ fig, axes = plt.subplots(len(example_saccade_rates), len(example_eye_scales) + 1
 for i_sacc, sacc_rate in enumerate(example_saccade_rates):
     n_sacc = int(sacc_rate * (n_frames / 120))
 
+    base_trace, base_mask, base_sacc_times, _ = create_hybrid_eye_trace(
+        fixation_pool=fixation_pool,
+        saccade_targets=fixation_eyepos,  # targets in degrees
+        n_saccades=n_sacc,
+        saccade_duration=6,
+        total_duration=n_frames,
+        eye_scale=1.0,
+    )
+
     for i_eye, eye_scale in enumerate(example_eye_scales):
-        hybrid_trace, sacc_times = create_hybrid_eye_trace(
-            fixation_eyepos=fixation_eyepos,
-            saccade_targets=fixation_eyepos,
-            n_saccades=n_sacc,
-            saccade_duration=6,
-            total_duration=n_frames
-        )
-        mean_pos = hybrid_trace.mean(axis=0)
-        hybrid_trace_scaled = mean_pos + (hybrid_trace - mean_pos) * eye_scale
+        hybrid_trace_scaled = rescale_fixations_only(base_trace, base_mask, eye_scale)
 
         ax = axes[i_sacc, i_eye]
         ax.scatter(hybrid_trace_scaled[:, 0], hybrid_trace_scaled[:, 1],
                    c=np.arange(len(hybrid_trace_scaled)), cmap='viridis', s=1, alpha=0.6)
-        for sacc_start, sacc_end in sacc_times:
+        for sacc_start, sacc_end in base_sacc_times:
             ax.plot(hybrid_trace_scaled[sacc_start:sacc_end, 0],
                     hybrid_trace_scaled[sacc_start:sacc_end, 1],
                     'r-', lw=2, alpha=0.8)
-        ax.set_title(f'Sacc={sacc_rate}Hz, Scale={eye_scale:.1f}x\n({len(sacc_times)} saccades)',
+        ax.set_title(f'Sacc={sacc_rate}Hz, Scale={eye_scale:.1f}x\n({len(base_sacc_times)} saccades)',
                      fontsize=10)
         ax.set_xlabel('X (deg)')
         ax.set_ylabel('Y (deg)')
@@ -1927,15 +2119,7 @@ for i_sacc, sacc_rate in enumerate(example_saccade_rates):
     # time series for this saccade rate
     ax = axes[i_sacc, -1]
     for eye_scale in example_eye_scales:
-        hybrid_trace, _ = create_hybrid_eye_trace(
-            fixation_eyepos=fixation_eyepos,
-            saccade_targets=fixation_eyepos,
-            n_saccades=n_sacc,
-            saccade_duration=6,
-            total_duration=n_frames
-        )
-        mean_pos = hybrid_trace.mean(axis=0)
-        hybrid_trace_scaled = mean_pos + (hybrid_trace - mean_pos) * eye_scale
+        hybrid_trace_scaled = rescale_fixations_only(base_trace, base_mask, eye_scale)
         ax.plot(hybrid_trace_scaled[:, 0], label=f'X (scale={eye_scale:.1f}x)', alpha=0.7, lw=1)
         ax.plot(hybrid_trace_scaled[:, 1] + 10, label=f'Y (scale={eye_scale:.1f}x)',
                 alpha=0.7, lw=1, linestyle='--')
@@ -1963,8 +2147,7 @@ conditions = [
     {'sacc_rate': 4, 'eye_scale': 1.0, 'label': 'nat_real_eye_4hz_saccades'},
 ]
 
-max_T = 600
-n_lags = 32
+# max_T and n_lags are defined above to ensure the stimulus stack is long enough.
 
 for cond in conditions:
     sacc_rate = cond['sacc_rate']
@@ -1974,17 +2157,15 @@ for cond in conditions:
     print(f"\nProcessing: {label}")
     n_sacc = int(sacc_rate * (n_frames / 120))
 
-    hybrid_trace, sacc_times = create_hybrid_eye_trace(
-        fixation_eyepos=fixation_eyepos,
+    base_trace, base_mask, sacc_times, _ = create_hybrid_eye_trace(
+        fixation_pool=fixation_pool,
         saccade_targets=fixation_eyepos,
         n_saccades=n_sacc,
         saccade_duration=6,
         total_duration=n_frames
     )
 
-    mean_pos = hybrid_trace.mean(axis=0)
-    hybrid_trace_scaled = mean_pos + (hybrid_trace - mean_pos) * eye_scale
-    hybrid_trace_scaled = hybrid_trace_scaled[:n_frames]
+    hybrid_trace_scaled = rescale_fixations_only(base_trace, base_mask, eye_scale)[:n_frames]
 
     hybrid_padded = np.full((max_T, 2), np.nan, dtype=np.float32)
     hybrid_padded[:len(hybrid_trace_scaled)] = hybrid_trace_scaled
@@ -2074,16 +2255,15 @@ for cond in example_conditions:
     n_sacc = int(sacc_rate * (n_frames / 120))
     
     # Create ONE example trace
-    hybrid_trace, sacc_times = create_hybrid_eye_trace(
-        fixation_eyepos=fixation_eyepos,
+    base_trace, base_mask, sacc_times, _ = create_hybrid_eye_trace(
+        fixation_pool=fixation_pool,
         saccade_targets=fixation_eyepos,
         n_saccades=n_sacc,
         saccade_duration=6,
         total_duration=n_frames
     )
     
-    mean_pos = hybrid_trace.mean(axis=0)
-    hybrid_trace_scaled = mean_pos + (hybrid_trace - mean_pos) * eye_scale
+    hybrid_trace_scaled = rescale_fixations_only(base_trace, base_mask, eye_scale)
     
     print(f"\n{label}:")
     print(f"  Total duration: {len(hybrid_trace_scaled)} frames ({len(hybrid_trace_scaled)/120:.2f}s)")
@@ -2229,20 +2409,18 @@ fig, axes = plt.subplots(len(example_saccade_rates), len(example_eye_scales) + 1
 
 for i_sacc, sacc_rate in enumerate(example_saccade_rates):
     n_sacc = int(sacc_rate * (n_frames / 120))
+
+    base_trace, base_mask, sacc_times, _ = create_hybrid_eye_trace(
+        fixation_pool=fixation_pool,
+        saccade_targets=fixation_eyepos,
+        n_saccades=n_sacc,
+        saccade_duration=6,
+        total_duration=n_frames,
+        eye_scale=1.0,
+    )
     
     for i_eye, eye_scale in enumerate(example_eye_scales):
-        # Create hybrid trace
-        hybrid_trace, sacc_times = create_hybrid_eye_trace(
-            fixation_eyepos=fixation_eyepos,
-            saccade_targets=fixation_eyepos,
-            n_saccades=n_sacc,
-            saccade_duration=6,
-            total_duration=n_frames
-        )
-        
-        # Apply eye scale
-        mean_pos = hybrid_trace.mean(axis=0)
-        hybrid_trace_scaled = mean_pos + (hybrid_trace - mean_pos) * eye_scale
+        hybrid_trace_scaled = rescale_fixations_only(base_trace, base_mask, eye_scale)
         
         # Plot 2D trajectory
         ax = axes[i_sacc, i_eye]
@@ -2265,16 +2443,7 @@ for i_sacc, sacc_rate in enumerate(example_saccade_rates):
     ax = axes[i_sacc, -1]
     
     for i_eye, eye_scale in enumerate(example_eye_scales):
-        hybrid_trace, _ = create_hybrid_eye_trace(
-            fixation_eyepos=fixation_eyepos,
-            saccade_targets=fixation_eyepos,
-            n_saccades=n_sacc,
-            saccade_duration=6,
-            total_duration=n_frames
-        )
-        
-        mean_pos = hybrid_trace.mean(axis=0)
-        hybrid_trace_scaled = mean_pos + (hybrid_trace - mean_pos) * eye_scale
+        hybrid_trace_scaled = rescale_fixations_only(base_trace, base_mask, eye_scale)
         
         # Plot X and Y separately
         ax.plot(hybrid_trace_scaled[:, 0], label=f'X (scale={eye_scale:.1f}x)', 
@@ -2295,132 +2464,132 @@ plt.show()
 
 print("✓ Saved trajectory visualization")
 
-# %% DEBUG: Create reconstructed stimulus videos for different conditions
+ # %% DEBUG: Create reconstructed stimulus videos for different conditions
 
-print("\n" + "=" * 60)
-print("DEBUG: RECONSTRUCTED STIMULUS VIDEOS")
-print("=" * 60)
+# print("\n" + "=" * 60)
+# print("DEBUG: RECONSTRUCTED STIMULUS VIDEOS")
+# print("=" * 60)
 
-import imageio.v2 as imageio
+# import imageio.v2 as imageio
 
-# Create 3 example conditions
-conditions = [
-    {'sacc_rate': 0, 'eye_scale': 0.0, 'label': 'null_no_saccades_no_eye'},
-    {'sacc_rate': 0, 'eye_scale': 1.0, 'label': 'real_eye_no_saccades'},
-    {'sacc_rate': 4, 'eye_scale': 1.0, 'label': 'real_eye_4hz_saccades'},
-]
+# # Create 3 example conditions
+# conditions = [
+#     {'sacc_rate': 0, 'eye_scale': 0.0, 'label': 'null_no_saccades_no_eye'},
+#     {'sacc_rate': 0, 'eye_scale': 1.0, 'label': 'real_eye_no_saccades'},
+#     {'sacc_rate': 4, 'eye_scale': 1.0, 'label': 'real_eye_4hz_saccades'},
+# ]
 
-max_T = 600
-n_lags = 32
+# max_T = 600
+# n_lags = 32
 
-for cond in conditions:
-    sacc_rate = cond['sacc_rate']
-    eye_scale = cond['eye_scale']
-    label = cond['label']
+# for cond in conditions:
+#     sacc_rate = cond['sacc_rate']
+#     eye_scale = cond['eye_scale']
+#     label = cond['label']
     
-    print(f"\nProcessing: {label}")
+#     print(f"\nProcessing: {label}")
     
-    n_sacc = int(sacc_rate * (n_frames / 120))
+#     n_sacc = int(sacc_rate * (n_frames / 120))
     
-    # Create hybrid trace
-    hybrid_trace, sacc_times = create_hybrid_eye_trace(
-        fixation_eyepos=fixation_eyepos,
-        saccade_targets=fixation_eyepos,
-        n_saccades=n_sacc,
-        saccade_duration=6,
-        total_duration=n_frames
-    )
+#     # Create hybrid trace
+#     hybrid_trace, _, sacc_times, _ = create_hybrid_eye_trace(
+#         fixation_pool=fixation_pool,
+#         saccade_targets=fixation_eyepos,
+#         n_saccades=n_sacc,
+#         saccade_duration=6,
+#         total_duration=n_frames
+#     )
     
-    # Apply eye scale
-    mean_pos = hybrid_trace.mean(axis=0)
-    hybrid_trace_scaled = mean_pos + (hybrid_trace - mean_pos) * eye_scale
-    hybrid_trace_scaled = hybrid_trace_scaled[:n_frames]
+#     # Apply eye scale
+#     mean_pos = hybrid_trace.mean(axis=0)
+#     hybrid_trace_scaled = mean_pos + (hybrid_trace - mean_pos) * eye_scale
+#     hybrid_trace_scaled = hybrid_trace_scaled[:n_frames]
     
-    # Pad with NaNs
-    hybrid_padded = np.full((max_T, 2), np.nan, dtype=np.float32)
-    hybrid_padded[:len(hybrid_trace_scaled)] = hybrid_trace_scaled
+#     # Pad with NaNs
+#     hybrid_padded = np.full((max_T, 2), np.nan, dtype=np.float32)
+#     hybrid_padded[:len(hybrid_trace_scaled)] = hybrid_trace_scaled
     
-    # Get reconstructed stimulus
-    print(f"  Reconstructing stimulus...")
-    y_real, _, eye_stim, _ = get_trial_stim_and_rates(
-        hybrid_padded,
-        full_stack,
-        out_size=(151, 151),
-        n_lags=n_lags,
-        scale=1.0,
-        plot=False
-    )
+#     # Get reconstructed stimulus
+#     print(f"  Reconstructing stimulus...")
+#     y_real, _, eye_stim, _ = get_trial_stim_and_rates(
+#         hybrid_padded,
+#         full_stack,
+#         out_size=(151, 151),
+#         n_lags=n_lags,
+#         scale=1.0,
+#         plot=False
+#     )
     
-    # Extract the reconstructed stimulus movie
-    # eye_stim shape: (T, 1, n_lags, H, W)
-    # We'll use the last lag (most recent) for visualization
-    frames = eye_stim[:, 0, -1, :, :].detach().cpu().numpy()
+#     # Extract the reconstructed stimulus movie
+#     # eye_stim shape: (T, 1, n_lags, H, W)
+#     # We'll use the last lag (most recent) for visualization
+#     frames = eye_stim[:, 0, -1, :, :].detach().cpu().numpy()
     
-    print(f"  Frames shape: {frames.shape}")
-    print(f"  Frame range: [{frames.min():.1f}, {frames.max():.1f}]")
+#     print(f"  Frames shape: {frames.shape}")
+#     print(f"  Frame range: [{frames.min():.1f}, {frames.max():.1f}]")
     
-    # Normalize to 0-255
-    frames_norm = ((frames - frames.min()) / (frames.max() - frames.min() + 1e-6) * 255).astype(np.uint8)
+#     # Normalize to 0-255
+#     frames_norm = ((frames - frames.min()) / (frames.max() - frames.min() + 1e-6) * 255).astype(np.uint8)
     
-    # Save video
-    output_video = f'../figures/reconstructed_stim_{label}.mp4'
-    print(f"  Saving video to {output_video}...")
-    imageio.mimsave(output_video, frames_norm, fps=30, format='FFMPEG')
-    print(f"  ✓ Saved")
+#     # Save video
+#     output_video = f'../figures/reconstructed_stim_{label}.mp4'
+#     print(f"  Saving video to {output_video}...")
+#     imageio.mimsave(output_video, frames_norm, fps=30, format='FFMPEG')
+#     print(f"  ✓ Saved")
     
-    # Also create a static frame showing eye position overlay
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+#     # Also create a static frame showing eye position overlay
+#     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     
-    # Panel 1: Mean reconstructed stimulus
-    ax = axes[0]
-    mean_stim = frames.mean(axis=0)
-    im = ax.imshow(mean_stim, cmap='gray')
-    ax.set_title(f'Mean Reconstructed Stimulus\n{label}', fontsize=11, fontweight='bold')
-    ax.axis('off')
-    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+#     # Panel 1: Mean reconstructed stimulus
+#     ax = axes[0]
+#     mean_stim = frames.mean(axis=0)
+#     im = ax.imshow(mean_stim, cmap='gray')
+#     ax.set_title(f'Mean Reconstructed Stimulus\n{label}', fontsize=11, fontweight='bold')
+#     ax.axis('off')
+#     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     
-    # Panel 2: Eye position trajectory
-    ax = axes[1]
-    ax.scatter(hybrid_trace_scaled[:, 0], hybrid_trace_scaled[:, 1],
-              c=np.arange(len(hybrid_trace_scaled)), cmap='viridis', s=1, alpha=0.6)
+#     # Panel 2: Eye position trajectory
+#     ax = axes[1]
+#     ax.scatter(hybrid_trace_scaled[:, 0], hybrid_trace_scaled[:, 1],
+#               c=np.arange(len(hybrid_trace_scaled)), cmap='viridis', s=1, alpha=0.6)
     
-    # Mark saccades
-    for sacc_start, sacc_end in sacc_times:
-        ax.plot(hybrid_trace_scaled[sacc_start:sacc_end, 0],
-               hybrid_trace_scaled[sacc_start:sacc_end, 1],
-               'r-', lw=2, alpha=0.8)
+#     # Mark saccades
+#     for sacc_start, sacc_end in sacc_times:
+#         ax.plot(hybrid_trace_scaled[sacc_start:sacc_end, 0],
+#                hybrid_trace_scaled[sacc_start:sacc_end, 1],
+#                'r-', lw=2, alpha=0.8)
     
-    ax.set_title('Eye Trajectory', fontsize=11, fontweight='bold')
-    ax.set_xlabel('X (deg)')
-    ax.set_ylabel('Y (deg)')
-    ax.grid(True, alpha=0.3)
+#     ax.set_title('Eye Trajectory', fontsize=11, fontweight='bold')
+#     ax.set_xlabel('X (deg)')
+#     ax.set_ylabel('Y (deg)')
+#     ax.grid(True, alpha=0.3)
     
-    # Panel 3: Sample frames over time
-    ax = axes[2]
-    frame_indices = np.linspace(0, len(frames)-1, 5, dtype=int)
-    for i, frame_idx in enumerate(frame_indices):
-        ax.plot(frames[frame_idx], label=f'Frame {frame_idx}', alpha=0.7)
+#     # Panel 3: Sample frames over time
+#     ax = axes[2]
+#     frame_indices = np.linspace(0, len(frames)-1, 5, dtype=int)
+#     for i, frame_idx in enumerate(frame_indices):
+#         ax.plot(frames[frame_idx], label=f'Frame {frame_idx}', alpha=0.7)
     
-    ax.set_title('Sample Frames (Spatial Profile)', fontsize=11, fontweight='bold')
-    ax.set_xlabel('Space (pixels)')
-    ax.set_ylabel('Intensity')
-    ax.legend(fontsize=9)
-    ax.grid(True, alpha=0.3)
+#     ax.set_title('Sample Frames (Spatial Profile)', fontsize=11, fontweight='bold')
+#     ax.set_xlabel('Space (pixels)')
+#     ax.set_ylabel('Intensity')
+#     ax.legend(fontsize=9)
+#     ax.grid(True, alpha=0.3)
     
-    plt.suptitle(f'Stimulus Analysis: {label}', fontsize=12, fontweight='bold')
-    plt.tight_layout()
-    plt.savefig(f'../figures/reconstructed_stim_analysis_{label}.png', dpi=150, bbox_inches='tight')
-    plt.show()
+#     plt.suptitle(f'Stimulus Analysis: {label}', fontsize=12, fontweight='bold')
+#     plt.tight_layout()
+#     plt.savefig(f'../figures/reconstructed_stim_analysis_{label}.png', dpi=150, bbox_inches='tight')
+#     plt.show()
     
-    print(f"✓ Completed: {label}")
+#     print(f"✓ Completed: {label}")
 
-print("\n" + "=" * 60)
-print("DEBUG COMPLETE")
-print("=" * 60)
-print("Generated videos and analysis plots:")
-print("  - Trajectory visualization: hybrid_eye_trace_debug_trajectories.png")
-print("  - Stimulus videos: reconstructed_stim_*.mp4")
-print("  - Analysis plots: reconstructed_stim_analysis_*.png")
+# print("\n" + "=" * 60)
+# print("DEBUG COMPLETE")
+# print("=" * 60)
+# print("Generated videos and analysis plots:")
+# print("  - Trajectory visualization: hybrid_eye_trace_debug_trajectories.png")
+# print("  - Stimulus videos: reconstructed_stim_*.mp4")
+# print("  - Analysis plots: reconstructed_stim_analysis_*.png")
 
 
 
@@ -2479,8 +2648,8 @@ for sacc_rate in saccade_rates:
     n_sacc = int(sacc_rate * (n_frames / 120))  # Convert to number of saccades per trial
     print(f"\nSaccade Rate: {sacc_rate} Hz, approximated to ({120*n_sacc/n_frames:.2f} Hz)")
     # Create hybrid trace using backimage saccade targets + backimage fixations
-    hybrid_trace, sacc_times = create_hybrid_eye_trace(
-        fixation_eyepos=fixation_eyepos,
+    hybrid_trace, _, sacc_times, _ = create_hybrid_eye_trace(
+        fixation_pool=fixation_pool,
         saccade_targets=fixation_eyepos,
         n_saccades=n_sacc,
         saccade_duration=6,  # ~50ms at 120 Hz
@@ -2644,25 +2813,34 @@ for name in sessions[:3]:
 if backimage_image is None:
     raise ValueError(f"Could not load image {image_file} from any session")
 
+# Sanity check that degrees align with image coordinate assumptions
+debug_eye_units_and_bounds(fixation_eyepos, img_hw=backimage_image.shape, ppd=ppd)
+
 
 # %% Create stimulus stack from the actual backimage (NumPy, not torch)
 # backimage_image is already a NumPy array
 n_frames = 540
 n_lags = 32  # must match the call to get_trial_stim_and_rates
 
-# Create stimulus stack from the actual backimage (NumPy), long enough for T+n_lags
+# # Create stimulus stack from the actual backimage (NumPy), long enough for T+n_lags
 full_stack = np.repeat(
-    backimage_image[np.newaxis, np.newaxis, ...].astype(np.float32),
+    backimage_image[None, :, :].astype(np.float32), #backimage_image[np.newaxis, np.newaxis, ...].astype(np.float32),
     n_frames + n_lags,  # 540 + 32 = 572
     axis=0
 )
+img_height_deg = backimage_image.shape[0] / ppd  # assuming 30 pixels/deg
+img_width_deg = backimage_image.shape[1] / ppd   # assuming 30 pixels/deg
 
 print(f"Full stimulus stack shape: {full_stack.shape}")
 print(f"(Single actual backimage for entire trial)")
 
 # %% Parameter ranges
-saccade_rates = [0, 1, 2, 4, 8]  # Hz
-eye_scale_list = [0.0, 0.25, 0.5, 1.0, 2.0]  # Scale factor for fixational eye movements
+saccade_rates = [0, 0.25, 0.5, 1, 2, 4, 8, 16 ,32]  # Hz
+# eye_scale_list = [0.0, 0.25, 0.5, 1.0, 2.0]  # Scale factor for fixational eye movements
+#         frames_per_im_list = [2, 4, 8, 16, 32, 64, 128, 256, 512]
+#         #frames_per_im_list = [1.88, 3.75, 7.5, 15, 30, 60]
+eye_scale_list = [0.0] + list(np.exp(np.linspace(-2.75, np.log(2), 11))) # odd to include 1.0 in the middle
+
 n_frames = 540
 max_T = 600
 
@@ -2682,105 +2860,91 @@ print(f"Using actual backimage: {image_file}")
 print("=" * 60)
 
 #%%
-# Add debugging right after get_trial_stim_and_rates in the loop:
 for i_sacc, sacc_rate in enumerate(tqdm(saccade_rates, desc="Saccade Rates")):
     i_spikes_eye_scale = []
     i_rates_eye_scale = []
     I_t_eye_scale = []
-    
+
     n_sacc = int(sacc_rate * (n_frames / 120))
-    
+
+    # Generate a single "base" hybrid trace for this saccade rate.
+    # We will rescale ONLY the fixation segments for each eye_scale.
+    base_trace, base_mask, sacc_times, _ = create_hybrid_eye_trace(
+        fixation_pool=fixation_pool,
+        saccade_targets=fixation_eyepos,
+        n_saccades=n_sacc,
+        saccade_duration=6,
+        total_duration=n_frames,
+        eye_scale=1.0,
+    )
+
     for i_eye, eye_scale in enumerate(eye_scale_list):
-        
-        # Create hybrid trace
-        hybrid_trace, sacc_times = create_hybrid_eye_trace(
-            fixation_eyepos=fixation_eyepos,
-            saccade_targets=fixation_eyepos,
-            n_saccades=n_sacc,
-            saccade_duration=6,
-            total_duration=n_frames
-        )
-        
-        # Apply eye scale to fixational movements
-        mean_pos = hybrid_trace.mean(axis=0)
-        hybrid_trace_scaled = mean_pos + (hybrid_trace - mean_pos) * eye_scale
-        
-        # --- safety: enforce max length to match stimulus ---
-        hybrid_trace_scaled = hybrid_trace_scaled[:n_frames]
-        
-        # Pad with NaNs
+        hybrid_trace_scaled = rescale_fixations_only(base_trace, base_mask, eye_scale)[:n_frames]
+
+        # Pad with NaNs (contract of get_trial_stim_and_rates)
         hybrid_padded = np.full((max_T, 2), np.nan, dtype=np.float32)
-        hybrid_padded[:len(hybrid_trace_scaled)] = hybrid_trace_scaled
-        
-        # DEBUG: Check input stimulus and eye trace
+        hybrid_padded[:len(hybrid_trace_scaled)] = hybrid_trace_scaled.astype(np.float32)
+
         if i_sacc == 0 and i_eye == 0:
             print(f"\n=== DEBUGGING INPUTS ===")
             print(f"full_stack shape: {full_stack.shape}")
             print(f"full_stack dtype: {full_stack.dtype}")
-            print(f"full_stack min: {full_stack.min():.4f}, max: {full_stack.max():.4f}, mean: {full_stack.mean():.4f}")
+            print(
+                f"full_stack min: {full_stack.min():.4f}, max: {full_stack.max():.4f}, mean: {full_stack.mean():.4f}"
+            )
             print(f"full_stack contains NaN: {np.isnan(full_stack).any()}")
             print(f"hybrid_padded shape: {hybrid_padded.shape}")
-            print(f"hybrid_padded valid samples: {np.sum(~np.isnan(hybrid_padded[:,0]))}")
-            print(f"Eye position range: X=[{hybrid_trace_scaled[:,0].min():.2f}, {hybrid_trace_scaled[:,0].max():.2f}], "
-                  f"Y=[{hybrid_trace_scaled[:,1].min():.2f}, {hybrid_trace_scaled[:,1].max():.2f}]")
+            print(f"hybrid_padded valid samples: {np.sum(~np.isnan(hybrid_padded[:, 0]))}")
+            print(
+                f"Eye position range: X=[{hybrid_trace_scaled[:, 0].min():.2f}, {hybrid_trace_scaled[:, 0].max():.2f}], "
+                f"Y=[{hybrid_trace_scaled[:, 1].min():.2f}, {hybrid_trace_scaled[:, 1].max():.2f}]"
+            )
             print(f"Image dimensions (deg): {img_height_deg:.2f} x {img_width_deg:.2f}")
-        
-        # Compute rates (real eye trace with saccades)
+
         y_real, _, eye_stim, _ = get_trial_stim_and_rates(
             hybrid_padded,
             full_stack,
             out_size=(151, 151),
-            n_lags=32,
+            n_lags=n_lags,
             scale=1.0,
-            plot=False
+            plot=False,
         )
-        
-        # DEBUG: Check reconstructed stimulus
+
         if i_sacc == 0 and i_eye == 0:
             print(f"\n=== DEBUGGING RECONSTRUCTED STIMULUS ===")
             print(f"eye_stim shape: {eye_stim.shape}")
-            print(f"eye_stim min: {eye_stim.min().item():.4f}, max: {eye_stim.max().item():.4f}, mean: {eye_stim.mean().item():.4f}")
-            print(f"eye_stim contains NaN: {torch.isnan(eye_stim).any().item()}")
-            
-            # Check if stimulus normalization is correct (should be ~[-1, 1] or [0, 1])
-            print(f"\nStimulus normalization check:")
-            print(f"  Expected range for model: [-1, 1] or [0, 1]")
-            print(f"  Actual range: [{eye_stim.min().item():.4f}, {eye_stim.max().item():.4f}]")
-        
-        # DEBUG: Check y_real statistics
-        if i_sacc == 0 and i_eye == 0:
-            print(f"\n=== DEBUGGING y_real ===")
-            print(f"y_real shape: {y_real.shape}")
-            print(f"y_real min: {y_real.min().item() if not torch.isnan(y_real).all() else 'all NaN'}")
-            print(f"y_real max: {y_real.max().item() if not torch.isnan(y_real).all() else 'all NaN'}")
-            print(f"y_real contains NaN: {torch.isnan(y_real).any().item()}")
-            
-            # Try to isolate where NaNs come from
-            with torch.no_grad():
-                test_stim = eye_stim[:10]  # First 10 frames
-                print(f"\nTesting model with first 10 frames...")
-                print(f"  test_stim contains NaN: {torch.isnan(test_stim).any().item()}")
-                
-                # Normalize stimulus (model expects normalized input)
-                test_stim_norm = (test_stim - 127.0) / 255.0
-                print(f"  test_stim_norm range: [{test_stim_norm.min().item():.4f}, {test_stim_norm.max().item():.4f}]")
-                print(f"  test_stim_norm contains NaN: {torch.isnan(test_stim_norm).any().item()}")
-        
-        # Compute spatial info
+            has_nan = torch.isnan(eye_stim).any().item()
+            if has_nan:
+                print("eye_stim contains NaN: True")
+            else:
+                print(
+                    f"eye_stim min: {eye_stim.min().item():.4f}, max: {eye_stim.max().item():.4f}, mean: {eye_stim.mean().item():.4f}"
+                )
+                print("eye_stim contains NaN: False")
+
         ispike_real, irate_real, I_t_real = spatial_ssi_population(y_real)
-        
-        # Average over time to get scalar values
-        ispike_real_val = ispike_real.mean().item()
-        irate_real_val = irate_real.mean().item()
-        I_t_real_val = I_t_real.mean().item()
-        
+        ispike_real_val = float(ispike_real.mean().item())
+        irate_real_val = float(irate_real.mean().item())
+        I_t_real_val = float(I_t_real.mean().item())
+
         i_spikes_eye_scale.append(ispike_real_val)
         i_rates_eye_scale.append(irate_real_val)
         I_t_eye_scale.append(I_t_real_val)
-        
+
         if i_eye == 0 or i_eye == len(eye_scale_list) - 1:
-            print(f"  Sacc={sacc_rate}Hz, EyeScale={eye_scale:.2f}: "
-                  f"bits/spike={ispike_real_val:.4f}, bits/sec={irate_real_val:.4f}")
+            print(
+                f"  Sacc={sacc_rate}Hz, EyeScale={eye_scale:.2f}: bits/spike={ispike_real_val:.4f}, bits/sec={irate_real_val:.4f}"
+            )
+
+    # Store per-saccade-rate row
+    results_full['i_spikes'].append(i_spikes_eye_scale)
+    results_full['i_rates'].append(i_rates_eye_scale)
+    results_full['I_t'].append(I_t_eye_scale)
+
+# Convert to arrays for plotting/indexing
+results_full['i_spikes'] = np.asarray(results_full['i_spikes'], dtype=np.float32)
+results_full['i_rates'] = np.asarray(results_full['i_rates'], dtype=np.float32)
+results_full['I_t'] = np.asarray(results_full['I_t'], dtype=np.float32)
 
 # %% Save results
 output_path = '../declan/hybrid_eye_trace_full_sweep_backimage.pkl'

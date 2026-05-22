@@ -25,7 +25,22 @@ import yaml
 from tqdm import tqdm
 
 # DataYatesV1 package imports
-from DataYatesV1 import get_session
+#
+# Many analyses in this repo only need to *load a checkpoint* (e.g. for
+# representation diagnostics) and do not require the external DataYatesV1
+# dataset/runtime. Importing DataYatesV1 at module import time can therefore
+# break unrelated workflows when the package is absent or partially installed.
+#
+# We defer/soften this import so that `load_model()` remains usable in minimal
+# environments.
+try:
+    from DataYatesV1 import get_session  # type: ignore
+except Exception:  # pragma: no cover
+    def get_session(*_args, **_kwargs):  # type: ignore
+        raise ImportError(
+            "DataYatesV1 is not available (or is missing get_session). "
+            "Dataset-loading evaluation utilities require DataYatesV1, but model-only loading does not."
+        )
 from models.losses import PoissonBPSAggregator
 
 # Import the training module to access the model class

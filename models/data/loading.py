@@ -83,10 +83,31 @@ def get_embedded_datasets(sess, types=None, keys_lags=None, train_val_split=None
         # Filter by cell IDs if specified
         if cids is not None:
             dset.metadata['cids'] = cids
-            dset['robs'] = dset['robs'][:,cids]
+            # If all_cids is in metadata, cids are raw cluster IDs that need to be
+            # mapped to column indices via the sorted cluster-ID array stored at
+            # dataset generation time (Rowley sessions).  Otherwise treat cids
+            # directly as column indices (Yates sessions).
+            all_cids = dset.metadata.get('all_cids', None)
+            if all_cids is not None:
+                all_cids_arr = np.asarray(all_cids)
+                cids_arr = np.asarray(cids)
+                col_indices = np.searchsorted(all_cids_arr, cids_arr).astype(np.intp)
+                in_range = col_indices < len(all_cids_arr)
+                found = in_range.copy()
+                found[in_range] = all_cids_arr[col_indices[in_range]] == cids_arr[in_range]
+                if not found.all():
+                    missing = cids_arr[~found]
+                    raise ValueError(
+                        f"Config cids not found in dataset all_cids: {missing}. "
+                        "Check that the session YAML cids match the sorted cluster IDs "
+                        "returned by sess.get_cluster_ids()."
+                    )
+            else:
+                col_indices = np.asarray(cids)
+            dset['robs'] = dset['robs'][:, col_indices]
             if 'dfs' in dset and dset['dfs'].ndim == 2:
                 if (dset['dfs'].shape[1] > 1) and (dset['dfs'].shape[1] != len(cids)):
-                    dset['dfs'] = dset['dfs'][:,cids]
+                    dset['dfs'] = dset['dfs'][:, col_indices]
 
         dsets.append(dset)
 
@@ -392,8 +413,10 @@ def prepare_data(dataset_config: Dict[str, Any], strict: bool = True):
     
     sess = get_session(*sess_name.split("_"))
 
-    # For Rowley sessions, datasets live under {eye}_eye/ subdirectories
-    if lab.lower() == "rowley":
+    # For Rowley sessions, prefer the explicit dataset directory from the
+    # session YAML. Fall back to the historical processed_path/datasets/{eye}_eye
+    # layout only when no directory was provided.
+    if lab.lower() == "rowley" and not dataset_config.get("directory"):
         eye = dataset_config.get("eye", "right")
         dataset_config["directory"] = str(
             sess.processed_path / "datasets" / f"{eye}_eye"

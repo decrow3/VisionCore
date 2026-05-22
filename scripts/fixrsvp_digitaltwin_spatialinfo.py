@@ -332,8 +332,8 @@ _ = plt.plot(eyepos[:,:,0].T, alpha=0.1)
 #%% Generate stimulus stack
 ppd = 37.50476617
 frames_per_im = 6
-full_stack = get_fixrsvp_stack(frames_per_im=frames_per_im)
-print(f"Full stimulus stack shape: {full_stack.shape}")
+full_stack_rsvp = get_fixrsvp_stack(frames_per_im=frames_per_im)
+print(f"Full stimulus stack shape: {full_stack_rsvp.shape}")
 
 #%% Counterfactual eye trace
 n_lags = 32
@@ -346,12 +346,12 @@ frame = None
 type = 'fixrsvp'
 frames_per_im = 1
 
-full_stack = make_stimulus_stack(type=type,
+full_stack_rsvp = make_stimulus_stack(type=type,
         frame=frame, frames_per_im=frames_per_im)
 
 
 #%% Plot all images
-N = full_stack.shape[0]
+N = full_stack_rsvp.shape[0]
 sx = int(np.sqrt(N))
 sy = int(np.ceil(N / sx))
 fig, axs = plt.subplots(sy, sx, figsize=(2*sx, 2*sy), sharex=True, sharey=False)
@@ -359,14 +359,14 @@ for i in range(sx*sy):
     if i >= N:
         axs.flatten()[i].axis('off')
         continue
-    im = full_stack[i][250:350][:, 250:350]
+    im = full_stack_rsvp[i][250:350][:, 250:350]
     axs.flatten()[i].imshow(im, cmap='gray')
     axs.flatten()[i].axis('off')
     axs.flatten()[i].set_title(f'{i}')
 plt.show()
 
 # calcualte the power spectrum for each image
-f, Pr = radial_power_spectra_np(full_stack, ppd=ppd, window=True)       # (B,), (N,B)
+f, Pr = radial_power_spectra_np(full_stack_rsvp, ppd=ppd, window=True)       # (B,), (N,B)
 fig, axs = plt.subplots(sy, sx, figsize=(2*sx, 2*sy), sharex=True, sharey=False)
 for i in range(sx*sy):
     if i >= N:
@@ -384,15 +384,15 @@ plt.show()
 
 #%% Find a long fixation to use
 trial_list = np.argsort(fix_dur)[::-1]
-itrial = trial_list[1]
+itrial = trial_list[1]# trial_list[18]
 
 plt.figure()
 plt.plot(eyepos[itrial])
 plt.show()
 
 #%% run one image to get a sense
-iframe = 29
-y, y_null, eye_stim, eye_stim_null = get_trial_stim_and_rates(eyepos[itrial], full_stack[[iframe]].repeat(fix_dur[itrial]+n_lags+1, axis=0), out_size=out_size, n_lags=n_lags, scale=scale)
+iframe = 3#29#36#10#63#
+y, y_null, eye_stim, eye_stim_null = get_trial_stim_and_rates(eyepos[itrial], full_stack_rsvp[[iframe]].repeat(fix_dur[itrial]+n_lags+1, axis=0), out_size=out_size, n_lags=n_lags, scale=scale)
 
 #%% Compute information from rate maps
 ispike, irate, I_t = spatial_ssi_population(y)
@@ -410,8 +410,69 @@ import imageio.v2 as imageio
 frames = eye_stim[:,0,-1,:,:]
 # normalize from 0 to 1
 frames = (255*(frames - frames.min()) / (frames.max() - frames.min())).numpy().astype(np.uint8)
-imageio.mimsave(f'../figures/spatial_info_fixrsvpstatic_{iframe}_{itrial}_stimulus.mp4', frames, fps=30, format="FFMPEG")
+imageio.mimsave(f'../figures/spatial_info_fixrsvpstatic_{iframe}_{itrial}_stimulus.mp4', frames, fps=15, format="FFMPEG")
 # make_movie(eye_stim, save_path=, n_units_to_show=units_to_show)
+
+#%%
+import imageio.v2 as imageio
+import numpy as np
+import imageio.v2 as imageio
+
+MOVIE_FPS = 15
+LAG_IDX = 1
+
+def _pad_even_hw(frames_u8: np.ndarray) -> np.ndarray:
+    # frames_u8: (T,H,W)
+    T, H, W = frames_u8.shape
+    H2 = H + (H % 2)
+    W2 = W + (W % 2)
+    if H2 == H and W2 == W:
+        return frames_u8
+    out = np.zeros((T, H2, W2), dtype=frames_u8.dtype)
+    out[:, :H, :W] = frames_u8
+    return out
+
+def save_stimulus_movie_synced(eye_stim, y, out_mp4):
+    T = min(int(eye_stim.shape[0]), int(y.shape[0]))
+    frames = eye_stim[:T, 0, LAG_IDX, :, :]
+    frames = (255 * (frames - frames.min()) / (frames.max() - frames.min() + 1e-8))
+    frames = frames.detach().cpu().numpy().astype(np.uint8)
+    frames = _pad_even_hw(frames)  # <- key fix for 151x151
+
+    imageio.mimsave(
+        out_mp4,
+        frames,
+        fps=MOVIE_FPS,
+        format="FFMPEG",
+        codec="libx264",
+    )
+#%% FixRSVP movie with synced stimulus (real eye trace)
+make_movie(
+    y,
+    save_path=f"spatial_info_fixrsvpstatic_{iframe}_{itrial}_activations",
+    n_units_to_show=units_to_show,
+    fps=MOVIE_FPS,
+)
+save_stimulus_movie_synced(
+    eye_stim,
+    y,
+    f"../figures/spatial_info_fixrsvpstatic_{iframe}_{itrial}_stimulus.mp4",
+)
+
+#%% FixRSVP movie with synced stimulus (stable eye trace = mean position)
+make_movie(
+    y_null,
+    save_path=f"spatial_info_fixrsvpstatic_{iframe}_{itrial}_activations_stableeye",
+    n_units_to_show=units_to_show,
+    fps=MOVIE_FPS,
+)
+save_stimulus_movie_synced(
+    eye_stim_null,
+    y_null,
+    f"../figures/spatial_info_fixrsvpstatic_{iframe}_{itrial}_stimulus_stableeye.mp4",
+)
+
+
 
 #%% plot rates for some of the units that were shown in the movie
 for cc in units_to_show:
@@ -480,7 +541,7 @@ plt.show()
 
 
 #%% run one image to get a sense
-iframe = 24
+iframe = 21#24#26#20#
 y, y_null, eye_stim, eye_stim_null = get_trial_stim_and_rates(eyepos[itrial], full_stack[[iframe]].repeat(fix_dur[itrial]+n_lags+1, axis=0), out_size=out_size, n_lags=n_lags, scale=scale)
 
 #%% Compute information from rate maps
@@ -499,8 +560,35 @@ import imageio.v2 as imageio
 frames = eye_stim[:,0,-1,:,:]
 # normalize from 0 to 1
 frames = (255*(frames - frames.min()) / (frames.max() - frames.min())).numpy().astype(np.uint8)
-imageio.mimsave(f'../figures/spatial_info_natstatic_{iframe}_{itrial}_stimulus.mp4', frames, fps=30, format="FFMPEG")
+imageio.mimsave(f'../figures/spatial_info_natstatic_{iframe}_{itrial}_stimulus.mp4', frames, fps=15, format="FFMPEG")
 # make_movie(eye_stim, save_path=, n_units_to_show=units_to_show)
+
+#%% Natstatic movie with synced stimulus
+make_movie(
+    y,
+    save_path=f"spatial_info_natstatic_{iframe}_{itrial}_activations",
+    n_units_to_show=units_to_show,
+    fps=MOVIE_FPS,
+)
+save_stimulus_movie_synced(
+    eye_stim,
+    y,
+    f"../figures/spatial_info_natstatic_{iframe}_{itrial}_stimulus.mp4",
+)
+
+#%% Natstatic movie with synced stimulus null eye trace
+make_movie(
+    y_null,
+    save_path=f"spatial_info_natstatic_{iframe}_{itrial}_activations_stableeye",
+    n_units_to_show=units_to_show,
+    fps=MOVIE_FPS,
+)
+save_stimulus_movie_synced(
+    eye_stim_null,
+    y_null,
+    f"../figures/spatial_info_natstatic_{iframe}_{itrial}_stimulus_stableeye.mp4",
+)
+
 
 #%% plot rates for some of the units that were shown in the movie
 for cc in units_to_show:
@@ -605,13 +693,13 @@ itrial = 1
 plt.plot(eyepos[itrial])
 
 frames_per_im = 1
-full_stack = make_stimulus_stack(type='nat',
+full_stack_nat = make_stimulus_stack(type='nat',
         frame=None, frames_per_im=frames_per_im)
 
 
 
 #%%
-y, y_null, eye_stim, eye_stim_null = get_trial_stim_and_rates(eyepos[itrial], full_stack, out_size, n_lags, scale)
+y, y_null, eye_stim, eye_stim_null = get_trial_stim_and_rates(eyepos[itrial], full_stack_nat, out_size, n_lags, scale)
 
 # compute spatial info
 ispike, irate, I_t = spatial_ssi_population(y)

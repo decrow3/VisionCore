@@ -92,8 +92,8 @@ ENABLE_LOGGING=true
 # Project and data paths
 PROJECT_NAME="multidataset_120"
 
-DATASET_CONFIGS_PATH="/home/jake/repos/VisionCore/experiments/dataset_configs/multi_basic_120_long.yaml"
-CHECKPOINT_DIR="/mnt/ssd/YatesMarmoV1/conv_model_fits/experiments/multidataset_120_long/checkpoints"
+DATASET_CONFIGS_PATH="$SCRIPT_DIR/experiments/dataset_configs/multi_basic_120_long_rowley.yaml"
+CHECKPOINT_DIR="${VISIONCORE_MULTIDATASET_CHECKPOINT_DIR:-$SCRIPT_DIR/checkpoints/multidataset_120_long/checkpoints}"
 
 # Create checkpoint directory
 mkdir -p $CHECKPOINT_DIR

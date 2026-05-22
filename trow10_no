@@ -1,0 +1,2441 @@
+Session: Luke_2025-07-30
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2025-07-30/datasets/left_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([17219, 160])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_left', 'dpi_valid_left', 'eyepos_right', 'dpi_valid_right', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('left-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-pupil', 'pupil_left'), ('right-dpi', 'right'), ('right-pupil', 'pupil_right')]
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-07-30/patched_pipeline_results_Luke0730_V2V1_g0_imec0/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-07-30/Luke0730_V2V1_g0_NidaqImec0timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-07-30/patched_pipeline_results_Luke0730_V2V1_g0_imec0/cur/cur_sorter_output/params.py
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-07-30/patched_pipeline_results_20250730_imec1/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-07-30/Luke0730_V2V1_g0_NidaqImec1timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-07-30/patched_pipeline_results_20250730_imec1/cur/cur_sorter_output/params.py
+Vergence loaded (eyepos_left − eyepos_right), shape (17219, 2)
+
+======================================================================
+INCLUSION CRITERIA
+======================================================================
+
+Criterion 0 — Eccentricity gate (radius=1.5°)
+  Fixation center (median valid eyepos): (0.049°, 0.219°)
+  Total serial bins:                 17219
+  dpi_valid bins:                    17191 (99.8%)
+  ecc <= 1.5° bins:              16830 (97.7%)
+  Valid DPI but ecc > radius:        361  (newly excluded by this gate)
+  Max eccentricity (from center):    51.86°
+
+Runtime datafilter — missing_pct < 45.0
+  Valid bins after truncation mask:      2675118 / 2755040
+  Units with median missing >= threshold (kept as multi-unit fallback): 128 / 160
+
+  Trials total:          65
+  Trials dur > 20 bins:  62
+
+Criterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)
+  left-eye: SNR >= 2.5: 150  |  SNR >= 5.0: 150
+  SNR source summary: left-eye=existing dots RF SNR cache
+  visual_mask (left-eye, >= 5.0; existing dots RF SNR cache): 150 / 160
+
+Criterion 2 — Spike threshold (> 200)
+  Passing: 37 / 160
+
+Pre-reliability bad-trial screen (diagnostic only)
+  Candidate units for trial diagnostics: 37 / 160
+  Flagged suspicious trials:            7 / 62
+  Low valid-bin frac outliers:          0 / 62
+  Population spike outliers:            0 / 62
+  NaN-fraction outliers:                0 / 62
+  PSTH-deviation outliers (>2.0 robust z): 7 / 62
+  Flagged trial indices (0-based):      [3, 32, 36, 40, 43, 50, 53]
+
+Criterion 3 — Split-half PSTH reliability (r², 20 splits, >= 0)
+  Passing (unmasked spikes): 160 / 160
+  Passing (truncation-QC masked, for comparison): 160 / 160
+  Units recovered by unmasking: 0
+  Passing after excluding flagged trials: 160 / 160
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/reliability_r2_histogram_Luke_2025-07-30.pdf
+
+NaN fraction gate (<= 0.2)
+  Passing: 148 / 160
+
+──────────────────────────────────────────────────
+WATERFALL REPORT
+──────────────────────────────────────────────────
+All units:               160
+After spike threshold:   37
+After dots RF SNR:       37   (left-eye, >= 5.0; existing dots RF SNR cache)
+After reliability:       37
+──────────────────────────────────────────────────
+POOL A (per-neuron):     37 / 160
+After NaN-frac gate:     33
+──────────────────────────────────────────────────
+POOL B (covariance):     33 / 160
+
+Trials (good_trials):          62 / 65
+After bad-unit-frac gate:      62 / 65   (Pool B covariance trials)
+
+==================================================
+YAML CROSS-CHECK
+==================================================
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2025-07-30_binocular_V1.yaml
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2025-07-30_right_V1.yaml
+
+visual — binocular YAML cross-check skipped (script now uses dots RF SNR on the primary eye)
+
+Pool A cluster IDs: [366, 367, 377, 399, 409, 415, 429, 430, 438, 439, 454, 458, 459, 460, 464, 469, 470, 472, 473, 478, 481, 482, 491, 492, 494, 495, 496, 497, 503, 504, 505, 512, 513, 516, 517, 518, 519]
+Pool B cluster IDs: [366, 367, 377, 399, 409, 415, 429, 430, 438, 439, 454, 458, 459, 460, 469, 472, 473, 478, 481, 482, 491, 494, 495, 496, 497, 503, 504, 505, 512, 513, 516, 517, 519]
+
+======================================================================
+Eye source: default  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/left-dpi
+======================================================================
+  62 / 65 trials kept  (Pool B: 62)
+  Running run_covariance_decomposition (62 trials, 33 Pool B units)...
+Found 57 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:10,  2.59s/it] 40%|████      | 2/5 [00:03<00:04,  1.66s/it] 60%|██████    | 3/5 [00:04<00:02,  1.11s/it] 80%|████████  | 4/5 [00:04<00:00,  1.34it/s]100%|██████████| 5/5 [00:04<00:00,  1.15it/s]
+  Running 2D conditional estimator (2512 windows, 20 ms)...
+  Pair counts (d_c rows × d_v cols):
+[[2670 2673 2081 1254  650]
+ [2988 2286 1725 1346  982]
+ [1683 1887 2022 1895 1841]
+ [1312 1486 1843 2369 2317]
+ [ 675  995 1657 2463 3538]]
+  Near-dc slope: real=-0.0261  shuffle=-0.0039
+  Cverg2d diag: mean=0.0380, max=0.3343
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/left-dpi/unit_rasters_Luke_2025-07-30.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/left-dpi/unit_cov_Luke_2025-07-30.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/left-dpi/unit_2d_cov_Luke_2025-07-30.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/left-dpi/mcfarland_fixrsvp_Luke_2025-07-30_default.pkl
+
+======================================================================
+Eye source: binocular_diff  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/binocular
+======================================================================
+  62 / 65 trials kept  (Pool B: 62)
+  Running run_covariance_decomposition (62 trials, 33 Pool B units)...
+Found 57 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:09,  2.50s/it] 40%|████      | 2/5 [00:03<00:04,  1.62s/it] 60%|██████    | 3/5 [00:03<00:02,  1.08s/it] 80%|████████  | 4/5 [00:04<00:00,  1.37it/s]100%|██████████| 5/5 [00:04<00:00,  1.19it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/binocular/unit_rasters_Luke_2025-07-30.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/binocular/unit_cov_Luke_2025-07-30.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/binocular/mcfarland_fixrsvp_Luke_2025-07-30_binocular_diff.pkl
+
+======================================================================
+Eye source: pupil_left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/left-pupil
+======================================================================
+  62 / 65 trials kept  (Pool B: 62)
+  Running run_covariance_decomposition (62 trials, 33 Pool B units)...
+Found 57 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:09,  2.43s/it] 40%|████      | 2/5 [00:03<00:04,  1.60s/it] 60%|██████    | 3/5 [00:03<00:02,  1.08s/it] 80%|████████  | 4/5 [00:04<00:00,  1.38it/s]100%|██████████| 5/5 [00:04<00:00,  1.20it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/left-pupil/unit_rasters_Luke_2025-07-30.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/left-pupil/unit_cov_Luke_2025-07-30.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/left-pupil/mcfarland_fixrsvp_Luke_2025-07-30_pupil_left.pkl
+
+======================================================================
+Eye source: right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/right-dpi
+======================================================================
+  62 / 65 trials kept  (Pool B: 62)
+  Running run_covariance_decomposition (62 trials, 33 Pool B units)...
+Found 57 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:09,  2.37s/it] 40%|████      | 2/5 [00:03<00:04,  1.57s/it] 60%|██████    | 3/5 [00:03<00:02,  1.06s/it] 80%|████████  | 4/5 [00:04<00:00,  1.40it/s]100%|██████████| 5/5 [00:04<00:00,  1.22it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/right-dpi/unit_rasters_Luke_2025-07-30.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/right-dpi/unit_cov_Luke_2025-07-30.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/right-dpi/mcfarland_fixrsvp_Luke_2025-07-30_right.pkl
+
+======================================================================
+Eye source: pupil_right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/right-pupil
+======================================================================
+  62 / 65 trials kept  (Pool B: 62)
+  Running run_covariance_decomposition (62 trials, 33 Pool B units)...
+Found 57 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:09,  2.42s/it] 40%|████      | 2/5 [00:03<00:04,  1.59s/it] 60%|██████    | 3/5 [00:03<00:02,  1.07s/it] 80%|████████  | 4/5 [00:04<00:00,  1.38it/s]100%|██████████| 5/5 [00:04<00:00,  1.20it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/right-pupil/unit_rasters_Luke_2025-07-30.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/right-pupil/unit_cov_Luke_2025-07-30.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/right-pupil/mcfarland_fixrsvp_Luke_2025-07-30_pupil_right.pkl
+
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/frac_fem_summary_Luke_2025-07-30.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/fem_fraction_comparison_Luke_2025-07-30.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-07-30_v10/frac_fem_summary_Luke_2025-07-30.txt
+
+All conditions complete.
+Session: Luke_2025-08-04
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2025-08-04/datasets/left_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([11684, 129])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_left', 'dpi_valid_left', 'eyepos_right', 'dpi_valid_right', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('left-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-pupil', 'pupil_left'), ('right-dpi', 'right'), ('right-pupil', 'pupil_right')]
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/patched_pipeline_results_Luke0804_V2V1_g0_imec0/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/Luke0804_V2V1_NidaqImec0timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/patched_pipeline_results_Luke0804_V2V1_g0_imec0/cur/cur_sorter_output/params.py
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/patched_pipeline_results_Luke0804_V2V1_g0_imec1/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/Luke0804_V2V1_NidaqImec1timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/patched_pipeline_results_Luke0804_V2V1_g0_imec1/cur/cur_sorter_output/params.py
+Vergence loaded (eyepos_left − eyepos_right), shape (11684, 2)
+
+======================================================================
+INCLUSION CRITERIA
+======================================================================
+
+Criterion 0 — Eccentricity gate (radius=1.5°)
+  Fixation center (median valid eyepos): (0.122°, 0.079°)
+  Total serial bins:                 11684
+  dpi_valid bins:                    11654 (99.7%)
+  ecc <= 1.5° bins:              10923 (93.5%)
+  Valid DPI but ecc > radius:        731  (newly excluded by this gate)
+  Max eccentricity (from center):    52.24°
+
+Runtime datafilter — missing_pct < 45.0
+  Valid bins after truncation mask:      1479519 / 1507236
+  Units with median missing >= threshold (kept as multi-unit fallback): 86 / 129
+
+  Trials total:          75
+  Trials dur > 20 bins:  65
+
+Criterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)
+  left-eye: SNR >= 2.5: 127  |  SNR >= 5.0: 127
+  SNR source summary: left-eye=existing dots RF SNR cache
+  visual_mask (left-eye, >= 5.0; existing dots RF SNR cache): 127 / 129
+
+Criterion 2 — Spike threshold (> 200)
+  Passing: 24 / 129
+
+Pre-reliability bad-trial screen (diagnostic only)
+  Candidate units for trial diagnostics: 24 / 129
+  Flagged suspicious trials:            8 / 65
+  Low valid-bin frac outliers:          0 / 65
+  Population spike outliers:            0 / 65
+  NaN-fraction outliers:                0 / 65
+  PSTH-deviation outliers (>2.0 robust z): 8 / 65
+  Flagged trial indices (0-based):      [27, 42, 48, 49, 51, 61, 63, 64]
+
+Criterion 3 — Split-half PSTH reliability (r², 20 splits, >= 0)
+  Passing (unmasked spikes): 129 / 129
+  Passing (truncation-QC masked, for comparison): 129 / 129
+  Units recovered by unmasking: 0
+  Passing after excluding flagged trials: 129 / 129
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/reliability_r2_histogram_Luke_2025-08-04.pdf
+
+NaN fraction gate (<= 0.2)
+  Passing: 121 / 129
+
+──────────────────────────────────────────────────
+WATERFALL REPORT
+──────────────────────────────────────────────────
+All units:               129
+After spike threshold:   24
+After dots RF SNR:       24   (left-eye, >= 5.0; existing dots RF SNR cache)
+After reliability:       24
+──────────────────────────────────────────────────
+POOL A (per-neuron):     24 / 129
+After NaN-frac gate:     21
+──────────────────────────────────────────────────
+POOL B (covariance):     21 / 129
+
+Trials (good_trials):          65 / 75
+After bad-unit-frac gate:      65 / 75   (Pool B covariance trials)
+
+==================================================
+YAML CROSS-CHECK
+==================================================
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2025-08-04_binocular_V1.yaml
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2025-08-04_right_V1.yaml
+
+visual — binocular YAML cross-check skipped (script now uses dots RF SNR on the primary eye)
+
+Pool A cluster IDs: [282, 306, 327, 339, 351, 355, 365, 370, 373, 374, 375, 380, 381, 386, 387, 389, 391, 393, 394, 395, 396, 398, 403, 406]
+Pool B cluster IDs: [282, 306, 327, 339, 351, 355, 365, 373, 374, 375, 380, 381, 386, 387, 389, 393, 394, 395, 398, 403, 406]
+
+======================================================================
+Eye source: default  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-dpi
+======================================================================
+  65 / 75 trials kept  (Pool B: 65)
+  Running run_covariance_decomposition (65 trials, 21 Pool B units)...
+Found 62 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:09,  2.43s/it] 40%|████      | 2/5 [00:03<00:04,  1.56s/it] 60%|██████    | 3/5 [00:03<00:02,  1.05s/it] 80%|████████  | 4/5 [00:04<00:00,  1.41it/s]100%|██████████| 5/5 [00:04<00:00,  1.22it/s]
+  Running 2D conditional estimator (2288 windows, 20 ms)...
+  Pair counts (d_c rows × d_v cols):
+[[3022 2357 1804 1061  905]
+ [2415 2264 1772 1536 1161]
+ [2031 2157 1713 1608 1639]
+ [1181 1400 2072 2201 2294]
+ [ 500  970 1787 2742 3149]]
+  Near-dc slope: real=0.0640  shuffle=0.0624
+  Cverg2d diag: mean=0.0125, max=0.1156
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-dpi/unit_rasters_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-dpi/unit_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-dpi/unit_2d_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-dpi/mcfarland_fixrsvp_Luke_2025-08-04_default.pkl
+
+======================================================================
+Eye source: binocular_diff  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/binocular
+======================================================================
+  65 / 75 trials kept  (Pool B: 65)
+  Running run_covariance_decomposition (65 trials, 21 Pool B units)...
+Found 62 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:09,  2.26s/it] 40%|████      | 2/5 [00:03<00:04,  1.48s/it] 60%|██████    | 3/5 [00:03<00:01,  1.00it/s] 80%|████████  | 4/5 [00:03<00:00,  1.49it/s]100%|██████████| 5/5 [00:03<00:00,  1.29it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/binocular/unit_rasters_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/binocular/unit_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/binocular/mcfarland_fixrsvp_Luke_2025-08-04_binocular_diff.pkl
+
+======================================================================
+Eye source: pupil_left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-pupil
+======================================================================
+  65 / 75 trials kept  (Pool B: 65)
+  Running run_covariance_decomposition (65 trials, 21 Pool B units)...
+Found 62 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:09,  2.25s/it] 40%|████      | 2/5 [00:03<00:04,  1.49s/it] 60%|██████    | 3/5 [00:03<00:02,  1.01s/it] 80%|████████  | 4/5 [00:03<00:00,  1.47it/s]100%|██████████| 5/5 [00:03<00:00,  1.28it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-pupil/unit_rasters_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-pupil/unit_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-pupil/mcfarland_fixrsvp_Luke_2025-08-04_pupil_left.pkl
+
+======================================================================
+Eye source: right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-dpi
+======================================================================
+  65 / 75 trials kept  (Pool B: 65)
+  Running run_covariance_decomposition (65 trials, 21 Pool B units)...
+Found 62 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:09,  2.26s/it] 40%|████      | 2/5 [00:03<00:04,  1.49s/it] 60%|██████    | 3/5 [00:03<00:02,  1.00s/it] 80%|████████  | 4/5 [00:03<00:00,  1.47it/s]100%|██████████| 5/5 [00:03<00:00,  1.28it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-dpi/unit_rasters_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-dpi/unit_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-dpi/mcfarland_fixrsvp_Luke_2025-08-04_right.pkl
+
+======================================================================
+Eye source: pupil_right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-pupil
+======================================================================
+  65 / 75 trials kept  (Pool B: 65)
+  Running run_covariance_decomposition (65 trials, 21 Pool B units)...
+Found 62 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:08,  2.23s/it] 40%|████      | 2/5 [00:03<00:04,  1.47s/it] 60%|██████    | 3/5 [00:03<00:02,  1.00s/it] 80%|████████  | 4/5 [00:03<00:00,  1.48it/s]100%|██████████| 5/5 [00:03<00:00,  1.29it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-pupil/unit_rasters_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-pupil/unit_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-pupil/mcfarland_fixrsvp_Luke_2025-08-04_pupil_right.pkl
+
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/frac_fem_summary_Luke_2025-08-04.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/fem_fraction_comparison_Luke_2025-08-04.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/frac_fem_summary_Luke_2025-08-04.txt
+
+All conditions complete.
+Session: Luke_2025-08-04
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2025-08-04/datasets_gaussian/left_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([11684, 129])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_left', 'dpi_valid_left', 'eyepos_right', 'dpi_valid_right', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('left-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-pupil', 'pupil_left'), ('right-dpi', 'right'), ('right-pupil', 'pupil_right')]
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/patched_pipeline_results_Luke0804_V2V1_g0_imec0/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/Luke0804_V2V1_NidaqImec0timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/patched_pipeline_results_Luke0804_V2V1_g0_imec0/cur/cur_sorter_output/params.py
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/patched_pipeline_results_Luke0804_V2V1_g0_imec1/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/Luke0804_V2V1_NidaqImec1timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/patched_pipeline_results_Luke0804_V2V1_g0_imec1/cur/cur_sorter_output/params.py
+Vergence loaded (eyepos_left − eyepos_right), shape (11684, 2)
+
+======================================================================
+INCLUSION CRITERIA
+======================================================================
+
+Criterion 0 — Eccentricity gate (radius=1.5°)
+  Fixation center (median valid eyepos): (0.122°, 0.079°)
+  Total serial bins:                 11684
+  dpi_valid bins:                    11654 (99.7%)
+  ecc <= 1.5° bins:              10923 (93.5%)
+  Valid DPI but ecc > radius:        731  (newly excluded by this gate)
+  Max eccentricity (from center):    52.24°
+
+Runtime datafilter — missing_pct < 45.0
+  Valid bins after truncation mask:      1479519 / 1507236
+  Units with median missing >= threshold (kept as multi-unit fallback): 86 / 129
+
+  Trials total:          75
+  Trials dur > 20 bins:  65
+
+Criterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)
+  left-eye: SNR >= 2.5: 127  |  SNR >= 5.0: 127
+  SNR source summary: left-eye=existing dots RF SNR cache
+  visual_mask (left-eye, >= 5.0; existing dots RF SNR cache): 127 / 129
+
+Criterion 2 — Spike threshold (> 200)
+  Passing: 24 / 129
+
+Pre-reliability bad-trial screen (diagnostic only)
+  Candidate units for trial diagnostics: 24 / 129
+  Flagged suspicious trials:            8 / 65
+  Low valid-bin frac outliers:          0 / 65
+  Population spike outliers:            0 / 65
+  NaN-fraction outliers:                0 / 65
+  PSTH-deviation outliers (>2.0 robust z): 8 / 65
+  Flagged trial indices (0-based):      [27, 42, 48, 49, 51, 61, 63, 64]
+
+Criterion 3 — Split-half PSTH reliability (r², 20 splits, >= 0)
+  Passing (unmasked spikes): 129 / 129
+  Passing (truncation-QC masked, for comparison): 129 / 129
+  Units recovered by unmasking: 0
+  Passing after excluding flagged trials: 129 / 129
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/reliability_r2_histogram_Luke_2025-08-04.pdf
+
+NaN fraction gate (<= 0.2)
+  Passing: 121 / 129
+
+──────────────────────────────────────────────────
+WATERFALL REPORT
+──────────────────────────────────────────────────
+All units:               129
+After spike threshold:   24
+After dots RF SNR:       24   (left-eye, >= 5.0; existing dots RF SNR cache)
+After reliability:       24
+──────────────────────────────────────────────────
+POOL A (per-neuron):     24 / 129
+After NaN-frac gate:     21
+──────────────────────────────────────────────────
+POOL B (covariance):     21 / 129
+
+Trials (good_trials):          65 / 75
+After bad-unit-frac gate:      65 / 75   (Pool B covariance trials)
+
+==================================================
+YAML CROSS-CHECK
+==================================================
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2025-08-04_binocular_V1.yaml
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2025-08-04_right_V1.yaml
+
+visual — binocular YAML cross-check skipped (script now uses dots RF SNR on the primary eye)
+
+Pool A cluster IDs: [282, 306, 327, 339, 351, 355, 365, 370, 373, 374, 375, 380, 381, 386, 387, 389, 391, 393, 394, 395, 396, 398, 403, 406]
+Pool B cluster IDs: [282, 306, 327, 339, 351, 355, 365, 373, 374, 375, 380, 381, 386, 387, 389, 393, 394, 395, 398, 403, 406]
+
+======================================================================
+Eye source: default  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-dpi
+======================================================================
+  65 / 75 trials kept  (Pool B: 65)
+  Running run_covariance_decomposition (65 trials, 21 Pool B units)...
+Found 62 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:09,  2.41s/it] 40%|████      | 2/5 [00:03<00:04,  1.55s/it] 60%|██████    | 3/5 [00:03<00:02,  1.04s/it] 80%|████████  | 4/5 [00:03<00:00,  1.42it/s]100%|██████████| 5/5 [00:04<00:00,  1.23it/s]
+  Running 2D conditional estimator (2288 windows, 20 ms)...
+  Pair counts (d_c rows × d_v cols):
+[[3022 2357 1804 1061  905]
+ [2415 2264 1772 1536 1161]
+ [2031 2157 1713 1608 1639]
+ [1181 1400 2072 2201 2294]
+ [ 500  970 1787 2742 3149]]
+  Near-dc slope: real=0.0640  shuffle=0.0624
+  Cverg2d diag: mean=0.0125, max=0.1156
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-dpi/unit_rasters_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-dpi/unit_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-dpi/unit_2d_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-dpi/mcfarland_fixrsvp_Luke_2025-08-04_default.pkl
+
+======================================================================
+Eye source: binocular_diff  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/binocular
+======================================================================
+  65 / 75 trials kept  (Pool B: 65)
+  Running run_covariance_decomposition (65 trials, 21 Pool B units)...
+Found 62 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:08,  2.24s/it] 40%|████      | 2/5 [00:03<00:04,  1.46s/it] 60%|██████    | 3/5 [00:03<00:01,  1.01it/s] 80%|████████  | 4/5 [00:03<00:00,  1.50it/s]100%|██████████| 5/5 [00:03<00:00,  1.30it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/binocular/unit_rasters_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/binocular/unit_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/binocular/mcfarland_fixrsvp_Luke_2025-08-04_binocular_diff.pkl
+
+======================================================================
+Eye source: pupil_left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-pupil
+======================================================================
+  65 / 75 trials kept  (Pool B: 65)
+  Running run_covariance_decomposition (65 trials, 21 Pool B units)...
+Found 62 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:08,  2.24s/it] 40%|████      | 2/5 [00:03<00:04,  1.48s/it] 60%|██████    | 3/5 [00:03<00:01,  1.00it/s] 80%|████████  | 4/5 [00:03<00:00,  1.48it/s]100%|██████████| 5/5 [00:03<00:00,  1.29it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-pupil/unit_rasters_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-pupil/unit_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-pupil/mcfarland_fixrsvp_Luke_2025-08-04_pupil_left.pkl
+
+======================================================================
+Eye source: right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-dpi
+======================================================================
+  65 / 75 trials kept  (Pool B: 65)
+  Running run_covariance_decomposition (65 trials, 21 Pool B units)...
+Found 62 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:08,  2.17s/it] 40%|████      | 2/5 [00:03<00:04,  1.44s/it] 60%|██████    | 3/5 [00:03<00:01,  1.02it/s] 80%|████████  | 4/5 [00:03<00:00,  1.50it/s]100%|██████████| 5/5 [00:03<00:00,  1.32it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-dpi/unit_rasters_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-dpi/unit_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-dpi/mcfarland_fixrsvp_Luke_2025-08-04_right.pkl
+
+======================================================================
+Eye source: pupil_right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-pupil
+======================================================================
+  65 / 75 trials kept  (Pool B: 65)
+  Running run_covariance_decomposition (65 trials, 21 Pool B units)...
+Found 62 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:08,  2.22s/it] 40%|████      | 2/5 [00:03<00:04,  1.47s/it] 60%|██████    | 3/5 [00:03<00:01,  1.01it/s] 80%|████████  | 4/5 [00:03<00:00,  1.49it/s]100%|██████████| 5/5 [00:03<00:00,  1.30it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-pupil/unit_rasters_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-pupil/unit_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-pupil/mcfarland_fixrsvp_Luke_2025-08-04_pupil_right.pkl
+
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/frac_fem_summary_Luke_2025-08-04.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/fem_fraction_comparison_Luke_2025-08-04.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/frac_fem_summary_Luke_2025-08-04.txt
+
+All conditions complete.
+Session: Luke_2025-08-04
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2025-08-04/datasets_gaussian/right_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([11684, 129])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_right', 'dpi_valid_right', 'eyepos_left', 'dpi_valid_left', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('right-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-dpi', 'left'), ('left-pupil', 'pupil_left'), ('right-pupil', 'pupil_right')]
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/patched_pipeline_results_Luke0804_V2V1_g0_imec0/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/Luke0804_V2V1_NidaqImec0timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/patched_pipeline_results_Luke0804_V2V1_g0_imec0/cur/cur_sorter_output/params.py
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/patched_pipeline_results_Luke0804_V2V1_g0_imec1/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/Luke0804_V2V1_NidaqImec1timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-04/patched_pipeline_results_Luke0804_V2V1_g0_imec1/cur/cur_sorter_output/params.py
+Vergence loaded (eyepos_left − eyepos_right), shape (11684, 2)
+
+======================================================================
+INCLUSION CRITERIA
+======================================================================
+
+Criterion 0 — Eccentricity gate (radius=1.5°)
+  Fixation center (median valid eyepos): (0.035°, 0.092°)
+  Total serial bins:                 11684
+  dpi_valid bins:                    11657 (99.8%)
+  ecc <= 1.5° bins:              11508 (98.5%)
+  Valid DPI but ecc > radius:        149  (newly excluded by this gate)
+  Max eccentricity (from center):    45.36°
+
+Runtime datafilter — missing_pct < 45.0
+  Valid bins after truncation mask:      1479519 / 1507236
+  Units with median missing >= threshold (kept as multi-unit fallback): 86 / 129
+
+  Trials total:          75
+  Trials dur > 20 bins:  71
+
+Criterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)
+  right-eye: SNR >= 2.5: 128  |  SNR >= 5.0: 128
+  SNR source summary: right-eye=existing dots RF SNR cache
+  visual_mask (right-eye, >= 5.0; existing dots RF SNR cache): 128 / 129
+
+Criterion 2 — Spike threshold (> 200)
+  Passing: 25 / 129
+
+Pre-reliability bad-trial screen (diagnostic only)
+  Candidate units for trial diagnostics: 25 / 129
+  Flagged suspicious trials:            7 / 71
+  Low valid-bin frac outliers:          0 / 71
+  Population spike outliers:            0 / 71
+  NaN-fraction outliers:                0 / 71
+  PSTH-deviation outliers (>2.0 robust z): 7 / 71
+  Flagged trial indices (0-based):      [30, 48, 54, 55, 57, 67, 70]
+
+Criterion 3 — Split-half PSTH reliability (r², 20 splits, >= 0)
+  Passing (unmasked spikes): 129 / 129
+  Passing (truncation-QC masked, for comparison): 129 / 129
+  Units recovered by unmasking: 0
+  Passing after excluding flagged trials: 129 / 129
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/reliability_r2_histogram_Luke_2025-08-04.pdf
+
+NaN fraction gate (<= 0.2)
+  Passing: 121 / 129
+
+──────────────────────────────────────────────────
+WATERFALL REPORT
+──────────────────────────────────────────────────
+All units:               129
+After spike threshold:   25
+After dots RF SNR:       25   (right-eye, >= 5.0; existing dots RF SNR cache)
+After reliability:       25
+──────────────────────────────────────────────────
+POOL A (per-neuron):     25 / 129
+After NaN-frac gate:     22
+──────────────────────────────────────────────────
+POOL B (covariance):     22 / 129
+
+Trials (good_trials):          71 / 75
+After bad-unit-frac gate:      71 / 75   (Pool B covariance trials)
+
+==================================================
+YAML CROSS-CHECK
+==================================================
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2025-08-04_binocular_V1.yaml
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2025-08-04_right_V1.yaml
+
+visual — binocular YAML cross-check skipped (script now uses dots RF SNR on the primary eye)
+
+Pool A cluster IDs: [282, 306, 327, 339, 351, 355, 365, 370, 373, 374, 375, 380, 381, 386, 387, 389, 391, 392, 393, 394, 395, 396, 398, 403, 406]
+Pool B cluster IDs: [282, 306, 327, 339, 351, 355, 365, 373, 374, 375, 380, 381, 386, 387, 389, 392, 393, 394, 395, 398, 403, 406]
+
+======================================================================
+Eye source: default  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-dpi
+======================================================================
+  71 / 75 trials kept  (Pool B: 71)
+  Running run_covariance_decomposition (71 trials, 22 Pool B units)...
+Found 63 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:09,  2.46s/it] 40%|████      | 2/5 [00:03<00:04,  1.57s/it] 60%|██████    | 3/5 [00:03<00:02,  1.06s/it] 80%|████████  | 4/5 [00:04<00:00,  1.41it/s]100%|██████████| 5/5 [00:04<00:00,  1.21it/s]
+  Running 2D conditional estimator (2412 windows, 20 ms)...
+  Pair counts (d_c rows × d_v cols):
+[[4105 2806 1889 1619  762]
+ [3363 2926 2068 1903  920]
+ [2357 2648 2474 2164 1538]
+ [1018 2012 2736 2566 2848]
+ [ 338  788 2014 2928 5113]]
+  Near-dc slope: real=0.0319  shuffle=0.0231
+  Cverg2d diag: mean=0.0165, max=0.1188
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-dpi/unit_rasters_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-dpi/unit_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-dpi/unit_2d_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-dpi/mcfarland_fixrsvp_Luke_2025-08-04_default.pkl
+
+======================================================================
+Eye source: binocular_diff  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/binocular
+======================================================================
+  71 / 75 trials kept  (Pool B: 71)
+  Running run_covariance_decomposition (71 trials, 22 Pool B units)...
+Found 63 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:09,  2.36s/it] 40%|████      | 2/5 [00:03<00:04,  1.54s/it] 60%|██████    | 3/5 [00:03<00:02,  1.04s/it] 80%|████████  | 4/5 [00:03<00:00,  1.43it/s]100%|██████████| 5/5 [00:04<00:00,  1.24it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/binocular/unit_rasters_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/binocular/unit_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/binocular/mcfarland_fixrsvp_Luke_2025-08-04_binocular_diff.pkl
+
+======================================================================
+Eye source: left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-dpi
+======================================================================
+  71 / 75 trials kept  (Pool B: 71)
+  Running run_covariance_decomposition (71 trials, 22 Pool B units)...
+Found 63 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:09,  2.30s/it] 40%|████      | 2/5 [00:03<00:04,  1.52s/it] 60%|██████    | 3/5 [00:03<00:02,  1.02s/it] 80%|████████  | 4/5 [00:03<00:00,  1.45it/s]100%|██████████| 5/5 [00:03<00:00,  1.26it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-dpi/unit_rasters_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-dpi/unit_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-dpi/mcfarland_fixrsvp_Luke_2025-08-04_left.pkl
+
+======================================================================
+Eye source: pupil_left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-pupil
+======================================================================
+  71 / 75 trials kept  (Pool B: 71)
+  Running run_covariance_decomposition (71 trials, 22 Pool B units)...
+Found 63 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:09,  2.28s/it] 40%|████      | 2/5 [00:03<00:04,  1.51s/it] 60%|██████    | 3/5 [00:03<00:02,  1.02s/it] 80%|████████  | 4/5 [00:03<00:00,  1.45it/s]100%|██████████| 5/5 [00:03<00:00,  1.27it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-pupil/unit_rasters_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-pupil/unit_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/left-pupil/mcfarland_fixrsvp_Luke_2025-08-04_pupil_left.pkl
+
+======================================================================
+Eye source: pupil_right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-pupil
+======================================================================
+  71 / 75 trials kept  (Pool B: 71)
+  Running run_covariance_decomposition (71 trials, 22 Pool B units)...
+Found 63 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:09,  2.29s/it] 40%|████      | 2/5 [00:03<00:04,  1.52s/it] 60%|██████    | 3/5 [00:03<00:02,  1.02s/it] 80%|████████  | 4/5 [00:03<00:00,  1.45it/s]100%|██████████| 5/5 [00:03<00:00,  1.26it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-pupil/unit_rasters_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-pupil/unit_cov_Luke_2025-08-04.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/right-pupil/mcfarland_fixrsvp_Luke_2025-08-04_pupil_right.pkl
+
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/frac_fem_summary_Luke_2025-08-04.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/fem_fraction_comparison_Luke_2025-08-04.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2025-08-04_v10/frac_fem_summary_Luke_2025-08-04.txt
+
+All conditions complete.
+Session: Luke_2025-08-05
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2025-08-05/datasets/right_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([6442, 134])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_right', 'dpi_valid_right', 'eyepos_left', 'dpi_valid_left', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('right-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-dpi', 'left'), ('left-pupil', 'pupil_left'), ('right-pupil', 'pupil_right')]
+Traceback (most recent call last):
+  File "/home/declan/VisionCore/scripts/test_rowley10.py", line 692, in <module>
+    missing_pct_mask, missing_pct_values, chronic_missing_units = _compute_missing_pct_mask(
+                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/declan/VisionCore/scripts/test_rowley10.py", line 356, in _compute_missing_pct_mask
+    missing_pct_fun = session.get_missing_pct_interp(cids)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/declan/DataRowleyV1V2/DataRowleyV1V2/data/registry.py", line 1623, in get_missing_pct_interp
+    all_cids, all_time_windows, all_mpcts = self.get_missing_pct_qc(shanks)
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/declan/DataRowleyV1V2/DataRowleyV1V2/data/registry.py", line 1513, in get_missing_pct_qc
+    shank_info = self._get_shank_cluster_offsets(shanks)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/declan/DataRowleyV1V2/DataRowleyV1V2/data/registry.py", line 1016, in _get_shank_cluster_offsets
+    raise FileNotFoundError(
+FileNotFoundError: Kilosort output directory not found: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-05/patched_pipeline_results_Luke0805_V2V1_g0_imec0/cur/cur_sorter_output
+Session: Luke_2025-08-05
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2025-08-05/datasets_gaussian/right_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([6442, 134])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_right', 'dpi_valid_right', 'eyepos_left', 'dpi_valid_left', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('right-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-dpi', 'left'), ('left-pupil', 'pupil_left'), ('right-pupil', 'pupil_right')]
+Traceback (most recent call last):
+  File "/home/declan/VisionCore/scripts/test_rowley10.py", line 692, in <module>
+    missing_pct_mask, missing_pct_values, chronic_missing_units = _compute_missing_pct_mask(
+                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/declan/VisionCore/scripts/test_rowley10.py", line 356, in _compute_missing_pct_mask
+    missing_pct_fun = session.get_missing_pct_interp(cids)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/declan/DataRowleyV1V2/DataRowleyV1V2/data/registry.py", line 1623, in get_missing_pct_interp
+    all_cids, all_time_windows, all_mpcts = self.get_missing_pct_qc(shanks)
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/declan/DataRowleyV1V2/DataRowleyV1V2/data/registry.py", line 1513, in get_missing_pct_qc
+    shank_info = self._get_shank_cluster_offsets(shanks)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/declan/DataRowleyV1V2/DataRowleyV1V2/data/registry.py", line 1016, in _get_shank_cluster_offsets
+    raise FileNotFoundError(
+FileNotFoundError: Kilosort output directory not found: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2025-08-05/patched_pipeline_results_Luke0805_V2V1_g0_imec0/cur/cur_sorter_output
+Session: Luke_2026-03-01
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2026-03-01/datasets_gaussian/right_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([46757, 279])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_right', 'dpi_valid_right', 'eyepos_left', 'dpi_valid_left', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('right-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-dpi', 'left'), ('left-pupil', 'pupil_left'), ('right-pupil', 'pupil_right')]
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-01/patched_pipeline_results_Luke03012026_V2V1_RH_g0_imec0/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-01/Luke03012026_V2V1_RH_g0_NidaqImec0timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-01/patched_pipeline_results_Luke03012026_V2V1_RH_g0_imec0/cur/cur_sorter_output/params.py
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-01/patched_pipeline_results_Luke03012026_V2V1_RH_g0_imec1/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-01/Luke03012026_V2V1_RH_g0_NidaqImec1timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-01/patched_pipeline_results_Luke03012026_V2V1_RH_g0_imec1/cur/cur_sorter_output/params.py
+Vergence loaded (eyepos_left − eyepos_right), shape (46757, 2)
+
+======================================================================
+INCLUSION CRITERIA
+======================================================================
+
+Criterion 0 — Eccentricity gate (radius=1.5°)
+  Fixation center (median valid eyepos): (0.013°, 0.128°)
+  Total serial bins:                 46757
+  dpi_valid bins:                    46617 (99.7%)
+  ecc <= 1.5° bins:              46344 (99.1%)
+  Valid DPI but ecc > radius:        273  (newly excluded by this gate)
+  Max eccentricity (from center):    48.14°
+
+Runtime datafilter — missing_pct < 45.0
+  Valid bins after truncation mask:      12615950 / 13045203
+  Units with median missing >= threshold (kept as multi-unit fallback): 230 / 279
+
+  Trials total:          295
+  Trials dur > 20 bins:  286
+
+Criterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)
+  right-eye: SNR >= 2.5: 260  |  SNR >= 5.0: 260
+  SNR source summary: right-eye=existing dots RF SNR cache
+  visual_mask (right-eye, >= 5.0; existing dots RF SNR cache): 260 / 279
+
+Criterion 2 — Spike threshold (> 200)
+  Passing: 129 / 279
+
+Pre-reliability bad-trial screen (diagnostic only)
+  Candidate units for trial diagnostics: 128 / 279
+  Flagged suspicious trials:            11 / 286
+  Low valid-bin frac outliers:          0 / 286
+  Population spike outliers:            0 / 286
+  NaN-fraction outliers:                0 / 286
+  PSTH-deviation outliers (>2.0 robust z): 11 / 286
+  Flagged trial indices (0-based):      [4, 62, 71, 73, 87, 89, 91, 165, 188, 276, 280]
+
+Criterion 3 — Split-half PSTH reliability (r², 20 splits, >= 0)
+  Passing (unmasked spikes): 279 / 279
+  Passing (truncation-QC masked, for comparison): 279 / 279
+  Units recovered by unmasking: 0
+  Passing after excluding flagged trials: 279 / 279
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/reliability_r2_histogram_Luke_2026-03-01.pdf
+
+NaN fraction gate (<= 0.2)
+  Passing: 254 / 279
+
+──────────────────────────────────────────────────
+WATERFALL REPORT
+──────────────────────────────────────────────────
+All units:               279
+After spike threshold:   129
+After dots RF SNR:       128   (right-eye, >= 5.0; existing dots RF SNR cache)
+After reliability:       128
+──────────────────────────────────────────────────
+POOL A (per-neuron):     128 / 279
+After NaN-frac gate:     118
+──────────────────────────────────────────────────
+POOL B (covariance):     118 / 279
+
+Trials (good_trials):          286 / 295
+After bad-unit-frac gate:      286 / 295   (Pool B covariance trials)
+
+==================================================
+YAML CROSS-CHECK
+==================================================
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-01_binocular_V1.yaml
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-01_right_V1.yaml
+
+visual — binocular YAML cross-check skipped (script now uses dots RF SNR on the primary eye)
+
+Pool A cluster IDs: [427, 429, 432, 439, 445, 447, 453, 459, 462, 463, 466, 467, 468, 472, 473, 474, 475, 476, 478, 481, 482, 485, 488, 489, 490, 493, 500, 501, 503, 504, 512, 514, 515, 517, 521, 523, 524, 525, 528, 533, 534, 536, 537, 538, 539, 550, 553, 555, 557, 558, 573, 580, 582, 584, 588, 589, 590, 591, 592, 593, 594, 596, 597, 599, 600, 603, 604, 605, 608, 609, 610, 612, 615, 616, 619, 624, 630, 631, 633, 634, 635, 636, 637, 641, 642, 643, 644, 645, 646, 647, 648, 654, 655, 656, 657, 658, 659, 660, 661, 662, 663, 664, 666, 668, 670, 671, 672, 673, 674, 675, 676, 677, 678, 679, 680, 686, 687, 688, 689, 694, 695, 696, 698, 699, 701, 702, 711, 712]
+Pool B cluster IDs: [427, 429, 432, 439, 445, 453, 459, 462, 463, 467, 468, 473, 474, 475, 476, 478, 481, 482, 485, 488, 489, 490, 493, 500, 501, 503, 504, 512, 514, 515, 517, 521, 523, 533, 534, 536, 537, 538, 539, 550, 553, 555, 557, 558, 573, 580, 582, 584, 588, 589, 590, 591, 592, 593, 596, 597, 599, 600, 603, 604, 605, 608, 609, 612, 615, 616, 619, 624, 630, 631, 633, 634, 635, 636, 637, 641, 643, 644, 646, 647, 648, 654, 655, 656, 657, 658, 659, 660, 661, 662, 663, 664, 666, 668, 670, 671, 672, 673, 674, 675, 676, 677, 678, 679, 680, 686, 687, 688, 689, 694, 695, 696, 698, 699, 701, 702, 711, 712]
+
+======================================================================
+Eye source: default  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/right-dpi
+======================================================================
+  286 / 295 trials kept  (Pool B: 286)
+  Running run_covariance_decomposition (286 trials, 118 Pool B units)...
+Found 217 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:10<00:40, 10.16s/it] 40%|████      | 2/5 [00:13<00:18,  6.03s/it] 60%|██████    | 3/5 [00:14<00:07,  3.79s/it] 80%|████████  | 4/5 [00:14<00:02,  2.45s/it]100%|██████████| 5/5 [00:15<00:00,  1.64s/it]100%|██████████| 5/5 [00:15<00:00,  3.00s/it]
+  Running 2D conditional estimator (7516 windows, 20 ms)...
+  Pair counts (d_c rows × d_v cols):
+[[33809 27462 22017 15440 10405]
+ [28913 26652 22791 17582 13195]
+ [22715 23729 23734 20808 18146]
+ [15573 20234 23329 24582 25415]
+ [ 8123 11056 17261 30721 41972]]
+  Near-dc slope: real=-0.0013  shuffle=-0.0007
+  Cverg2d diag: mean=0.0068, max=0.1188
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/right-dpi/unit_rasters_Luke_2026-03-01.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/right-dpi/unit_cov_Luke_2026-03-01.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/right-dpi/unit_2d_cov_Luke_2026-03-01.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/right-dpi/mcfarland_fixrsvp_Luke_2026-03-01_default.pkl
+
+======================================================================
+Eye source: binocular_diff  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/binocular
+======================================================================
+  280 / 295 trials kept  (Pool B: 280)
+  Running run_covariance_decomposition (280 trials, 118 Pool B units)...
+Found 210 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:11<00:45, 11.32s/it] 40%|████      | 2/5 [00:14<00:20,  6.69s/it] 60%|██████    | 3/5 [00:15<00:08,  4.18s/it] 80%|████████  | 4/5 [00:16<00:02,  2.69s/it]100%|██████████| 5/5 [00:16<00:00,  1.79s/it]100%|██████████| 5/5 [00:16<00:00,  3.31s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/binocular/unit_rasters_Luke_2026-03-01.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/binocular/unit_cov_Luke_2026-03-01.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/binocular/mcfarland_fixrsvp_Luke_2026-03-01_binocular_diff.pkl
+
+======================================================================
+Eye source: left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/left-dpi
+======================================================================
+  280 / 295 trials kept  (Pool B: 280)
+  Running run_covariance_decomposition (280 trials, 118 Pool B units)...
+Found 210 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:09<00:37,  9.30s/it] 40%|████      | 2/5 [00:12<00:16,  5.60s/it] 60%|██████    | 3/5 [00:13<00:07,  3.55s/it] 80%|████████  | 4/5 [00:13<00:02,  2.30s/it]100%|██████████| 5/5 [00:13<00:00,  1.54s/it]100%|██████████| 5/5 [00:13<00:00,  2.80s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/left-dpi/unit_rasters_Luke_2026-03-01.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/left-dpi/unit_cov_Luke_2026-03-01.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/left-dpi/mcfarland_fixrsvp_Luke_2026-03-01_left.pkl
+
+======================================================================
+Eye source: pupil_left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/left-pupil
+======================================================================
+  280 / 295 trials kept  (Pool B: 280)
+  Running run_covariance_decomposition (280 trials, 118 Pool B units)...
+Found 210 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:10<00:42, 10.68s/it] 40%|████      | 2/5 [00:13<00:19,  6.34s/it] 60%|██████    | 3/5 [00:15<00:07,  3.95s/it] 80%|████████  | 4/5 [00:15<00:02,  2.53s/it]100%|██████████| 5/5 [00:15<00:00,  1.67s/it]100%|██████████| 5/5 [00:15<00:00,  3.12s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/left-pupil/unit_rasters_Luke_2026-03-01.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/left-pupil/unit_cov_Luke_2026-03-01.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/left-pupil/mcfarland_fixrsvp_Luke_2026-03-01_pupil_left.pkl
+
+======================================================================
+Eye source: pupil_right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/right-pupil
+======================================================================
+  286 / 295 trials kept  (Pool B: 286)
+  Running run_covariance_decomposition (286 trials, 118 Pool B units)...
+Found 217 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:09<00:38,  9.65s/it] 40%|████      | 2/5 [00:12<00:17,  5.80s/it] 60%|██████    | 3/5 [00:13<00:07,  3.65s/it] 80%|████████  | 4/5 [00:14<00:02,  2.35s/it]100%|██████████| 5/5 [00:14<00:00,  1.55s/it]100%|██████████| 5/5 [00:14<00:00,  2.87s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/right-pupil/unit_rasters_Luke_2026-03-01.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/right-pupil/unit_cov_Luke_2026-03-01.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/right-pupil/mcfarland_fixrsvp_Luke_2026-03-01_pupil_right.pkl
+
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/frac_fem_summary_Luke_2026-03-01.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/fem_fraction_comparison_Luke_2026-03-01.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-01_v10/frac_fem_summary_Luke_2026-03-01.txt
+
+All conditions complete.
+Session: Luke_2026-03-02
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2026-03-02/datasets/left_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([37509, 278])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_left', 'dpi_valid_left', 'eyepos_right', 'dpi_valid_right', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('left-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-pupil', 'pupil_left'), ('right-dpi', 'right'), ('right-pupil', 'pupil_right')]
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/patched_pipeline_results_Luke03022026_V2V1_RH_g0_imec0/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/Luke03022026_V2V1_RH_g0_NidaqImec0timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/patched_pipeline_results_Luke03022026_V2V1_RH_g0_imec0/cur/cur_sorter_output/params.py
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/patched_pipeline_results_Luke03022026_V2V1_RH_g0_imec1/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/Luke03022026_V2V1_RH_g0_NidaqImec1timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/patched_pipeline_results_Luke03022026_V2V1_RH_g0_imec1/cur/cur_sorter_output/params.py
+Vergence loaded (eyepos_left − eyepos_right), shape (37509, 2)
+
+======================================================================
+INCLUSION CRITERIA
+======================================================================
+
+Criterion 0 — Eccentricity gate (radius=1.5°)
+  Fixation center (median valid eyepos): (-0.048°, 0.156°)
+  Total serial bins:                 37509
+  dpi_valid bins:                    36257 (96.7%)
+  ecc <= 1.5° bins:              34302 (91.5%)
+  Valid DPI but ecc > radius:        1955  (newly excluded by this gate)
+  Max eccentricity (from center):    59.67°
+
+Runtime datafilter — missing_pct < 45.0
+  Valid bins after truncation mask:      10032600 / 10427502
+  Units with median missing >= threshold (kept as multi-unit fallback): 246 / 278
+
+  Trials total:          272
+  Trials dur > 20 bins:  249
+
+Criterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)
+  left-eye: SNR >= 2.5: 197  |  SNR >= 5.0: 197
+  SNR source summary: left-eye=existing dots RF SNR cache
+  visual_mask (left-eye, >= 5.0; existing dots RF SNR cache): 197 / 278
+
+Criterion 2 — Spike threshold (> 200)
+  Passing: 105 / 278
+
+Pre-reliability bad-trial screen (diagnostic only)
+  Candidate units for trial diagnostics: 92 / 278
+  Flagged suspicious trials:            19 / 249
+  Low valid-bin frac outliers:          0 / 249
+  Population spike outliers:            0 / 249
+  NaN-fraction outliers:                0 / 249
+  PSTH-deviation outliers (>2.0 robust z): 19 / 249
+  Flagged trial indices (0-based):      [86, 89, 92, 95, 98, 99, 100, 105, 106, 119, 121, 128, 129, 130, 131, 135, 138, 139, 142]
+
+Criterion 3 — Split-half PSTH reliability (r², 20 splits, >= 0)
+  Passing (unmasked spikes): 278 / 278
+  Passing (truncation-QC masked, for comparison): 278 / 278
+  Units recovered by unmasking: 0
+  Passing after excluding flagged trials: 278 / 278
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/reliability_r2_histogram_Luke_2026-03-02.pdf
+
+NaN fraction gate (<= 0.2)
+  Passing: 254 / 278
+
+──────────────────────────────────────────────────
+WATERFALL REPORT
+──────────────────────────────────────────────────
+All units:               278
+After spike threshold:   105
+After dots RF SNR:       92   (left-eye, >= 5.0; existing dots RF SNR cache)
+After reliability:       92
+──────────────────────────────────────────────────
+POOL A (per-neuron):     92 / 278
+After NaN-frac gate:     87
+──────────────────────────────────────────────────
+POOL B (covariance):     87 / 278
+
+Trials (good_trials):          249 / 272
+After bad-unit-frac gate:      249 / 272   (Pool B covariance trials)
+
+==================================================
+YAML CROSS-CHECK
+==================================================
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-02_binocular_V1.yaml
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-02_right_V1.yaml
+
+visual — binocular YAML cross-check skipped (script now uses dots RF SNR on the primary eye)
+
+Pool A cluster IDs: [677, 678, 687, 693, 694, 704, 706, 707, 708, 709, 710, 711, 717, 719, 720, 721, 722, 724, 728, 730, 737, 740, 746, 747, 748, 749, 751, 763, 764, 765, 766, 767, 775, 777, 780, 782, 784, 785, 787, 792, 799, 800, 803, 806, 809, 810, 813, 814, 815, 818, 829, 841, 843, 853, 858, 861, 864, 866, 868, 872, 874, 875, 878, 882, 883, 888, 894, 904, 907, 908, 910, 913, 916, 917, 922, 924, 925, 926, 927, 930, 932, 933, 934, 937, 938, 939, 940, 942, 943, 944, 956, 957]
+Pool B cluster IDs: [677, 678, 687, 693, 694, 704, 706, 707, 708, 709, 710, 711, 719, 721, 722, 724, 728, 730, 737, 740, 747, 748, 749, 751, 763, 765, 766, 767, 775, 777, 780, 782, 784, 785, 787, 792, 799, 800, 803, 806, 809, 810, 813, 814, 815, 818, 829, 841, 843, 853, 858, 861, 864, 866, 868, 872, 874, 875, 878, 882, 883, 888, 894, 904, 907, 908, 910, 913, 916, 917, 922, 924, 925, 926, 927, 930, 932, 933, 934, 938, 939, 940, 942, 943, 944, 956, 957]
+
+======================================================================
+Eye source: default  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-dpi
+======================================================================
+  249 / 272 trials kept  (Pool B: 249)
+  Running run_covariance_decomposition (249 trials, 87 Pool B units)...
+Found 191 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:06<00:27,  6.82s/it] 40%|████      | 2/5 [00:09<00:12,  4.12s/it] 60%|██████    | 3/5 [00:09<00:05,  2.62s/it] 80%|████████  | 4/5 [00:10<00:01,  1.71s/it]100%|██████████| 5/5 [00:10<00:00,  1.15s/it]100%|██████████| 5/5 [00:10<00:00,  2.07s/it]
+  Running 2D conditional estimator (5906 windows, 20 ms)...
+  Pair counts (d_c rows × d_v cols):
+[[22384 16799 12057  9090  6083]
+ [17843 16473 13475 10928  7693]
+ [13224 15329 15691 12783  9385]
+ [ 9028 12167 15517 16331 13369]
+ [ 3989  5601  9682 17265 29876]]
+  Near-dc slope: real=-0.0029  shuffle=0.0004
+  Cverg2d diag: mean=0.0079, max=0.3432
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-dpi/unit_rasters_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-dpi/unit_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-dpi/unit_2d_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-dpi/mcfarland_fixrsvp_Luke_2026-03-02_default.pkl
+
+======================================================================
+Eye source: binocular_diff  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/binocular
+======================================================================
+  248 / 272 trials kept  (Pool B: 248)
+  Running run_covariance_decomposition (248 trials, 87 Pool B units)...
+Found 190 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:07<00:29,  7.50s/it] 40%|████      | 2/5 [00:09<00:13,  4.52s/it] 60%|██████    | 3/5 [00:10<00:05,  2.86s/it] 80%|████████  | 4/5 [00:11<00:01,  1.86s/it]100%|██████████| 5/5 [00:11<00:00,  1.24s/it]100%|██████████| 5/5 [00:11<00:00,  2.26s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/binocular/unit_rasters_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/binocular/unit_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/binocular/mcfarland_fixrsvp_Luke_2026-03-02_binocular_diff.pkl
+
+======================================================================
+Eye source: pupil_left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-pupil
+======================================================================
+  249 / 272 trials kept  (Pool B: 249)
+  Running run_covariance_decomposition (249 trials, 87 Pool B units)...
+Found 191 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:08<00:33,  8.35s/it] 40%|████      | 2/5 [00:11<00:15,  5.01s/it] 60%|██████    | 3/5 [00:11<00:06,  3.15s/it] 80%|████████  | 4/5 [00:12<00:02,  2.03s/it]100%|██████████| 5/5 [00:12<00:00,  1.34s/it]100%|██████████| 5/5 [00:12<00:00,  2.48s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-pupil/unit_rasters_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-pupil/unit_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-pupil/mcfarland_fixrsvp_Luke_2026-03-02_pupil_left.pkl
+
+======================================================================
+Eye source: right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-dpi
+======================================================================
+  248 / 272 trials kept  (Pool B: 248)
+  Running run_covariance_decomposition (248 trials, 87 Pool B units)...
+Found 190 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:06<00:27,  6.77s/it] 40%|████      | 2/5 [00:08<00:12,  4.10s/it] 60%|██████    | 3/5 [00:09<00:05,  2.62s/it] 80%|████████  | 4/5 [00:10<00:01,  1.71s/it]100%|██████████| 5/5 [00:10<00:00,  1.15s/it]100%|██████████| 5/5 [00:10<00:00,  2.07s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-dpi/unit_rasters_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-dpi/unit_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-dpi/mcfarland_fixrsvp_Luke_2026-03-02_right.pkl
+
+======================================================================
+Eye source: pupil_right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-pupil
+======================================================================
+  248 / 272 trials kept  (Pool B: 248)
+  Running run_covariance_decomposition (248 trials, 87 Pool B units)...
+Found 190 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:07<00:29,  7.46s/it] 40%|████      | 2/5 [00:09<00:13,  4.50s/it] 60%|██████    | 3/5 [00:10<00:05,  2.85s/it] 80%|████████  | 4/5 [00:11<00:01,  1.84s/it]100%|██████████| 5/5 [00:11<00:00,  1.22s/it]100%|██████████| 5/5 [00:11<00:00,  2.24s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-pupil/unit_rasters_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-pupil/unit_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-pupil/mcfarland_fixrsvp_Luke_2026-03-02_pupil_right.pkl
+
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/frac_fem_summary_Luke_2026-03-02.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/fem_fraction_comparison_Luke_2026-03-02.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/frac_fem_summary_Luke_2026-03-02.txt
+
+All conditions complete.
+Session: Luke_2026-03-02
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2026-03-02/datasets_gaussian/left_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([37509, 278])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_left', 'dpi_valid_left', 'eyepos_right', 'dpi_valid_right', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('left-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-pupil', 'pupil_left'), ('right-dpi', 'right'), ('right-pupil', 'pupil_right')]
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/patched_pipeline_results_Luke03022026_V2V1_RH_g0_imec0/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/Luke03022026_V2V1_RH_g0_NidaqImec0timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/patched_pipeline_results_Luke03022026_V2V1_RH_g0_imec0/cur/cur_sorter_output/params.py
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/patched_pipeline_results_Luke03022026_V2V1_RH_g0_imec1/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/Luke03022026_V2V1_RH_g0_NidaqImec1timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/patched_pipeline_results_Luke03022026_V2V1_RH_g0_imec1/cur/cur_sorter_output/params.py
+Vergence loaded (eyepos_left − eyepos_right), shape (37509, 2)
+
+======================================================================
+INCLUSION CRITERIA
+======================================================================
+
+Criterion 0 — Eccentricity gate (radius=1.5°)
+  Fixation center (median valid eyepos): (-0.048°, 0.156°)
+  Total serial bins:                 37509
+  dpi_valid bins:                    36257 (96.7%)
+  ecc <= 1.5° bins:              34302 (91.5%)
+  Valid DPI but ecc > radius:        1955  (newly excluded by this gate)
+  Max eccentricity (from center):    59.67°
+
+Runtime datafilter — missing_pct < 45.0
+  Valid bins after truncation mask:      10032600 / 10427502
+  Units with median missing >= threshold (kept as multi-unit fallback): 246 / 278
+
+  Trials total:          272
+  Trials dur > 20 bins:  249
+
+Criterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)
+  left-eye: SNR >= 2.5: 197  |  SNR >= 5.0: 197
+  SNR source summary: left-eye=existing dots RF SNR cache
+  visual_mask (left-eye, >= 5.0; existing dots RF SNR cache): 197 / 278
+
+Criterion 2 — Spike threshold (> 200)
+  Passing: 105 / 278
+
+Pre-reliability bad-trial screen (diagnostic only)
+  Candidate units for trial diagnostics: 92 / 278
+  Flagged suspicious trials:            19 / 249
+  Low valid-bin frac outliers:          0 / 249
+  Population spike outliers:            0 / 249
+  NaN-fraction outliers:                0 / 249
+  PSTH-deviation outliers (>2.0 robust z): 19 / 249
+  Flagged trial indices (0-based):      [86, 89, 92, 95, 98, 99, 100, 105, 106, 119, 121, 128, 129, 130, 131, 135, 138, 139, 142]
+
+Criterion 3 — Split-half PSTH reliability (r², 20 splits, >= 0)
+  Passing (unmasked spikes): 278 / 278
+  Passing (truncation-QC masked, for comparison): 278 / 278
+  Units recovered by unmasking: 0
+  Passing after excluding flagged trials: 278 / 278
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/reliability_r2_histogram_Luke_2026-03-02.pdf
+
+NaN fraction gate (<= 0.2)
+  Passing: 254 / 278
+
+──────────────────────────────────────────────────
+WATERFALL REPORT
+──────────────────────────────────────────────────
+All units:               278
+After spike threshold:   105
+After dots RF SNR:       92   (left-eye, >= 5.0; existing dots RF SNR cache)
+After reliability:       92
+──────────────────────────────────────────────────
+POOL A (per-neuron):     92 / 278
+After NaN-frac gate:     87
+──────────────────────────────────────────────────
+POOL B (covariance):     87 / 278
+
+Trials (good_trials):          249 / 272
+After bad-unit-frac gate:      249 / 272   (Pool B covariance trials)
+
+==================================================
+YAML CROSS-CHECK
+==================================================
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-02_binocular_V1.yaml
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-02_right_V1.yaml
+
+visual — binocular YAML cross-check skipped (script now uses dots RF SNR on the primary eye)
+
+Pool A cluster IDs: [677, 678, 687, 693, 694, 704, 706, 707, 708, 709, 710, 711, 717, 719, 720, 721, 722, 724, 728, 730, 737, 740, 746, 747, 748, 749, 751, 763, 764, 765, 766, 767, 775, 777, 780, 782, 784, 785, 787, 792, 799, 800, 803, 806, 809, 810, 813, 814, 815, 818, 829, 841, 843, 853, 858, 861, 864, 866, 868, 872, 874, 875, 878, 882, 883, 888, 894, 904, 907, 908, 910, 913, 916, 917, 922, 924, 925, 926, 927, 930, 932, 933, 934, 937, 938, 939, 940, 942, 943, 944, 956, 957]
+Pool B cluster IDs: [677, 678, 687, 693, 694, 704, 706, 707, 708, 709, 710, 711, 719, 721, 722, 724, 728, 730, 737, 740, 747, 748, 749, 751, 763, 765, 766, 767, 775, 777, 780, 782, 784, 785, 787, 792, 799, 800, 803, 806, 809, 810, 813, 814, 815, 818, 829, 841, 843, 853, 858, 861, 864, 866, 868, 872, 874, 875, 878, 882, 883, 888, 894, 904, 907, 908, 910, 913, 916, 917, 922, 924, 925, 926, 927, 930, 932, 933, 934, 938, 939, 940, 942, 943, 944, 956, 957]
+
+======================================================================
+Eye source: default  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-dpi
+======================================================================
+  249 / 272 trials kept  (Pool B: 249)
+  Running run_covariance_decomposition (249 trials, 87 Pool B units)...
+Found 191 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:06<00:27,  6.78s/it] 40%|████      | 2/5 [00:09<00:12,  4.12s/it] 60%|██████    | 3/5 [00:09<00:05,  2.63s/it] 80%|████████  | 4/5 [00:10<00:01,  1.72s/it]100%|██████████| 5/5 [00:10<00:00,  1.15s/it]100%|██████████| 5/5 [00:10<00:00,  2.07s/it]
+  Running 2D conditional estimator (5906 windows, 20 ms)...
+  Pair counts (d_c rows × d_v cols):
+[[22384 16799 12057  9090  6083]
+ [17843 16473 13475 10928  7693]
+ [13224 15329 15691 12783  9385]
+ [ 9028 12167 15517 16331 13369]
+ [ 3989  5601  9682 17265 29876]]
+  Near-dc slope: real=-0.0029  shuffle=0.0004
+  Cverg2d diag: mean=0.0079, max=0.3432
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-dpi/unit_rasters_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-dpi/unit_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-dpi/unit_2d_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-dpi/mcfarland_fixrsvp_Luke_2026-03-02_default.pkl
+
+======================================================================
+Eye source: binocular_diff  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/binocular
+======================================================================
+  248 / 272 trials kept  (Pool B: 248)
+  Running run_covariance_decomposition (248 trials, 87 Pool B units)...
+Found 190 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:07<00:30,  7.51s/it] 40%|████      | 2/5 [00:09<00:13,  4.53s/it] 60%|██████    | 3/5 [00:10<00:05,  2.87s/it] 80%|████████  | 4/5 [00:11<00:01,  1.87s/it]100%|██████████| 5/5 [00:11<00:00,  1.25s/it]100%|██████████| 5/5 [00:11<00:00,  2.27s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/binocular/unit_rasters_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/binocular/unit_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/binocular/mcfarland_fixrsvp_Luke_2026-03-02_binocular_diff.pkl
+
+======================================================================
+Eye source: pupil_left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-pupil
+======================================================================
+  249 / 272 trials kept  (Pool B: 249)
+  Running run_covariance_decomposition (249 trials, 87 Pool B units)...
+Found 191 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:08<00:33,  8.32s/it] 40%|████      | 2/5 [00:10<00:14,  4.99s/it] 60%|██████    | 3/5 [00:11<00:06,  3.14s/it] 80%|████████  | 4/5 [00:12<00:02,  2.02s/it]100%|██████████| 5/5 [00:12<00:00,  1.34s/it]100%|██████████| 5/5 [00:12<00:00,  2.47s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-pupil/unit_rasters_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-pupil/unit_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-pupil/mcfarland_fixrsvp_Luke_2026-03-02_pupil_left.pkl
+
+======================================================================
+Eye source: right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-dpi
+======================================================================
+  248 / 272 trials kept  (Pool B: 248)
+  Running run_covariance_decomposition (248 trials, 87 Pool B units)...
+Found 190 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:06<00:26,  6.70s/it] 40%|████      | 2/5 [00:08<00:12,  4.06s/it] 60%|██████    | 3/5 [00:09<00:05,  2.59s/it] 80%|████████  | 4/5 [00:10<00:01,  1.69s/it]100%|██████████| 5/5 [00:10<00:00,  1.14s/it]100%|██████████| 5/5 [00:10<00:00,  2.04s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-dpi/unit_rasters_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-dpi/unit_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-dpi/mcfarland_fixrsvp_Luke_2026-03-02_right.pkl
+
+======================================================================
+Eye source: pupil_right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-pupil
+======================================================================
+  248 / 272 trials kept  (Pool B: 248)
+  Running run_covariance_decomposition (248 trials, 87 Pool B units)...
+Found 190 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:07<00:29,  7.43s/it] 40%|████      | 2/5 [00:09<00:13,  4.48s/it] 60%|██████    | 3/5 [00:10<00:05,  2.83s/it] 80%|████████  | 4/5 [00:11<00:01,  1.83s/it]100%|██████████| 5/5 [00:11<00:00,  1.22s/it]100%|██████████| 5/5 [00:11<00:00,  2.23s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-pupil/unit_rasters_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-pupil/unit_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-pupil/mcfarland_fixrsvp_Luke_2026-03-02_pupil_right.pkl
+
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/frac_fem_summary_Luke_2026-03-02.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/fem_fraction_comparison_Luke_2026-03-02.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/frac_fem_summary_Luke_2026-03-02.txt
+
+All conditions complete.
+Session: Luke_2026-03-02
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2026-03-02/datasets_gaussian/right_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([37509, 278])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_right', 'dpi_valid_right', 'eyepos_left', 'dpi_valid_left', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('right-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-dpi', 'left'), ('left-pupil', 'pupil_left'), ('right-pupil', 'pupil_right')]
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/patched_pipeline_results_Luke03022026_V2V1_RH_g0_imec0/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/Luke03022026_V2V1_RH_g0_NidaqImec0timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/patched_pipeline_results_Luke03022026_V2V1_RH_g0_imec0/cur/cur_sorter_output/params.py
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/patched_pipeline_results_Luke03022026_V2V1_RH_g0_imec1/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/Luke03022026_V2V1_RH_g0_NidaqImec1timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-02/patched_pipeline_results_Luke03022026_V2V1_RH_g0_imec1/cur/cur_sorter_output/params.py
+Vergence loaded (eyepos_left − eyepos_right), shape (37509, 2)
+
+======================================================================
+INCLUSION CRITERIA
+======================================================================
+
+Criterion 0 — Eccentricity gate (radius=1.5°)
+  Fixation center (median valid eyepos): (-12.542°, -7.613°)
+  Total serial bins:                 37509
+  dpi_valid bins:                    36383 (97.0%)
+  ecc <= 1.5° bins:              35070 (93.5%)
+  Valid DPI but ecc > radius:        1315  (newly excluded by this gate)
+  Max eccentricity (from center):    52.94°
+
+Runtime datafilter — missing_pct < 45.0
+  Valid bins after truncation mask:      10032600 / 10427502
+  Units with median missing >= threshold (kept as multi-unit fallback): 246 / 278
+
+  Trials total:          272
+  Trials dur > 20 bins:  252
+
+Criterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)
+  right-eye: SNR >= 2.5: 193  |  SNR >= 5.0: 193
+  SNR source summary: right-eye=existing dots RF SNR cache
+  visual_mask (right-eye, >= 5.0; existing dots RF SNR cache): 193 / 278
+
+Criterion 2 — Spike threshold (> 200)
+  Passing: 108 / 278
+
+Pre-reliability bad-trial screen (diagnostic only)
+  Candidate units for trial diagnostics: 94 / 278
+  Flagged suspicious trials:            18 / 252
+  Low valid-bin frac outliers:          0 / 252
+  Population spike outliers:            0 / 252
+  NaN-fraction outliers:                0 / 252
+  PSTH-deviation outliers (>2.0 robust z): 18 / 252
+  Flagged trial indices (0-based):      [89, 92, 95, 98, 101, 103, 108, 109, 122, 124, 131, 132, 133, 137, 140, 141, 144, 183]
+
+Criterion 3 — Split-half PSTH reliability (r², 20 splits, >= 0)
+  Passing (unmasked spikes): 278 / 278
+  Passing (truncation-QC masked, for comparison): 278 / 278
+  Units recovered by unmasking: 0
+  Passing after excluding flagged trials: 278 / 278
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/reliability_r2_histogram_Luke_2026-03-02.pdf
+
+NaN fraction gate (<= 0.2)
+  Passing: 254 / 278
+
+──────────────────────────────────────────────────
+WATERFALL REPORT
+──────────────────────────────────────────────────
+All units:               278
+After spike threshold:   108
+After dots RF SNR:       94   (right-eye, >= 5.0; existing dots RF SNR cache)
+After reliability:       94
+──────────────────────────────────────────────────
+POOL A (per-neuron):     94 / 278
+After NaN-frac gate:     89
+──────────────────────────────────────────────────
+POOL B (covariance):     89 / 278
+
+Trials (good_trials):          252 / 272
+After bad-unit-frac gate:      252 / 272   (Pool B covariance trials)
+
+==================================================
+YAML CROSS-CHECK
+==================================================
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-02_binocular_V1.yaml
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-02_right_V1.yaml
+
+visual — binocular YAML cross-check skipped (script now uses dots RF SNR on the primary eye)
+
+Pool A cluster IDs: [677, 678, 693, 694, 695, 704, 706, 707, 708, 709, 710, 711, 712, 717, 719, 720, 721, 722, 724, 728, 730, 737, 740, 746, 747, 748, 749, 751, 763, 764, 765, 766, 767, 775, 777, 780, 781, 782, 784, 785, 787, 792, 799, 800, 803, 806, 809, 810, 813, 814, 815, 818, 829, 841, 843, 853, 858, 861, 864, 866, 868, 872, 874, 875, 878, 882, 883, 888, 894, 904, 907, 908, 910, 913, 916, 917, 922, 924, 925, 926, 927, 930, 932, 933, 934, 937, 938, 939, 940, 942, 943, 944, 956, 957]
+Pool B cluster IDs: [677, 678, 693, 694, 695, 704, 706, 707, 708, 709, 710, 711, 712, 719, 721, 722, 724, 728, 730, 737, 740, 747, 748, 749, 751, 763, 765, 766, 767, 775, 777, 780, 781, 782, 784, 785, 787, 792, 799, 800, 803, 806, 809, 810, 813, 814, 815, 818, 829, 841, 843, 853, 858, 861, 864, 866, 868, 872, 874, 875, 878, 882, 883, 888, 894, 904, 907, 908, 910, 913, 916, 917, 922, 924, 925, 926, 927, 930, 932, 933, 934, 938, 939, 940, 942, 943, 944, 956, 957]
+
+======================================================================
+Eye source: default  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-dpi
+======================================================================
+  252 / 272 trials kept  (Pool B: 252)
+  Running run_covariance_decomposition (252 trials, 89 Pool B units)...
+Found 194 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:07<00:28,  7.19s/it] 40%|████      | 2/5 [00:09<00:13,  4.37s/it] 60%|██████    | 3/5 [00:10<00:05,  2.78s/it] 80%|████████  | 4/5 [00:10<00:01,  1.81s/it]100%|██████████| 5/5 [00:10<00:00,  1.21s/it]100%|██████████| 5/5 [00:10<00:00,  2.19s/it]
+  Running 2D conditional estimator (6060 windows, 20 ms)...
+  Pair counts (d_c rows × d_v cols):
+[[27385 20085 14147 10277  6468]
+ [20025 18857 16215 13434  9780]
+ [14993 17227 17275 15979 12836]
+ [10686 14374 17683 18512 17074]
+ [ 5293  7796 12955 20116 32166]]
+  Near-dc slope: real=-0.0005  shuffle=-0.0001
+  Cverg2d diag: mean=0.0056, max=0.1323
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-dpi/unit_rasters_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-dpi/unit_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-dpi/unit_2d_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-dpi/mcfarland_fixrsvp_Luke_2026-03-02_default.pkl
+
+======================================================================
+Eye source: binocular_diff  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/binocular
+======================================================================
+  250 / 272 trials kept  (Pool B: 250)
+  Running run_covariance_decomposition (250 trials, 89 Pool B units)...
+Found 191 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:07<00:31,  7.93s/it] 40%|████      | 2/5 [00:10<00:14,  4.75s/it] 60%|██████    | 3/5 [00:11<00:06,  3.00s/it] 80%|████████  | 4/5 [00:11<00:01,  1.94s/it]100%|██████████| 5/5 [00:11<00:00,  1.30s/it]100%|██████████| 5/5 [00:11<00:00,  2.37s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/binocular/unit_rasters_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/binocular/unit_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/binocular/mcfarland_fixrsvp_Luke_2026-03-02_binocular_diff.pkl
+
+======================================================================
+Eye source: left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-dpi
+======================================================================
+  250 / 272 trials kept  (Pool B: 250)
+  Running run_covariance_decomposition (250 trials, 89 Pool B units)...
+Found 191 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:06<00:27,  6.84s/it] 40%|████      | 2/5 [00:09<00:12,  4.17s/it] 60%|██████    | 3/5 [00:09<00:05,  2.66s/it] 80%|████████  | 4/5 [00:10<00:01,  1.73s/it]100%|██████████| 5/5 [00:10<00:00,  1.16s/it]100%|██████████| 5/5 [00:10<00:00,  2.09s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-dpi/unit_rasters_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-dpi/unit_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-dpi/mcfarland_fixrsvp_Luke_2026-03-02_left.pkl
+
+======================================================================
+Eye source: pupil_left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-pupil
+======================================================================
+  250 / 272 trials kept  (Pool B: 250)
+  Running run_covariance_decomposition (250 trials, 89 Pool B units)...
+Found 191 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:09<00:36,  9.05s/it] 40%|████      | 2/5 [00:11<00:16,  5.33s/it] 60%|██████    | 3/5 [00:12<00:06,  3.33s/it] 80%|████████  | 4/5 [00:13<00:02,  2.14s/it]100%|██████████| 5/5 [00:13<00:00,  1.41s/it]100%|██████████| 5/5 [00:13<00:00,  2.63s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-pupil/unit_rasters_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-pupil/unit_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/left-pupil/mcfarland_fixrsvp_Luke_2026-03-02_pupil_left.pkl
+
+======================================================================
+Eye source: pupil_right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-pupil
+======================================================================
+  252 / 272 trials kept  (Pool B: 252)
+  Running run_covariance_decomposition (252 trials, 89 Pool B units)...
+Found 194 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:08<00:32,  8.03s/it] 40%|████      | 2/5 [00:10<00:14,  4.83s/it] 60%|██████    | 3/5 [00:11<00:06,  3.03s/it] 80%|████████  | 4/5 [00:11<00:01,  1.96s/it]100%|██████████| 5/5 [00:11<00:00,  1.30s/it]100%|██████████| 5/5 [00:11<00:00,  2.39s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-pupil/unit_rasters_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-pupil/unit_cov_Luke_2026-03-02.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/right-pupil/mcfarland_fixrsvp_Luke_2026-03-02_pupil_right.pkl
+
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/frac_fem_summary_Luke_2026-03-02.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/fem_fraction_comparison_Luke_2026-03-02.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-02_v10/frac_fem_summary_Luke_2026-03-02.txt
+
+All conditions complete.
+Session: Luke_2026-03-08
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2026-03-08/datasets/left_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([7121, 151])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_left', 'dpi_valid_left', 'eyepos_right', 'dpi_valid_right', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('left-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-pupil', 'pupil_left'), ('right-dpi', 'right'), ('right-pupil', 'pupil_right')]
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-08/patched_pipeline_results_Luke03082026_V1_RH_g0_imec0/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-08/Luke03082026_V1_RH_g0_NidaqImec0timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-08/patched_pipeline_results_Luke03082026_V1_RH_g0_imec0/cur/cur_sorter_output/params.py
+Vergence loaded (eyepos_left − eyepos_right), shape (7121, 2)
+
+======================================================================
+INCLUSION CRITERIA
+======================================================================
+
+Criterion 0 — Eccentricity gate (radius=1.5°)
+  Fixation center (median valid eyepos): (-5.483°, 2.094°)
+  Total serial bins:                 7121
+  dpi_valid bins:                    7031 (98.7%)
+  ecc <= 1.5° bins:              5976 (83.9%)
+  Valid DPI but ecc > radius:        1055  (newly excluded by this gate)
+  Max eccentricity (from center):    47.70°
+
+Runtime datafilter — missing_pct < 45.0
+  Valid bins after truncation mask:      1021492 / 1075271
+  Units with median missing >= threshold (kept as multi-unit fallback): 110 / 151
+
+  Trials total:          99
+  Trials dur > 20 bins:  74
+
+Criterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)
+  left-eye: SNR >= 2.5: 149  |  SNR >= 5.0: 149
+  SNR source summary: left-eye=existing dots RF SNR cache
+  visual_mask (left-eye, >= 5.0; existing dots RF SNR cache): 149 / 151
+
+Criterion 2 — Spike threshold (> 200)
+  Passing: 41 / 151
+
+Pre-reliability bad-trial screen (diagnostic only)
+  Candidate units for trial diagnostics: 41 / 151
+  Flagged suspicious trials:            5 / 74
+  Low valid-bin frac outliers:          0 / 74
+  Population spike outliers:            1 / 74
+  NaN-fraction outliers:                0 / 74
+  PSTH-deviation outliers (>2.0 robust z): 4 / 74
+  Flagged trial indices (0-based):      [1, 2, 14, 26, 56]
+
+Criterion 3 — Split-half PSTH reliability (r², 20 splits, >= 0)
+  Passing (unmasked spikes): 151 / 151
+  Passing (truncation-QC masked, for comparison): 151 / 151
+  Units recovered by unmasking: 0
+  Passing after excluding flagged trials: 151 / 151
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-08_v10/reliability_r2_histogram_Luke_2026-03-08.pdf
+
+NaN fraction gate (<= 0.2)
+  Passing: 132 / 151
+
+──────────────────────────────────────────────────
+WATERFALL REPORT
+──────────────────────────────────────────────────
+All units:               151
+After spike threshold:   41
+After dots RF SNR:       41   (left-eye, >= 5.0; existing dots RF SNR cache)
+After reliability:       41
+──────────────────────────────────────────────────
+POOL A (per-neuron):     41 / 151
+After NaN-frac gate:     29
+──────────────────────────────────────────────────
+POOL B (covariance):     29 / 151
+
+Trials (good_trials):          74 / 99
+After bad-unit-frac gate:      71 / 99   (Pool B covariance trials)
+
+==================================================
+YAML CROSS-CHECK
+==================================================
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-08_binocular_V1.yaml
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-08_right_V1.yaml
+
+visual — binocular YAML cross-check skipped (script now uses dots RF SNR on the primary eye)
+
+Pool A cluster IDs: [224, 228, 231, 232, 236, 237, 238, 240, 246, 248, 249, 252, 254, 256, 259, 261, 262, 265, 266, 270, 271, 273, 274, 277, 278, 279, 280, 305, 306, 319, 333, 334, 339, 343, 347, 350, 363, 365, 366, 370, 373]
+Pool B cluster IDs: [224, 228, 232, 240, 246, 249, 261, 262, 265, 270, 273, 274, 277, 278, 279, 280, 305, 306, 319, 333, 334, 339, 343, 347, 350, 365, 366, 370, 373]
+
+======================================================================
+Eye source: default  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-08_v10/left-dpi
+======================================================================
+  74 / 99 trials kept  (Pool B: 71)
+  Running run_covariance_decomposition (71 trials, 29 Pool B units)...
+Found 37 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:00<00:03,  1.23it/s] 40%|████      | 2/5 [00:01<00:01,  1.97it/s] 60%|██████    | 3/5 [00:01<00:00,  2.92it/s]100%|██████████| 5/5 [00:01<00:00,  3.71it/s]
+  Running 2D conditional estimator (612 windows, 20 ms)...
+  Pair counts (d_c rows × d_v cols):
+[[551 316 280 181  63]
+ [337 376 286 253 138]
+ [282 339 304 267 198]
+ [167 199 307 333 384]
+ [ 54 160 213 356 607]]
+  Near-dc slope: real=-0.0277  shuffle=-0.0184
+  Cverg2d diag: mean=0.1103, max=1.3118
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-08_v10/left-dpi/unit_rasters_Luke_2026-03-08.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-08_v10/left-dpi/unit_cov_Luke_2026-03-08.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-08_v10/left-dpi/unit_2d_cov_Luke_2026-03-08.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-08_v10/left-dpi/mcfarland_fixrsvp_Luke_2026-03-08_default.pkl
+
+======================================================================
+Eye source: binocular_diff  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-08_v10/binocular
+======================================================================
+  32 / 99 trials kept  (Pool B: 30)
+  Running run_covariance_decomposition (30 trials, 29 Pool B units)...
+Found 7 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s]/home/declan/VisionCore/VisionCore/covariance.py:339: RuntimeWarning: invalid value encountered in divide
+  MM = SS_e / count_e[:, None, None]
+/home/declan/VisionCore/VisionCore/covariance.py:1590: RuntimeWarning: Mean of empty slice
+  "ff_uncorr_mean": np.nanmean(ff_uncorr),
+/home/declan/VisionCore/VisionCore/covariance.py:1591: RuntimeWarning: Mean of empty slice
+  "ff_corr_mean": np.nanmean(ff_corr),
+/home/declan/VisionCore/.venv/lib/python3.12/site-packages/numpy/lib/nanfunctions.py:1879: RuntimeWarning: Degrees of freedom <= 0 for slice.
+  var = nanvar(a, axis=axis, dtype=dtype, out=out, ddof=ddof,
+/home/declan/VisionCore/VisionCore/covariance.py:1602: RuntimeWarning: Mean of empty slice
+  "ff_before_verg_mean": float(np.nanmean(ff_before_verg)),
+/home/declan/VisionCore/VisionCore/covariance.py:1603: RuntimeWarning: Mean of empty slice
+  "ff_after_verg_mean":  float(np.nanmean(ff_after_verg)),
+100%|██████████| 5/5 [00:00<00:00, 272.58it/s]
+Traceback (most recent call last):
+  File "/home/declan/VisionCore/scripts/test_rowley10.py", line 1193, in <module>
+    Ctotal  = project_to_psd(last_mats[window_idx]['Total'])
+                             ~~~~~~~~~^^^^^^^^^^^^
+IndexError: list index out of range
+Session: Luke_2026-03-08
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2026-03-08/datasets_gaussian/left_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([7121, 151])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_left', 'dpi_valid_left', 'eyepos_right', 'dpi_valid_right', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('left-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-pupil', 'pupil_left'), ('right-dpi', 'right'), ('right-pupil', 'pupil_right')]
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-08/patched_pipeline_results_Luke03082026_V1_RH_g0_imec0/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-08/Luke03082026_V1_RH_g0_NidaqImec0timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-08/patched_pipeline_results_Luke03082026_V1_RH_g0_imec0/cur/cur_sorter_output/params.py
+Vergence loaded (eyepos_left − eyepos_right), shape (7121, 2)
+
+======================================================================
+INCLUSION CRITERIA
+======================================================================
+
+Criterion 0 — Eccentricity gate (radius=1.5°)
+  Fixation center (median valid eyepos): (-5.483°, 2.094°)
+  Total serial bins:                 7121
+  dpi_valid bins:                    7031 (98.7%)
+  ecc <= 1.5° bins:              5976 (83.9%)
+  Valid DPI but ecc > radius:        1055  (newly excluded by this gate)
+  Max eccentricity (from center):    47.70°
+
+Runtime datafilter — missing_pct < 45.0
+  Valid bins after truncation mask:      1021492 / 1075271
+  Units with median missing >= threshold (kept as multi-unit fallback): 110 / 151
+
+  Trials total:          99
+  Trials dur > 20 bins:  74
+
+Criterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)
+  left-eye: SNR >= 2.5: 149  |  SNR >= 5.0: 149
+  SNR source summary: left-eye=existing dots RF SNR cache
+  visual_mask (left-eye, >= 5.0; existing dots RF SNR cache): 149 / 151
+
+Criterion 2 — Spike threshold (> 200)
+  Passing: 41 / 151
+
+Pre-reliability bad-trial screen (diagnostic only)
+  Candidate units for trial diagnostics: 41 / 151
+  Flagged suspicious trials:            5 / 74
+  Low valid-bin frac outliers:          0 / 74
+  Population spike outliers:            1 / 74
+  NaN-fraction outliers:                0 / 74
+  PSTH-deviation outliers (>2.0 robust z): 4 / 74
+  Flagged trial indices (0-based):      [1, 2, 14, 26, 56]
+
+Criterion 3 — Split-half PSTH reliability (r², 20 splits, >= 0)
+  Passing (unmasked spikes): 151 / 151
+  Passing (truncation-QC masked, for comparison): 151 / 151
+  Units recovered by unmasking: 0
+  Passing after excluding flagged trials: 151 / 151
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-08_v10/reliability_r2_histogram_Luke_2026-03-08.pdf
+
+NaN fraction gate (<= 0.2)
+  Passing: 132 / 151
+
+──────────────────────────────────────────────────
+WATERFALL REPORT
+──────────────────────────────────────────────────
+All units:               151
+After spike threshold:   41
+After dots RF SNR:       41   (left-eye, >= 5.0; existing dots RF SNR cache)
+After reliability:       41
+──────────────────────────────────────────────────
+POOL A (per-neuron):     41 / 151
+After NaN-frac gate:     29
+──────────────────────────────────────────────────
+POOL B (covariance):     29 / 151
+
+Trials (good_trials):          74 / 99
+After bad-unit-frac gate:      71 / 99   (Pool B covariance trials)
+
+==================================================
+YAML CROSS-CHECK
+==================================================
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-08_binocular_V1.yaml
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-08_right_V1.yaml
+
+visual — binocular YAML cross-check skipped (script now uses dots RF SNR on the primary eye)
+
+Pool A cluster IDs: [224, 228, 231, 232, 236, 237, 238, 240, 246, 248, 249, 252, 254, 256, 259, 261, 262, 265, 266, 270, 271, 273, 274, 277, 278, 279, 280, 305, 306, 319, 333, 334, 339, 343, 347, 350, 363, 365, 366, 370, 373]
+Pool B cluster IDs: [224, 228, 232, 240, 246, 249, 261, 262, 265, 270, 273, 274, 277, 278, 279, 280, 305, 306, 319, 333, 334, 339, 343, 347, 350, 365, 366, 370, 373]
+
+======================================================================
+Eye source: default  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-08_v10/left-dpi
+======================================================================
+  74 / 99 trials kept  (Pool B: 71)
+  Running run_covariance_decomposition (71 trials, 29 Pool B units)...
+Found 37 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:00<00:03,  1.22it/s] 40%|████      | 2/5 [00:01<00:01,  1.92it/s] 60%|██████    | 3/5 [00:01<00:00,  2.86it/s]100%|██████████| 5/5 [00:01<00:00,  5.54it/s]100%|██████████| 5/5 [00:01<00:00,  3.63it/s]
+  Running 2D conditional estimator (612 windows, 20 ms)...
+  Pair counts (d_c rows × d_v cols):
+[[551 316 280 181  63]
+ [337 376 286 253 138]
+ [282 339 304 267 198]
+ [167 199 307 333 384]
+ [ 54 160 213 356 607]]
+  Near-dc slope: real=-0.0277  shuffle=-0.0184
+  Cverg2d diag: mean=0.1103, max=1.3118
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-08_v10/left-dpi/unit_rasters_Luke_2026-03-08.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-08_v10/left-dpi/unit_cov_Luke_2026-03-08.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-08_v10/left-dpi/unit_2d_cov_Luke_2026-03-08.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-08_v10/left-dpi/mcfarland_fixrsvp_Luke_2026-03-08_default.pkl
+
+======================================================================
+Eye source: binocular_diff  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-08_v10/binocular
+======================================================================
+  32 / 99 trials kept  (Pool B: 30)
+  Running run_covariance_decomposition (30 trials, 29 Pool B units)...
+Found 7 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s]/home/declan/VisionCore/VisionCore/covariance.py:339: RuntimeWarning: invalid value encountered in divide
+  MM = SS_e / count_e[:, None, None]
+/home/declan/VisionCore/VisionCore/covariance.py:1590: RuntimeWarning: Mean of empty slice
+  "ff_uncorr_mean": np.nanmean(ff_uncorr),
+/home/declan/VisionCore/VisionCore/covariance.py:1591: RuntimeWarning: Mean of empty slice
+  "ff_corr_mean": np.nanmean(ff_corr),
+/home/declan/VisionCore/.venv/lib/python3.12/site-packages/numpy/lib/nanfunctions.py:1879: RuntimeWarning: Degrees of freedom <= 0 for slice.
+  var = nanvar(a, axis=axis, dtype=dtype, out=out, ddof=ddof,
+/home/declan/VisionCore/VisionCore/covariance.py:1602: RuntimeWarning: Mean of empty slice
+  "ff_before_verg_mean": float(np.nanmean(ff_before_verg)),
+/home/declan/VisionCore/VisionCore/covariance.py:1603: RuntimeWarning: Mean of empty slice
+  "ff_after_verg_mean":  float(np.nanmean(ff_after_verg)),
+100%|██████████| 5/5 [00:00<00:00, 267.12it/s]
+Traceback (most recent call last):
+  File "/home/declan/VisionCore/scripts/test_rowley10.py", line 1193, in <module>
+    Ctotal  = project_to_psd(last_mats[window_idx]['Total'])
+                             ~~~~~~~~~^^^^^^^^^^^^
+IndexError: list index out of range
+Session: Luke_2026-03-09
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2026-03-09/datasets/left_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([19871, 120])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_left', 'dpi_valid_left', 'eyepos_right', 'dpi_valid_right', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('left-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-pupil', 'pupil_left'), ('right-dpi', 'right'), ('right-pupil', 'pupil_right')]
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-09/patched_pipeline_results_Luke03092026_V1_RH_g0_imec0/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-09/Luke03092026_V1_RH_g0_NidaqImec0timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-09/patched_pipeline_results_Luke03092026_V1_RH_g0_imec0/cur/cur_sorter_output/params.py
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-09/patched_pipeline_results_20260309_imec1/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-09/Luke03092026_V1_RH_g0_NidaqImec1timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-09/patched_pipeline_results_20260309_imec1/cur/cur_sorter_output/params.py
+Vergence loaded (eyepos_left − eyepos_right), shape (19871, 2)
+
+======================================================================
+INCLUSION CRITERIA
+======================================================================
+
+Criterion 0 — Eccentricity gate (radius=1.5°)
+  Fixation center (median valid eyepos): (-0.095°, 4.917°)
+  Total serial bins:                 19871
+  dpi_valid bins:                    19580 (98.5%)
+  ecc <= 1.5° bins:              17717 (89.2%)
+  Valid DPI but ecc > radius:        1863  (newly excluded by this gate)
+  Max eccentricity (from center):    53.61°
+
+Runtime datafilter — missing_pct < 45.0
+  Valid bins after truncation mask:      2276446 / 2384520
+  Units with median missing >= threshold (kept as multi-unit fallback): 94 / 120
+
+  Trials total:          140
+  Trials dur > 20 bins:  112
+
+Criterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)
+  left-eye: SNR >= 2.5: 120  |  SNR >= 5.0: 120
+  SNR source summary: left-eye=existing dots RF SNR cache
+  visual_mask (left-eye, >= 5.0; existing dots RF SNR cache): 120 / 120
+
+Criterion 2 — Spike threshold (> 200)
+  Passing: 25 / 120
+
+Pre-reliability bad-trial screen (diagnostic only)
+  Candidate units for trial diagnostics: 25 / 120
+  Flagged suspicious trials:            8 / 112
+  Low valid-bin frac outliers:          0 / 112
+  Population spike outliers:            0 / 112
+  NaN-fraction outliers:                0 / 112
+  PSTH-deviation outliers (>2.0 robust z): 8 / 112
+  Flagged trial indices (0-based):      [0, 47, 53, 54, 99, 101, 106, 108]
+
+Criterion 3 — Split-half PSTH reliability (r², 20 splits, >= 0)
+  Passing (unmasked spikes): 120 / 120
+  Passing (truncation-QC masked, for comparison): 120 / 120
+  Units recovered by unmasking: 0
+  Passing after excluding flagged trials: 120 / 120
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/reliability_r2_histogram_Luke_2026-03-09.pdf
+
+NaN fraction gate (<= 0.2)
+  Passing: 106 / 120
+
+──────────────────────────────────────────────────
+WATERFALL REPORT
+──────────────────────────────────────────────────
+All units:               120
+After spike threshold:   25
+After dots RF SNR:       25   (left-eye, >= 5.0; existing dots RF SNR cache)
+After reliability:       25
+──────────────────────────────────────────────────
+POOL A (per-neuron):     25 / 120
+After NaN-frac gate:     23
+──────────────────────────────────────────────────
+POOL B (covariance):     23 / 120
+
+Trials (good_trials):          112 / 140
+After bad-unit-frac gate:      112 / 140   (Pool B covariance trials)
+
+==================================================
+YAML CROSS-CHECK
+==================================================
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-09_binocular_V1.yaml
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-09_right_V1.yaml
+
+visual — binocular YAML cross-check skipped (script now uses dots RF SNR on the primary eye)
+
+Pool A cluster IDs: [286, 292, 308, 328, 331, 334, 340, 341, 345, 346, 350, 351, 352, 354, 356, 358, 359, 361, 369, 373, 374, 378, 386, 393, 395]
+Pool B cluster IDs: [286, 292, 308, 328, 331, 334, 340, 341, 345, 346, 351, 352, 354, 356, 358, 359, 361, 369, 373, 374, 378, 393, 395]
+
+======================================================================
+Eye source: default  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/left-dpi
+======================================================================
+  112 / 140 trials kept  (Pool B: 112)
+  Running run_covariance_decomposition (112 trials, 23 Pool B units)...
+Found 109 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:03<00:15,  3.81s/it] 40%|████      | 2/5 [00:05<00:07,  2.34s/it] 60%|██████    | 3/5 [00:05<00:03,  1.52s/it] 80%|████████  | 4/5 [00:05<00:01,  1.00s/it]100%|██████████| 5/5 [00:05<00:00,  1.19s/it]
+  Running 2D conditional estimator (3803 windows, 20 ms)...
+  Pair counts (d_c rows × d_v cols):
+[[ 8070  6872  5677  3792  1397]
+ [ 6475  6120  6003  4735  2473]
+ [ 5207  5862  5751  5049  3937]
+ [ 3689  4033  4733  6060  7292]
+ [ 2389  3085  3503  6138 10692]]
+  Near-dc slope: real=-0.0137  shuffle=-0.0072
+  Cverg2d diag: mean=0.0165, max=0.1300
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/left-dpi/unit_rasters_Luke_2026-03-09.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/left-dpi/unit_cov_Luke_2026-03-09.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/left-dpi/unit_2d_cov_Luke_2026-03-09.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/left-dpi/mcfarland_fixrsvp_Luke_2026-03-09_default.pkl
+
+======================================================================
+Eye source: binocular_diff  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/binocular
+======================================================================
+  112 / 140 trials kept  (Pool B: 112)
+  Running run_covariance_decomposition (112 trials, 23 Pool B units)...
+Found 109 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:04<00:16,  4.00s/it] 40%|████      | 2/5 [00:05<00:07,  2.45s/it] 60%|██████    | 3/5 [00:05<00:03,  1.59s/it] 80%|████████  | 4/5 [00:06<00:01,  1.05s/it]100%|██████████| 5/5 [00:06<00:00,  1.25s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/binocular/unit_rasters_Luke_2026-03-09.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/binocular/unit_cov_Luke_2026-03-09.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/binocular/mcfarland_fixrsvp_Luke_2026-03-09_binocular_diff.pkl
+
+======================================================================
+Eye source: pupil_left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/left-pupil
+======================================================================
+  112 / 140 trials kept  (Pool B: 112)
+  Running run_covariance_decomposition (112 trials, 23 Pool B units)...
+Found 109 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:03<00:15,  3.82s/it] 40%|████      | 2/5 [00:05<00:07,  2.40s/it] 60%|██████    | 3/5 [00:05<00:03,  1.55s/it] 80%|████████  | 4/5 [00:05<00:01,  1.02s/it]100%|██████████| 5/5 [00:06<00:00,  1.21s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/left-pupil/unit_rasters_Luke_2026-03-09.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/left-pupil/unit_cov_Luke_2026-03-09.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/left-pupil/mcfarland_fixrsvp_Luke_2026-03-09_pupil_left.pkl
+
+======================================================================
+Eye source: right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/right-dpi
+======================================================================
+  112 / 140 trials kept  (Pool B: 112)
+  Running run_covariance_decomposition (112 trials, 23 Pool B units)...
+Found 109 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:03<00:14,  3.63s/it] 40%|████      | 2/5 [00:04<00:06,  2.27s/it] 60%|██████    | 3/5 [00:05<00:02,  1.48s/it] 80%|████████  | 4/5 [00:05<00:00,  1.02it/s]100%|██████████| 5/5 [00:05<00:00,  1.16s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/right-dpi/unit_rasters_Luke_2026-03-09.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/right-dpi/unit_cov_Luke_2026-03-09.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/right-dpi/mcfarland_fixrsvp_Luke_2026-03-09_right.pkl
+
+======================================================================
+Eye source: pupil_right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/right-pupil
+======================================================================
+  112 / 140 trials kept  (Pool B: 112)
+  Running run_covariance_decomposition (112 trials, 23 Pool B units)...
+Found 109 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:03<00:14,  3.65s/it] 40%|████      | 2/5 [00:04<00:06,  2.30s/it] 60%|██████    | 3/5 [00:05<00:02,  1.49s/it] 80%|████████  | 4/5 [00:05<00:00,  1.01it/s]100%|██████████| 5/5 [00:05<00:00,  1.17s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/right-pupil/unit_rasters_Luke_2026-03-09.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/right-pupil/unit_cov_Luke_2026-03-09.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/right-pupil/mcfarland_fixrsvp_Luke_2026-03-09_pupil_right.pkl
+
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/frac_fem_summary_Luke_2026-03-09.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/fem_fraction_comparison_Luke_2026-03-09.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-09_v10/frac_fem_summary_Luke_2026-03-09.txt
+
+All conditions complete.
+Session: Luke_2026-03-11
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2026-03-11/datasets/left_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([53922, 99])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_left', 'dpi_valid_left', 'eyepos_right', 'dpi_valid_right', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('left-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-pupil', 'pupil_left'), ('right-dpi', 'right'), ('right-pupil', 'pupil_right')]
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-11/patched_pipeline_results_Luke03112026_V2V1_RH_g0_imec0/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-11/Luke03112026_V2V1_RH_g0_NidaqImec0timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-11/patched_pipeline_results_Luke03112026_V2V1_RH_g0_imec0/cur/cur_sorter_output/params.py
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-11/patched_pipeline_results_Luke03112026_V2V1_RH_g0_imec1/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-11/Luke03112026_V2V1_RH_g0_NidaqImec1timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-11/patched_pipeline_results_Luke03112026_V2V1_RH_g0_imec1/cur/cur_sorter_output/params.py
+Vergence loaded (eyepos_left − eyepos_right), shape (53922, 2)
+
+======================================================================
+INCLUSION CRITERIA
+======================================================================
+
+Criterion 0 — Eccentricity gate (radius=1.5°)
+  Fixation center (median valid eyepos): (0.014°, 0.084°)
+  Total serial bins:                 53922
+  dpi_valid bins:                    53864 (99.9%)
+  ecc <= 1.5° bins:              52944 (98.2%)
+  Valid DPI but ecc > radius:        920  (newly excluded by this gate)
+  Max eccentricity (from center):    56.05°
+
+Runtime datafilter — missing_pct < 45.0
+  Valid bins after truncation mask:      5101085 / 5338278
+  Units with median missing >= threshold (kept as multi-unit fallback): 85 / 99
+
+  Trials total:          287
+  Trials dur > 20 bins:  276
+
+Criterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)
+  left-eye: SNR >= 2.5:  89  |  SNR >= 5.0:  89
+  SNR source summary: left-eye=existing dots RF SNR cache
+  visual_mask (left-eye, >= 5.0; existing dots RF SNR cache): 89 / 99
+
+Criterion 2 — Spike threshold (> 200)
+  Passing: 43 / 99
+
+Pre-reliability bad-trial screen (diagnostic only)
+  Candidate units for trial diagnostics: 43 / 99
+  Flagged suspicious trials:            24 / 276
+  Low valid-bin frac outliers:          0 / 276
+  Population spike outliers:            1 / 276
+  NaN-fraction outliers:                0 / 276
+  PSTH-deviation outliers (>2.0 robust z): 24 / 276
+  Flagged trial indices (0-based):      [59, 65, 80, 81, 100, 101, 110, 115, 124, 125, 126, 127, 134, 136, 137, 138, 146, 165, 193, 214, 224, 243, 252, 263]
+
+Criterion 3 — Split-half PSTH reliability (r², 20 splits, >= 0)
+  Passing (unmasked spikes): 99 / 99
+  Passing (truncation-QC masked, for comparison): 99 / 99
+  Units recovered by unmasking: 0
+  Passing after excluding flagged trials: 99 / 99
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/reliability_r2_histogram_Luke_2026-03-11.pdf
+
+NaN fraction gate (<= 0.2)
+  Passing: 89 / 99
+
+──────────────────────────────────────────────────
+WATERFALL REPORT
+──────────────────────────────────────────────────
+All units:               99
+After spike threshold:   43
+After dots RF SNR:       43   (left-eye, >= 5.0; existing dots RF SNR cache)
+After reliability:       43
+──────────────────────────────────────────────────
+POOL A (per-neuron):     43 / 99
+After NaN-frac gate:     38
+──────────────────────────────────────────────────
+POOL B (covariance):     38 / 99
+
+Trials (good_trials):          276 / 287
+After bad-unit-frac gate:      276 / 287   (Pool B covariance trials)
+
+==================================================
+YAML CROSS-CHECK
+==================================================
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-11_binocular_V1.yaml
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-11_right_V1.yaml
+
+visual — binocular YAML cross-check skipped (script now uses dots RF SNR on the primary eye)
+
+Pool A cluster IDs: [269, 271, 273, 275, 277, 280, 285, 291, 293, 294, 295, 296, 297, 300, 312, 313, 315, 316, 317, 318, 319, 321, 322, 323, 325, 326, 328, 329, 331, 332, 338, 340, 342, 344, 345, 346, 347, 348, 349, 352, 355, 363, 364]
+Pool B cluster IDs: [269, 271, 273, 275, 277, 285, 291, 293, 294, 296, 297, 300, 312, 313, 315, 316, 317, 318, 319, 321, 322, 323, 325, 326, 329, 331, 332, 338, 342, 344, 345, 346, 347, 349, 352, 355, 363, 364]
+
+======================================================================
+Eye source: default  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-dpi
+======================================================================
+  276 / 287 trials kept  (Pool B: 276)
+  Running run_covariance_decomposition (276 trials, 38 Pool B units)...
+Found 227 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:12<00:50, 12.59s/it] 40%|████      | 2/5 [00:16<00:22,  7.38s/it] 60%|██████    | 3/5 [00:17<00:09,  4.61s/it] 80%|████████  | 4/5 [00:18<00:02,  2.95s/it]100%|██████████| 5/5 [00:18<00:00,  1.94s/it]100%|██████████| 5/5 [00:18<00:00,  3.64s/it]
+  Running 2D conditional estimator (8679 windows, 20 ms)...
+  Pair counts (d_c rows × d_v cols):
+[[44234 32926 23597 17299 13467]
+ [34642 31654 27582 21614 16030]
+ [24723 28573 29559 27562 21105]
+ [17955 23713 29429 31956 28469]
+ [ 9969 14656 21355 33091 52451]]
+  Near-dc slope: real=-0.0107  shuffle=-0.0015
+  Cverg2d diag: mean=0.0147, max=0.0829
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-dpi/unit_rasters_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-dpi/unit_cov_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-dpi/unit_2d_cov_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-dpi/mcfarland_fixrsvp_Luke_2026-03-11_default.pkl
+
+======================================================================
+Eye source: binocular_diff  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/binocular
+======================================================================
+  276 / 287 trials kept  (Pool B: 276)
+  Running run_covariance_decomposition (276 trials, 38 Pool B units)...
+Found 227 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:14<00:58, 14.60s/it] 40%|████      | 2/5 [00:18<00:25,  8.38s/it] 60%|██████    | 3/5 [00:19<00:10,  5.16s/it] 80%|████████  | 4/5 [00:20<00:03,  3.28s/it]100%|██████████| 5/5 [00:20<00:00,  2.15s/it]100%|██████████| 5/5 [00:20<00:00,  4.10s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/binocular/unit_rasters_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/binocular/unit_cov_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/binocular/mcfarland_fixrsvp_Luke_2026-03-11_binocular_diff.pkl
+
+======================================================================
+Eye source: pupil_left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-pupil
+======================================================================
+  276 / 287 trials kept  (Pool B: 276)
+  Running run_covariance_decomposition (276 trials, 38 Pool B units)...
+Found 227 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:15<01:03, 15.91s/it] 40%|████      | 2/5 [00:20<00:27,  9.15s/it] 60%|██████    | 3/5 [00:21<00:11,  5.61s/it] 80%|████████  | 4/5 [00:22<00:03,  3.55s/it]100%|██████████| 5/5 [00:22<00:00,  2.32s/it]100%|██████████| 5/5 [00:22<00:00,  4.45s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-pupil/unit_rasters_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-pupil/unit_cov_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-pupil/mcfarland_fixrsvp_Luke_2026-03-11_pupil_left.pkl
+
+======================================================================
+Eye source: right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-dpi
+======================================================================
+  276 / 287 trials kept  (Pool B: 276)
+  Running run_covariance_decomposition (276 trials, 38 Pool B units)...
+Found 227 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:11<00:47, 11.97s/it] 40%|████      | 2/5 [00:15<00:21,  7.04s/it] 60%|██████    | 3/5 [00:16<00:08,  4.38s/it] 80%|████████  | 4/5 [00:17<00:02,  2.80s/it]100%|██████████| 5/5 [00:17<00:00,  1.84s/it]100%|██████████| 5/5 [00:17<00:00,  3.46s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-dpi/unit_rasters_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-dpi/unit_cov_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-dpi/mcfarland_fixrsvp_Luke_2026-03-11_right.pkl
+
+======================================================================
+Eye source: pupil_right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-pupil
+======================================================================
+  276 / 287 trials kept  (Pool B: 276)
+  Running run_covariance_decomposition (276 trials, 38 Pool B units)...
+Found 227 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:12<00:51, 12.78s/it] 40%|████      | 2/5 [00:16<00:22,  7.52s/it] 60%|██████    | 3/5 [00:17<00:09,  4.66s/it] 80%|████████  | 4/5 [00:18<00:02,  2.97s/it]100%|██████████| 5/5 [00:18<00:00,  1.95s/it]100%|██████████| 5/5 [00:18<00:00,  3.68s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-pupil/unit_rasters_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-pupil/unit_cov_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-pupil/mcfarland_fixrsvp_Luke_2026-03-11_pupil_right.pkl
+
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/frac_fem_summary_Luke_2026-03-11.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/fem_fraction_comparison_Luke_2026-03-11.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/frac_fem_summary_Luke_2026-03-11.txt
+
+All conditions complete.
+Session: Luke_2026-03-11
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2026-03-11/datasets_gaussian/left_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([53922, 99])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_left', 'dpi_valid_left', 'eyepos_right', 'dpi_valid_right', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('left-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-pupil', 'pupil_left'), ('right-dpi', 'right'), ('right-pupil', 'pupil_right')]
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-11/patched_pipeline_results_Luke03112026_V2V1_RH_g0_imec0/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-11/Luke03112026_V2V1_RH_g0_NidaqImec0timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-11/patched_pipeline_results_Luke03112026_V2V1_RH_g0_imec0/cur/cur_sorter_output/params.py
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-11/patched_pipeline_results_Luke03112026_V2V1_RH_g0_imec1/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-11/Luke03112026_V2V1_RH_g0_NidaqImec1timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-11/patched_pipeline_results_Luke03112026_V2V1_RH_g0_imec1/cur/cur_sorter_output/params.py
+Vergence loaded (eyepos_left − eyepos_right), shape (53922, 2)
+
+======================================================================
+INCLUSION CRITERIA
+======================================================================
+
+Criterion 0 — Eccentricity gate (radius=1.5°)
+  Fixation center (median valid eyepos): (0.014°, 0.084°)
+  Total serial bins:                 53922
+  dpi_valid bins:                    53864 (99.9%)
+  ecc <= 1.5° bins:              52944 (98.2%)
+  Valid DPI but ecc > radius:        920  (newly excluded by this gate)
+  Max eccentricity (from center):    56.05°
+
+Runtime datafilter — missing_pct < 45.0
+  Valid bins after truncation mask:      5101085 / 5338278
+  Units with median missing >= threshold (kept as multi-unit fallback): 85 / 99
+
+  Trials total:          287
+  Trials dur > 20 bins:  276
+
+Criterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)
+  left-eye: SNR >= 2.5:  89  |  SNR >= 5.0:  89
+  SNR source summary: left-eye=existing dots RF SNR cache
+  visual_mask (left-eye, >= 5.0; existing dots RF SNR cache): 89 / 99
+
+Criterion 2 — Spike threshold (> 200)
+  Passing: 43 / 99
+
+Pre-reliability bad-trial screen (diagnostic only)
+  Candidate units for trial diagnostics: 43 / 99
+  Flagged suspicious trials:            24 / 276
+  Low valid-bin frac outliers:          0 / 276
+  Population spike outliers:            1 / 276
+  NaN-fraction outliers:                0 / 276
+  PSTH-deviation outliers (>2.0 robust z): 24 / 276
+  Flagged trial indices (0-based):      [59, 65, 80, 81, 100, 101, 110, 115, 124, 125, 126, 127, 134, 136, 137, 138, 146, 165, 193, 214, 224, 243, 252, 263]
+
+Criterion 3 — Split-half PSTH reliability (r², 20 splits, >= 0)
+  Passing (unmasked spikes): 99 / 99
+  Passing (truncation-QC masked, for comparison): 99 / 99
+  Units recovered by unmasking: 0
+  Passing after excluding flagged trials: 99 / 99
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/reliability_r2_histogram_Luke_2026-03-11.pdf
+
+NaN fraction gate (<= 0.2)
+  Passing: 89 / 99
+
+──────────────────────────────────────────────────
+WATERFALL REPORT
+──────────────────────────────────────────────────
+All units:               99
+After spike threshold:   43
+After dots RF SNR:       43   (left-eye, >= 5.0; existing dots RF SNR cache)
+After reliability:       43
+──────────────────────────────────────────────────
+POOL A (per-neuron):     43 / 99
+After NaN-frac gate:     38
+──────────────────────────────────────────────────
+POOL B (covariance):     38 / 99
+
+Trials (good_trials):          276 / 287
+After bad-unit-frac gate:      276 / 287   (Pool B covariance trials)
+
+==================================================
+YAML CROSS-CHECK
+==================================================
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-11_binocular_V1.yaml
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-11_right_V1.yaml
+
+visual — binocular YAML cross-check skipped (script now uses dots RF SNR on the primary eye)
+
+Pool A cluster IDs: [269, 271, 273, 275, 277, 280, 285, 291, 293, 294, 295, 296, 297, 300, 312, 313, 315, 316, 317, 318, 319, 321, 322, 323, 325, 326, 328, 329, 331, 332, 338, 340, 342, 344, 345, 346, 347, 348, 349, 352, 355, 363, 364]
+Pool B cluster IDs: [269, 271, 273, 275, 277, 285, 291, 293, 294, 296, 297, 300, 312, 313, 315, 316, 317, 318, 319, 321, 322, 323, 325, 326, 329, 331, 332, 338, 342, 344, 345, 346, 347, 349, 352, 355, 363, 364]
+
+======================================================================
+Eye source: default  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-dpi
+======================================================================
+  276 / 287 trials kept  (Pool B: 276)
+  Running run_covariance_decomposition (276 trials, 38 Pool B units)...
+Found 227 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:12<00:50, 12.58s/it] 40%|████      | 2/5 [00:16<00:22,  7.37s/it] 60%|██████    | 3/5 [00:17<00:09,  4.60s/it] 80%|████████  | 4/5 [00:18<00:02,  2.94s/it]100%|██████████| 5/5 [00:18<00:00,  1.93s/it]100%|██████████| 5/5 [00:18<00:00,  3.63s/it]
+  Running 2D conditional estimator (8679 windows, 20 ms)...
+  Pair counts (d_c rows × d_v cols):
+[[44234 32926 23597 17299 13467]
+ [34642 31654 27582 21614 16030]
+ [24723 28573 29559 27562 21105]
+ [17955 23713 29429 31956 28469]
+ [ 9969 14656 21355 33091 52451]]
+  Near-dc slope: real=-0.0107  shuffle=-0.0015
+  Cverg2d diag: mean=0.0147, max=0.0829
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-dpi/unit_rasters_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-dpi/unit_cov_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-dpi/unit_2d_cov_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-dpi/mcfarland_fixrsvp_Luke_2026-03-11_default.pkl
+
+======================================================================
+Eye source: binocular_diff  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/binocular
+======================================================================
+  276 / 287 trials kept  (Pool B: 276)
+  Running run_covariance_decomposition (276 trials, 38 Pool B units)...
+Found 227 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:14<00:58, 14.62s/it] 40%|████      | 2/5 [00:18<00:25,  8.39s/it] 60%|██████    | 3/5 [00:19<00:10,  5.17s/it] 80%|████████  | 4/5 [00:20<00:03,  3.29s/it]100%|██████████| 5/5 [00:20<00:00,  2.15s/it]100%|██████████| 5/5 [00:20<00:00,  4.11s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/binocular/unit_rasters_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/binocular/unit_cov_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/binocular/mcfarland_fixrsvp_Luke_2026-03-11_binocular_diff.pkl
+
+======================================================================
+Eye source: pupil_left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-pupil
+======================================================================
+  276 / 287 trials kept  (Pool B: 276)
+  Running run_covariance_decomposition (276 trials, 38 Pool B units)...
+Found 227 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:15<01:03, 15.94s/it] 40%|████      | 2/5 [00:20<00:27,  9.17s/it] 60%|██████    | 3/5 [00:21<00:11,  5.62s/it] 80%|████████  | 4/5 [00:22<00:03,  3.56s/it]100%|██████████| 5/5 [00:22<00:00,  2.32s/it]100%|██████████| 5/5 [00:22<00:00,  4.46s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-pupil/unit_rasters_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-pupil/unit_cov_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/left-pupil/mcfarland_fixrsvp_Luke_2026-03-11_pupil_left.pkl
+
+======================================================================
+Eye source: right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-dpi
+======================================================================
+  276 / 287 trials kept  (Pool B: 276)
+  Running run_covariance_decomposition (276 trials, 38 Pool B units)...
+Found 227 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:11<00:47, 12.00s/it] 40%|████      | 2/5 [00:15<00:21,  7.05s/it] 60%|██████    | 3/5 [00:16<00:08,  4.39s/it] 80%|████████  | 4/5 [00:17<00:02,  2.81s/it]100%|██████████| 5/5 [00:17<00:00,  1.84s/it]100%|██████████| 5/5 [00:17<00:00,  3.47s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-dpi/unit_rasters_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-dpi/unit_cov_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-dpi/mcfarland_fixrsvp_Luke_2026-03-11_right.pkl
+
+======================================================================
+Eye source: pupil_right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-pupil
+======================================================================
+  276 / 287 trials kept  (Pool B: 276)
+  Running run_covariance_decomposition (276 trials, 38 Pool B units)...
+Found 227 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:12<00:51, 12.81s/it] 40%|████      | 2/5 [00:16<00:22,  7.54s/it] 60%|██████    | 3/5 [00:17<00:09,  4.67s/it] 80%|████████  | 4/5 [00:18<00:02,  2.98s/it]100%|██████████| 5/5 [00:18<00:00,  1.95s/it]100%|██████████| 5/5 [00:18<00:00,  3.69s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-pupil/unit_rasters_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-pupil/unit_cov_Luke_2026-03-11.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/right-pupil/mcfarland_fixrsvp_Luke_2026-03-11_pupil_right.pkl
+
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/frac_fem_summary_Luke_2026-03-11.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/fem_fraction_comparison_Luke_2026-03-11.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-11_v10/frac_fem_summary_Luke_2026-03-11.txt
+
+All conditions complete.
+Session: Luke_2026-03-13
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2026-03-13/datasets_gaussian/right_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([18905, 179])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_right', 'dpi_valid_right', 'eyepos_left', 'dpi_valid_left', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('right-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-dpi', 'left'), ('left-pupil', 'pupil_left'), ('right-pupil', 'pupil_right')]
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-13/patched_pipeline_results_Luke03132026_V2V1_RH_g0_imec0/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-13/Luke03132026_V2V1_RH_g0_NidaqImec0timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-13/patched_pipeline_results_Luke03132026_V2V1_RH_g0_imec0/cur/cur_sorter_output/params.py
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-13/patched_pipeline_results_Luke03132026_V2V1_RH_g0_imec1/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-13/Luke03132026_V2V1_RH_g0_NidaqImec1timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-13/patched_pipeline_results_Luke03132026_V2V1_RH_g0_imec1/cur/cur_sorter_output/params.py
+Vergence loaded (eyepos_left − eyepos_right), shape (18905, 2)
+
+======================================================================
+INCLUSION CRITERIA
+======================================================================
+
+Criterion 0 — Eccentricity gate (radius=1.5°)
+  Fixation center (median valid eyepos): (0.106°, 5.042°)
+  Total serial bins:                 18905
+  dpi_valid bins:                    15475 (81.9%)
+  ecc <= 1.5° bins:              18671 (98.8%)
+  Valid DPI but ecc > radius:        112  (newly excluded by this gate)
+  Max eccentricity (from center):    52.35°
+
+Runtime datafilter — missing_pct < 45.0
+  Valid bins after truncation mask:      3254141 / 3383995
+  Units with median missing >= threshold (kept as multi-unit fallback): 136 / 179
+
+  Trials total:          201
+  Trials dur > 20 bins:  135
+
+Criterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)
+  right-eye: SNR >= 2.5: 179  |  SNR >= 5.0: 179
+  SNR source summary: right-eye=existing dots RF SNR cache
+  visual_mask (right-eye, >= 5.0; existing dots RF SNR cache): 179 / 179
+
+Criterion 2 — Spike threshold (> 200)
+  Passing: 48 / 179
+
+Pre-reliability bad-trial screen (diagnostic only)
+  Candidate units for trial diagnostics: 48 / 179
+  Flagged suspicious trials:            9 / 135
+  Low valid-bin frac outliers:          0 / 135
+  Population spike outliers:            1 / 135
+  NaN-fraction outliers:                0 / 135
+  PSTH-deviation outliers (>2.0 robust z): 9 / 135
+  Flagged trial indices (0-based):      [11, 26, 28, 29, 38, 54, 55, 63, 64]
+
+Criterion 3 — Split-half PSTH reliability (r², 20 splits, >= 0)
+  Passing (unmasked spikes): 179 / 179
+  Passing (truncation-QC masked, for comparison): 179 / 179
+  Units recovered by unmasking: 0
+  Passing after excluding flagged trials: 179 / 179
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/reliability_r2_histogram_Luke_2026-03-13.pdf
+
+NaN fraction gate (<= 0.2)
+  Passing: 163 / 179
+
+──────────────────────────────────────────────────
+WATERFALL REPORT
+──────────────────────────────────────────────────
+All units:               179
+After spike threshold:   48
+After dots RF SNR:       48   (right-eye, >= 5.0; existing dots RF SNR cache)
+After reliability:       48
+──────────────────────────────────────────────────
+POOL A (per-neuron):     48 / 179
+After NaN-frac gate:     44
+──────────────────────────────────────────────────
+POOL B (covariance):     44 / 179
+
+Trials (good_trials):          135 / 201
+After bad-unit-frac gate:      135 / 201   (Pool B covariance trials)
+
+==================================================
+YAML CROSS-CHECK
+==================================================
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-13_binocular_V1.yaml
+  [WARN] YAML not found: /home/declan/VisionCore/experiments/dataset_configs/sessions/Luke_2026-03-13_right_V1.yaml
+
+visual — binocular YAML cross-check skipped (script now uses dots RF SNR on the primary eye)
+
+Pool A cluster IDs: [277, 278, 281, 285, 287, 289, 291, 292, 293, 297, 298, 299, 303, 304, 308, 310, 312, 314, 315, 316, 318, 333, 340, 341, 344, 347, 348, 355, 357, 362, 368, 380, 382, 384, 390, 395, 404, 418, 421, 422, 423, 431, 436, 440, 447, 448, 451, 457]
+Pool B cluster IDs: [278, 281, 285, 287, 289, 291, 292, 293, 297, 298, 299, 303, 304, 308, 310, 312, 315, 316, 318, 333, 340, 341, 344, 347, 348, 355, 357, 362, 380, 382, 384, 390, 395, 404, 418, 421, 422, 423, 431, 436, 447, 448, 451, 457]
+
+======================================================================
+Eye source: default  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/right-dpi
+======================================================================
+  135 / 201 trials kept  (Pool B: 135)
+  Running run_covariance_decomposition (135 trials, 44 Pool B units)...
+Found 97 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:10,  2.71s/it] 40%|████      | 2/5 [00:03<00:05,  1.74s/it] 60%|██████    | 3/5 [00:04<00:02,  1.16s/it] 80%|████████  | 4/5 [00:04<00:00,  1.27it/s]100%|██████████| 5/5 [00:04<00:00,  1.85it/s]100%|██████████| 5/5 [00:04<00:00,  1.10it/s]
+  Running 2D conditional estimator (2637 windows, 20 ms)...
+  Pair counts (d_c rows × d_v cols):
+[[4887 4018 2973 2072 1451]
+ [3877 3643 3311 2726 1843]
+ [2976 3131 3289 3312 2692]
+ [2397 2574 3185 3679 3565]
+ [1264 2034 2642 3611 5849]]
+  Near-dc slope: real=-0.0068  shuffle=-0.0055
+  Cverg2d diag: mean=0.0269, max=0.2129
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/right-dpi/unit_rasters_Luke_2026-03-13.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/right-dpi/unit_cov_Luke_2026-03-13.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/right-dpi/unit_2d_cov_Luke_2026-03-13.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/right-dpi/mcfarland_fixrsvp_Luke_2026-03-13_default.pkl
+
+======================================================================
+Eye source: binocular_diff  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/binocular
+======================================================================
+  135 / 201 trials kept  (Pool B: 135)
+  Running run_covariance_decomposition (135 trials, 44 Pool B units)...
+Found 96 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:10,  2.62s/it] 40%|████      | 2/5 [00:03<00:05,  1.69s/it] 60%|██████    | 3/5 [00:04<00:02,  1.13s/it] 80%|████████  | 4/5 [00:04<00:00,  1.32it/s]100%|██████████| 5/5 [00:04<00:00,  1.14it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/binocular/unit_rasters_Luke_2026-03-13.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/binocular/unit_cov_Luke_2026-03-13.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/binocular/mcfarland_fixrsvp_Luke_2026-03-13_binocular_diff.pkl
+
+======================================================================
+Eye source: left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/left-dpi
+======================================================================
+  189 / 201 trials kept  (Pool B: 189)
+  Running run_covariance_decomposition (189 trials, 44 Pool B units)...
+Found 96 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:09,  2.47s/it] 40%|████      | 2/5 [00:03<00:04,  1.60s/it] 60%|██████    | 3/5 [00:03<00:02,  1.08s/it] 80%|████████  | 4/5 [00:04<00:00,  1.37it/s]100%|██████████| 5/5 [00:04<00:00,  1.19it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/left-dpi/unit_rasters_Luke_2026-03-13.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/left-dpi/unit_cov_Luke_2026-03-13.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/left-dpi/mcfarland_fixrsvp_Luke_2026-03-13_left.pkl
+
+======================================================================
+Eye source: pupil_left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/left-pupil
+======================================================================
+  189 / 201 trials kept  (Pool B: 189)
+  Running run_covariance_decomposition (189 trials, 44 Pool B units)...
+Found 96 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:10,  2.61s/it] 40%|████      | 2/5 [00:03<00:05,  1.69s/it] 60%|██████    | 3/5 [00:04<00:02,  1.13s/it] 80%|████████  | 4/5 [00:04<00:00,  1.32it/s]100%|██████████| 5/5 [00:04<00:00,  1.14it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/left-pupil/unit_rasters_Luke_2026-03-13.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/left-pupil/unit_cov_Luke_2026-03-13.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/left-pupil/mcfarland_fixrsvp_Luke_2026-03-13_pupil_left.pkl
+
+======================================================================
+Eye source: pupil_right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/right-pupil
+======================================================================
+  135 / 201 trials kept  (Pool B: 135)
+  Running run_covariance_decomposition (135 trials, 44 Pool B units)...
+Found 97 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:02<00:10,  2.53s/it] 40%|████      | 2/5 [00:03<00:04,  1.65s/it] 60%|██████    | 3/5 [00:04<00:02,  1.10s/it] 80%|████████  | 4/5 [00:04<00:00,  1.35it/s]100%|██████████| 5/5 [00:04<00:00,  1.17it/s]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/right-pupil/unit_rasters_Luke_2026-03-13.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/right-pupil/unit_cov_Luke_2026-03-13.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/right-pupil/mcfarland_fixrsvp_Luke_2026-03-13_pupil_right.pkl
+
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/frac_fem_summary_Luke_2026-03-13.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/fem_fraction_comparison_Luke_2026-03-13.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-13_v10/frac_fem_summary_Luke_2026-03-13.txt
+
+All conditions complete.
+Session: Luke_2026-03-16
+Loading fixrsvp from: /mnt/ssd2/RowleyMarmoV1V2/processed_mvp/Luke_2026-03-16/datasets_gaussian/right_eye/fixrsvp.dset
+Loaded fixrsvp DictDataset:
+  robs:       torch.Size([46437, 119])
+  keys:       ['t_bins', 'trial_inds', 'psth_inds', 'stim', 'robs', 'dpi_pix', 'roi', 'eyepos', 'dpi_valid', 'eyepos_right', 'dpi_valid_right', 'eyepos_left', 'dpi_valid_left', 'pupil_left', 'pupil_valid_left', 'pupil_right', 'pupil_valid_right']
+  enabled eye configs: [('right-dpi', 'default'), ('binocular', 'binocular_diff'), ('left-dpi', 'left'), ('left-pupil', 'pupil_left'), ('right-pupil', 'pupil_right')]
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-16/patched_pipeline_results_Luke03162026_V2V1_RH_g0_imec0/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-16/Luke03162026_V2V1_RH_g0_NidaqImec0timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-16/patched_pipeline_results_Luke03162026_V2V1_RH_g0_imec0/cur/cur_sorter_output/params.py
+[registry] Loading truncation QC file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-16/patched_pipeline_results_Luke03162026_V2V1_RH_g0_imec1/qc/amp_truncation/truncation_qc.npz
+[registry] Loading timing file: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-16/Luke03162026_V2V1_RH_g0_NidaqImec1timing.mat
+[registry] Loading sampling rate from params.py: /mnt/ssd2/RowleyMarmoV1V2/raw/Luke_2026-03-16/patched_pipeline_results_Luke03162026_V2V1_RH_g0_imec1/cur/cur_sorter_output/params.py
+Vergence loaded (eyepos_left − eyepos_right), shape (46437, 2)
+
+======================================================================
+INCLUSION CRITERIA
+======================================================================
+
+Criterion 0 — Eccentricity gate (radius=1.5°)
+  Fixation center (median valid eyepos): (0.026°, 0.079°)
+  Total serial bins:                 46437
+  dpi_valid bins:                    46297 (99.7%)
+  ecc <= 1.5° bins:              46141 (99.4%)
+  Valid DPI but ecc > radius:        156  (newly excluded by this gate)
+  Max eccentricity (from center):    46.15°
+
+Runtime datafilter — missing_pct < 45.0
+  Valid bins after truncation mask:      5294835 / 5526003
+  Units with median missing >= threshold (kept as multi-unit fallback): 91 / 119
+
+  Trials total:          293
+  Trials dur > 20 bins:  282
+
+Criterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)
+  right-eye: SNR >= 2.5: 106  |  SNR >= 5.0: 106
+  SNR source summary: right-eye=existing dots RF SNR cache
+  visual_mask (right-eye, >= 5.0; existing dots RF SNR cache): 106 / 119
+
+Criterion 2 — Spike threshold (> 200)
+  Passing: 88 / 119
+
+Pre-reliability bad-trial screen (diagnostic only)
+  Candidate units for trial diagnostics: 87 / 119
+  Flagged suspicious trials:            26 / 282
+  Low valid-bin frac outliers:          0 / 282
+  Population spike outliers:            0 / 282
+  NaN-fraction outliers:                1 / 282
+  PSTH-deviation outliers (>2.0 robust z): 25 / 282
+  Flagged trial indices (0-based):      [2, 3, 4, 5, 10, 12, 14, 15, 17, 19, 26, 30, 33, 35, 36, 37, 52, 53, 58, 86, 95, 99, 179, 186, 216, 242]
+
+Criterion 3 — Split-half PSTH reliability (r², 20 splits, >= 0)
+  Passing (unmasked spikes): 119 / 119
+  Passing (truncation-QC masked, for comparison): 119 / 119
+  Units recovered by unmasking: 0
+  Passing after excluding flagged trials: 119 / 119
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/reliability_r2_histogram_Luke_2026-03-16.pdf
+
+NaN fraction gate (<= 0.2)
+  Passing: 105 / 119
+
+──────────────────────────────────────────────────
+WATERFALL REPORT
+──────────────────────────────────────────────────
+All units:               119
+After spike threshold:   88
+After dots RF SNR:       87   (right-eye, >= 5.0; existing dots RF SNR cache)
+After reliability:       87
+──────────────────────────────────────────────────
+POOL A (per-neuron):     87 / 119
+After NaN-frac gate:     76
+──────────────────────────────────────────────────
+POOL B (covariance):     76 / 119
+
+Trials (good_trials):          282 / 293
+After bad-unit-frac gate:      282 / 293   (Pool B covariance trials)
+
+==================================================
+YAML CROSS-CHECK
+==================================================
+
+visual — binocular YAML cross-check skipped (script now uses dots RF SNR on the primary eye)
+
+visual — right-eye (YAML snr>=5.0 gaborium) vs script right-eye (dots RF SNR >= 5.0)
+  YAML:   14 units  [969, 970, 989, 1000, 1007, 1008, 1009, 1011, 1013, 1017, 1033, 1034, 1035, 1045]
+  Script: 106 units  [438, 439, 440, 441, 442, 444, 445, 446, 447, 448, 449, 450, 452, 453, 454, 455, 456, 457, 458, 459, 460, 461, 462, 463, 464, 465, 466, 467, 468, 469, 470, 471, 472, 473, 474, 475, 479, 481, 482, 483, 484, 485, 486, 487, 488, 489, 490, 491, 492, 493, 494, 495, 496, 497, 498, 499, 500, 501, 502, 503, 505, 506, 507, 508, 509, 510, 511, 512, 513, 514, 515, 516, 517, 518, 519, 520, 521, 522, 523, 524, 525, 526, 527, 528, 529, 530, 531, 532, 533, 534, 537, 538, 539, 540, 541, 542, 543, 544, 546, 547, 548, 563, 564, 565, 567, 568]
+  Agreement: 0 / 120
+  ** In YAML not script: [969, 970, 989, 1000, 1007, 1008, 1009, 1011, 1013, 1017, 1033, 1034, 1035, 1045]
+  ** In script not YAML: [438, 439, 440, 441, 442, 444, 445, 446, 447, 448, 449, 450, 452, 453, 454, 455, 456, 457, 458, 459, 460, 461, 462, 463, 464, 465, 466, 467, 468, 469, 470, 471, 472, 473, 474, 475, 479, 481, 482, 483, 484, 485, 486, 487, 488, 489, 490, 491, 492, 493, 494, 495, 496, 497, 498, 499, 500, 501, 502, 503, 505, 506, 507, 508, 509, 510, 511, 512, 513, 514, 515, 516, 517, 518, 519, 520, 521, 522, 523, 524, 525, 526, 527, 528, 529, 530, 531, 532, 533, 534, 537, 538, 539, 540, 541, 542, 543, 544, 546, 547, 548, 563, 564, 565, 567, 568]
+
+qcmissing (YAML = passing nan check):  84 units
+nan_frac <= 0.2 (script passing):  105 units
+  Both pass:          0
+  YAML pass, script fail: 84
+  Script pass, YAML fail: 105
+  Note: YAML threshold is med_missing_pct < 45% (different window/metric from nan_frac <= 0.2 in FixRSVP window)
+
+cids (YAML binocular):   [1053]
+Pool B cluster IDs:      [438, 439, 442, 444, 445, 446, 447, 448, 450, 452, 454, 455, 458, 460, 463, 464, 465, 467, 468, 469, 471, 473, 474, 475, 479, 482, 483, 484, 486, 487, 488, 490, 492, 493, 496, 497, 498, 499, 501, 502, 503, 505, 506, 507, 508, 510, 512, 515, 516, 517, 518, 519, 520, 523, 524, 525, 526, 527, 528, 530, 531, 532, 533, 537, 539, 540, 541, 542, 543, 546, 547, 563, 564, 565, 567, 568]
+  ** In YAML cids not Pool B: [1053]
+  ** In Pool B not YAML cids: [438, 439, 442, 444, 445, 446, 447, 448, 450, 452, 454, 455, 458, 460, 463, 464, 465, 467, 468, 469, 471, 473, 474, 475, 479, 482, 483, 484, 486, 487, 488, 490, 492, 493, 496, 497, 498, 499, 501, 502, 503, 505, 506, 507, 508, 510, 512, 515, 516, 517, 518, 519, 520, 523, 524, 525, 526, 527, 528, 530, 531, 532, 533, 537, 539, 540, 541, 542, 543, 546, 547, 563, 564, 565, 567, 568]
+
+Pool A cluster IDs: [438, 439, 442, 444, 445, 446, 447, 448, 450, 452, 454, 455, 456, 458, 459, 460, 462, 463, 464, 465, 466, 467, 468, 469, 470, 471, 473, 474, 475, 479, 482, 483, 484, 486, 487, 488, 489, 490, 492, 493, 495, 496, 497, 498, 499, 501, 502, 503, 505, 506, 507, 508, 510, 512, 513, 515, 516, 517, 518, 519, 520, 523, 524, 525, 526, 527, 528, 529, 530, 531, 532, 533, 534, 537, 539, 540, 541, 542, 543, 546, 547, 548, 563, 564, 565, 567, 568]
+Pool B cluster IDs: [438, 439, 442, 444, 445, 446, 447, 448, 450, 452, 454, 455, 458, 460, 463, 464, 465, 467, 468, 469, 471, 473, 474, 475, 479, 482, 483, 484, 486, 487, 488, 490, 492, 493, 496, 497, 498, 499, 501, 502, 503, 505, 506, 507, 508, 510, 512, 515, 516, 517, 518, 519, 520, 523, 524, 525, 526, 527, 528, 530, 531, 532, 533, 537, 539, 540, 541, 542, 543, 546, 547, 563, 564, 565, 567, 568]
+
+======================================================================
+Eye source: default  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/right-dpi
+======================================================================
+  282 / 293 trials kept  (Pool B: 282)
+  Running run_covariance_decomposition (282 trials, 76 Pool B units)...
+Found 159 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:06<00:24,  6.05s/it] 40%|████      | 2/5 [00:08<00:11,  3.67s/it] 60%|██████    | 3/5 [00:08<00:04,  2.35s/it] 80%|████████  | 4/5 [00:09<00:01,  1.54s/it]100%|██████████| 5/5 [00:09<00:00,  1.03s/it]100%|██████████| 5/5 [00:09<00:00,  1.85s/it]
+  Running 2D conditional estimator (5392 windows, 20 ms)...
+  Pair counts (d_c rows × d_v cols):
+[[17488 14039 10205  6453  5276]
+ [14693 13496 10887  7596  6788]
+ [10957 11702 11897  9811  9093]
+ [ 7033  9510 11655 13022 12240]
+ [ 3290  4713  8816 16578 20064]]
+  Near-dc slope: real=-0.0029  shuffle=-0.0023
+  Cverg2d diag: mean=0.0186, max=0.3757
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/right-dpi/unit_rasters_Luke_2026-03-16.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/right-dpi/unit_cov_Luke_2026-03-16.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/right-dpi/unit_2d_cov_Luke_2026-03-16.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/right-dpi/mcfarland_fixrsvp_Luke_2026-03-16_default.pkl
+
+======================================================================
+Eye source: binocular_diff  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/binocular
+======================================================================
+  275 / 293 trials kept  (Pool B: 275)
+  Running run_covariance_decomposition (275 trials, 76 Pool B units)...
+Found 154 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:06<00:25,  6.37s/it] 40%|████      | 2/5 [00:08<00:11,  3.84s/it] 60%|██████    | 3/5 [00:09<00:04,  2.44s/it] 80%|████████  | 4/5 [00:09<00:01,  1.59s/it]100%|██████████| 5/5 [00:09<00:00,  1.07s/it]100%|██████████| 5/5 [00:09<00:00,  1.93s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/binocular/unit_rasters_Luke_2026-03-16.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/binocular/unit_cov_Luke_2026-03-16.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/binocular/mcfarland_fixrsvp_Luke_2026-03-16_binocular_diff.pkl
+
+======================================================================
+Eye source: left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/left-dpi
+======================================================================
+  275 / 293 trials kept  (Pool B: 275)
+  Running run_covariance_decomposition (275 trials, 76 Pool B units)...
+Found 154 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:05<00:22,  5.53s/it] 40%|████      | 2/5 [00:07<00:10,  3.42s/it] 60%|██████    | 3/5 [00:08<00:04,  2.21s/it] 80%|████████  | 4/5 [00:08<00:01,  1.45s/it]100%|██████████| 5/5 [00:08<00:00,  1.01it/s]100%|██████████| 5/5 [00:08<00:00,  1.74s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/left-dpi/unit_rasters_Luke_2026-03-16.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/left-dpi/unit_cov_Luke_2026-03-16.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/left-dpi/mcfarland_fixrsvp_Luke_2026-03-16_left.pkl
+
+======================================================================
+Eye source: pupil_left  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/left-pupil
+======================================================================
+  275 / 293 trials kept  (Pool B: 275)
+  Running run_covariance_decomposition (275 trials, 76 Pool B units)...
+Found 154 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:06<00:24,  6.08s/it] 40%|████      | 2/5 [00:08<00:11,  3.71s/it] 60%|██████    | 3/5 [00:08<00:04,  2.37s/it] 80%|████████  | 4/5 [00:09<00:01,  1.54s/it]100%|██████████| 5/5 [00:09<00:00,  1.03s/it]100%|██████████| 5/5 [00:09<00:00,  1.86s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/left-pupil/unit_rasters_Luke_2026-03-16.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/left-pupil/unit_cov_Luke_2026-03-16.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/left-pupil/mcfarland_fixrsvp_Luke_2026-03-16_pupil_left.pkl
+
+======================================================================
+Eye source: pupil_right  →  /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/right-pupil
+======================================================================
+  282 / 293 trials kept  (Pool B: 282)
+  Running run_covariance_decomposition (282 trials, 76 Pool B units)...
+Found 159 valid segments
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:05<00:23,  5.85s/it] 40%|████      | 2/5 [00:07<00:10,  3.58s/it] 60%|██████    | 3/5 [00:08<00:04,  2.29s/it] 80%|████████  | 4/5 [00:08<00:01,  1.49s/it]100%|██████████| 5/5 [00:08<00:00,  1.01it/s]100%|██████████| 5/5 [00:08<00:00,  1.79s/it]
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/right-pupil/unit_rasters_Luke_2026-03-16.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/right-pupil/unit_cov_Luke_2026-03-16.pdf
+  Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/right-pupil/mcfarland_fixrsvp_Luke_2026-03-16_pupil_right.pkl
+
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/frac_fem_summary_Luke_2026-03-16.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/fem_fraction_comparison_Luke_2026-03-16.pdf
+Saved /home/declan/VisionCore/outputs/figures/mcfarland/Luke_2026-03-16_v10/frac_fem_summary_Luke_2026-03-16.txt
+
+All conditions complete.
+Discovered 17 runnable processed_mvp dataset entries
+
+================================================================================
+Dispatching Luke_2025-07-30 | dataset_dir=datasets/left_eye | primary_eye=left
+================================================================================
+
+================================================================================
+Dispatching Luke_2025-08-04 | dataset_dir=datasets/left_eye | primary_eye=left
+================================================================================
+
+================================================================================
+Dispatching Luke_2025-08-04 | dataset_dir=datasets_gaussian/left_eye | primary_eye=left
+================================================================================
+
+================================================================================
+Dispatching Luke_2025-08-04 | dataset_dir=datasets_gaussian/right_eye | primary_eye=right
+================================================================================
+
+================================================================================
+Dispatching Luke_2025-08-05 | dataset_dir=datasets/right_eye | primary_eye=right
+================================================================================
+[FAIL] Luke_2025-08-05 | datasets/right_eye exited with code 1
+
+================================================================================
+Dispatching Luke_2025-08-05 | dataset_dir=datasets_gaussian/right_eye | primary_eye=right
+================================================================================
+[FAIL] Luke_2025-08-05 | datasets_gaussian/right_eye exited with code 1
+
+================================================================================
+Dispatching Luke_2026-03-01 | dataset_dir=datasets_gaussian/right_eye | primary_eye=right
+================================================================================
+
+================================================================================
+Dispatching Luke_2026-03-02 | dataset_dir=datasets/left_eye | primary_eye=left
+================================================================================
+
+================================================================================
+Dispatching Luke_2026-03-02 | dataset_dir=datasets_gaussian/left_eye | primary_eye=left
+================================================================================
+
+================================================================================
+Dispatching Luke_2026-03-02 | dataset_dir=datasets_gaussian/right_eye | primary_eye=right
+================================================================================
+
+================================================================================
+Dispatching Luke_2026-03-08 | dataset_dir=datasets/left_eye | primary_eye=left
+================================================================================
+[FAIL] Luke_2026-03-08 | datasets/left_eye exited with code 1
+
+================================================================================
+Dispatching Luke_2026-03-08 | dataset_dir=datasets_gaussian/left_eye | primary_eye=left
+================================================================================
+[FAIL] Luke_2026-03-08 | datasets_gaussian/left_eye exited with code 1
+
+================================================================================
+Dispatching Luke_2026-03-09 | dataset_dir=datasets/left_eye | primary_eye=left
+================================================================================
+
+================================================================================
+Dispatching Luke_2026-03-11 | dataset_dir=datasets/left_eye | primary_eye=left
+================================================================================
+
+================================================================================
+Dispatching Luke_2026-03-11 | dataset_dir=datasets_gaussian/left_eye | primary_eye=left
+================================================================================
+
+================================================================================
+Dispatching Luke_2026-03-13 | dataset_dir=datasets_gaussian/right_eye | primary_eye=right
+================================================================================
+
+================================================================================
+Dispatching Luke_2026-03-16 | dataset_dir=datasets_gaussian/right_eye | primary_eye=right
+================================================================================
+
+================================================================================
+Processed 17 dataset entries
+Failures: 4
+  Luke_2025-08-05 | datasets/right_eye -> exit 1
+  Luke_2025-08-05 | datasets_gaussian/right_eye -> exit 1
+  Luke_2026-03-08 | datasets/left_eye -> exit 1
+  Luke_2026-03-08 | datasets_gaussian/left_eye -> exit 1

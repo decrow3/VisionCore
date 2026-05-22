@@ -154,7 +154,7 @@ def compute_rate_map_batched(model, readout, stim, batch_size=32):
 
     return torch.cat(y_chunks, dim=0)
 
-def make_movie(y, save_path='', n_units_to_show=100):
+def make_movie(y, save_path='', n_units_to_show=100, fps=15):
     from torchvision.utils import make_grid
     from matplotlib.animation import FFMpegWriter
 
@@ -183,7 +183,8 @@ def make_movie(y, save_path='', n_units_to_show=100):
     fig, ax = plt.subplots(figsize=(12, 12))
     ax.axis('off')
 
-    writer = FFMpegWriter(fps=15, codec='libx264', bitrate=8000)
+    #writer = FFMpegWriter(fps=15, codec='libx264', bitrate=8000)
+    writer = FFMpegWriter(fps=fps, metadata=dict(artist='VisionCore'), bitrate=1800)
 
     save_path = f'../figures/{save_path}.mp4'
     with writer.saving(fig, save_path, dpi=100):
@@ -246,7 +247,9 @@ def make_counterfactual_stim(full_stack, eyepos,
         out_size: (H, W) size of output stimulus
     '''
 
-    eye_norm = eye_deg_to_norm(torch.fliplr(eyepos), ppd, full_stack.shape[1:3])
+    #eye_norm = eye_deg_to_norm(torch.fliplr(eyepos), ppd, full_stack.shape[1:3])
+    #removing the flip, since shift_movie_with_eye expects (x,y) in that order, and eye_deg_to_norm also expects (x,y) in that order.
+    eye_norm = eye_deg_to_norm(eyepos, ppd, full_stack.shape[1:3])
 
     eye_movie = shift_movie_with_eye(
         torch.from_numpy(full_stack[:eyepos.shape[0] + n_lags]).float(),
@@ -261,4 +264,61 @@ def make_counterfactual_stim(full_stack, eyepos,
     eye_stim = embed_time_lags(eye_movie, n_lags=n_lags)
 
     return eye_stim
+
+import torch
+import torch.nn.functional as F
+from mcfarland_sim import eye_deg_to_norm, shift_movie_with_eye
+
+def make_integrated_counterfactual_stim(full_stack, eyepos, ppd=37.50476617, n_lags=32, sub_frames=10):
+    """
+    Reconstruct stimulus with sub-frame temporal integration (simulating retinal motion blur).
+    
+    Args:
+        full_stack: [T_stim, C, H, W] The base images
+        eyepos: [T, 2] eye positions in degrees at the native model framerate (e.g., 100Hz)
+        ppd: pixels per degree
+        n_lags: number of time lags to use
+        sub_frames: The upsampling factor for physical integration (e.g., 10x = 1000Hz internal rendering)
+    """
+    device = eyepos.device
+    T_native = eyepos.shape[0]
+    
+    # 1. Upsample the eye trace linearly
+    # eyepos is [T, 2]. We transpose to [2, T] for 1D interpolation
+    eyepos_T = eyepos.T.unsqueeze(0) # Shape: [1, 2, T]
+    
+    # Interpolate to high resolution
+    high_res_T = T_native * sub_frames
+    eyepos_high_res = F.interpolate(eyepos_T, size=high_res_T, mode='linear', align_corners=False)
+    eyepos_high_res = eyepos_high_res.squeeze(0).T # Back to [high_res_T, 2]
+    
+    # 2. Convert to normalized coordinates
+    img_shape = full_stack.shape[2:] # (H, W)
+    #eye_norm_high_res = eye_deg_to_norm(torch.fliplr(eyepos_high_res), ppd, img_shape)
+    #removing the flip, since shift_movie_with_eye expects (x,y) in that order, and eye_deg_to_norm also expects (x,y) in that order.
+    eye_norm_high_res = eye_deg_to_norm(eyepos_high_res, ppd, img_shape)
+
+    # 3. Upsample the base image stack to match (nearest neighbor so we don't blend images across cuts)
+    # This assumes full_stack changes slowly or we are in a single continuous trial
+    full_stack_high_res = torch.repeat_interleave(full_stack, sub_frames, dim=0)
+    
+    # We need to grab enough padding for the lags. 
+    # n_lags at native resolution = n_lags * sub_frames at high resolution
+    pad_frames = n_lags * sub_frames
+    
+    # 4. Shift the movie at high resolution
+    # Note: We shift the chunk of the movie corresponding to the eye trace length + padding
+    eye_movie_high_res = shift_movie_with_eye(
+        full_stack_high_res[:high_res_T + pad_frames].float(),
+        torch.cat([eye_norm_high_res[:pad_frames], eye_norm_high_res], dim=0)
+    )
+    
+    # 5. Integrate (Average) down to native frame rate
+    # Reshape from [high_res_T + pad_frames, C, H, W] to [T_native + n_lags, sub_frames, C, H, W]
+    integrated_movie = eye_movie_high_res.view((T_native + n_lags), sub_frames, *eye_movie_high_res.shape[1:])
+    
+    # Mean across the sub_frame dimension
+    eye_movie_native = integrated_movie.mean(dim=1)
+    
+    return eye_movie_native
 # %%

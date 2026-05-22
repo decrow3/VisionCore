@@ -1,4 +1,7 @@
 #%%
+#append parent directory to path for module imports
+import sys
+sys.path.append('../')
 
 from models.data import DictDataset
 from VisionCore.dual_window import DualWindowAnalysis
@@ -33,10 +36,10 @@ else:
 
 #%%
 # Computation parameters
-batch_size = 10000
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+batch_size = 1000
+#device = 'cuda' if torch.cuda.is_available() else 'cpu'
 device = 'cpu'
-
+print(f'Using device: {device}')
 #%%
 # Preprocess stimulus and create valid mask
 

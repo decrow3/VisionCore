@@ -22,7 +22,7 @@ from models.data.loading import get_embedded_datasets
 from models.data.splitting import split_inds_by_trial
 
 #%% Load dataset configs
-dataset_configs_path = "/home/jake/repos/VisionCore/experiments/dataset_configs/multi_basic_120_long_rowley.yaml"
+dataset_configs_path = "experiments/dataset_configs/multi_basic_120_long_rowley.yaml"
 dataset_configs = load_dataset_configs(dataset_configs_path)
 
 print(f"Loaded {len(dataset_configs)} dataset configs:")

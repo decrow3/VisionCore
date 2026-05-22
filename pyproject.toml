@@ -32,18 +32,17 @@ dependencies = [
     "statsmodels",
     "dill",
     "cairosvg>=2.9.0",
-    "svgutils>=0.3.4",
 ]
 
 [project.optional-dependencies]
 data = [
-    "DataYatesV1 @ git+https://github.com/Yates-Lab/DataYatesV1",
-    "DataRowleyV1V2 @ git+https://github.com/Yates-Lab/DataRowleyV1V2",
+    "DataYatesV1",
+    "DataRowleyV1V2",
 ]
 
 [tool.uv.sources]
-DataYatesV1 = { workspace = true }
-DataRowleyV1V2 = { workspace = true }
+DataYatesV1 = {path = "../DataYatesV1", editable = true}
+DataRowleyV1V2 = {path = "../DataRowleyV1V2", editable = true}
 
 # loggabor and slip import these packages during setup.py execution but don't declare them as build dependencies
 [tool.uv.extra-build-dependencies]

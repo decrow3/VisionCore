@@ -56,8 +56,8 @@ export LD_LIBRARY_PATH="$HOME/.local/lib:$LD_LIBRARY_PATH"
 PRETRAINED_CHECKPOINT_DIR="/mnt/ssd/YatesMarmoV1/conv_model_fits/experiments/multidataset_120_long/checkpoints"
 MODEL_TYPE="resnet_none_convgru"  # Type of model to load from checkpoint dir
 
-# New dataset configuration  
-DATASET_CONFIGS_PATH="/home/ryanress/VisionCore/experiments/dataset_configs/multi_basic_120_long_rowley.yaml"
+# New dataset configuration
+DATASET_CONFIGS_PATH="$SCRIPT_DIR/experiments/dataset_configs/multi_basic_120_long_rowley.yaml"
 
 # Output configuration
 PROJECT_NAME="frozencore_readouts_120"

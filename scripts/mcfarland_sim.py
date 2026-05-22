@@ -6,7 +6,15 @@ import sys
 sys.path.append('..')
 import numpy as np
 
-from DataYatesV1 import enable_autoreload, get_free_device
+# DataYatesV1 is an optional external dependency. Most of this module (e.g.
+# gaze-contingent resampling helpers) does not require it, but importing it at
+# module import time can break workflows when the package is absent or partially
+# installed.
+try:
+    from DataYatesV1 import enable_autoreload, get_free_device  # type: ignore
+except Exception:  # pragma: no cover
+    enable_autoreload = None
+    get_free_device = None
 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -28,8 +36,13 @@ mpl.rcParams['ps.fonttype']  = 42
 mpl.rcParams['font.family'] = 'sans-serif'
 mpl.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'DejaVu Sans']
 
-enable_autoreload()
-device = get_free_device()
+if callable(enable_autoreload):
+    enable_autoreload()
+
+if callable(get_free_device):
+    device = get_free_device()
+else:
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 #%% Utilities
 

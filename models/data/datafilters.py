@@ -144,31 +144,39 @@ def _make_missing_pct(cfg):
     def missing_pct(dset: DictDataset) -> torch.Tensor:
         """
         Generate a binary mask for valid data frames based on missing percentage.
-        
+
         This function creates a mask that excludes frames where the missing
         percentage exceeds the specified threshold.
-        
+
         Parameters
         ----------
         dset : DictDataset
             Dataset containing missing percentage information
-            
+
         Returns
         -------
         torch.Tensor
             Binary mask tensor of shape [n_frames, n_units] where 1 indicates valid frames
         """
-        cids = dset.metadata['sess'].get_cluster_ids()
+        # Use the cluster IDs that correspond 1-to-1 with robs columns.
+        # 'all_cids' is set by get_dataset() from the stored 'cluster_ids' metadata
+        # so it matches exactly the columns in robs (depth-band-filtered, etc.).
+        # Fall back to get_cluster_ids() for Yates sessions that don't store all_cids.
+        all_cids = dset.metadata.get('all_cids', None)
+        if all_cids is not None:
+            cids = np.asarray(all_cids)
+        else:
+            cids = dset.metadata['sess'].get_cluster_ids()
         times = dset.covariates['t_bins']
 
-        missing_pct_fun = dset.metadata['sess'].get_missing_pct_interp(cids) # missing percent interpolating function
-        missing_pct = missing_pct_fun(times)
+        missing_pct_fun = dset.metadata['sess'].get_missing_pct_interp(cids)
+        pct = missing_pct_fun(times)  # torch.Tensor (T, N_cids)
 
-        mask = missing_pct < threshold
+        mask = pct < threshold
 
-        med = np.median(missing_pct, axis=0)  # [N]
-        multi_units = med >= threshold
-        mask[:, multi_units] = True  # don't exclude clear multiunits
+        # Units with consistently high missing% are likely multi-units; keep them valid
+        multi_units = pct.median(dim=0).values >= threshold
+        mask[:, multi_units] = True
 
         return mask
     

@@ -35,7 +35,7 @@ def get_model_and_dataset_configs(mode='standard'):
         dataset_configs = load_dataset_configs(dataset_configs_path)
     elif mode == 'frozencore':
         checkpoint_path = "/mnt/ssd/YatesMarmoV1/conv_model_fits/experiments/frozencore_readouts_120/checkpoints/frozencore_resnet_none_convgru_bs256_ds30_lr1e-3_wd1.0e-5_warmup5/epoch=46-val_bps_overall=0.5462.ckpt"
-        dataset_configs_path = "/home/jake/repos/VisionCore/experiments/dataset_configs/multi_basic_120_long_rowley.yaml"
+        dataset_configs_path = "experiments/dataset_configs/multi_basic_120_long_rowley.yaml"
         from training.pl_modules import FrozenCoreModel
         import torch
         # Device to load on

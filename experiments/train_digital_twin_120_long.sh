@@ -81,13 +81,22 @@ if [ -n "$TAG" ]; then
     CKPT_SUBDIR="${CKPT_SUBDIR}_${TAG}"
 fi
 
-CHECKPOINT_BASE="/mnt/ssd/YatesMarmoV1/conv_model_fits/experiments/digital_twin_120"
+DEFAULT_CHECKPOINT_BASE="${SCRIPT_DIR}/checkpoints/digital_twin_120"
+CHECKPOINT_BASE_CANDIDATE="${VISIONCORE_DIGITAL_TWIN_CHECKPOINT_BASE:-$DEFAULT_CHECKPOINT_BASE}"
+
+if mkdir -p "${CHECKPOINT_BASE_CANDIDATE}/${CKPT_SUBDIR}" 2>/dev/null; then
+    CHECKPOINT_BASE="$CHECKPOINT_BASE_CANDIDATE"
+else
+    echo "Unable to create checkpoint directory under ${CHECKPOINT_BASE_CANDIDATE}" >&2
+    exit 1
+fi
+
 CHECKPOINT_DIR="${CHECKPOINT_BASE}/${CKPT_SUBDIR}"
 
 PROJECT_NAME="digital_twin_120"
 EXPERIMENT_NAME="${MODEL_CONFIG_NAME}_lr${LR}_wd${WD}_cls${CORE_LR_SCALE}_bs${BATCH_SIZE}_ga${ACCUMULATE_GRAD_BATCHES}"
 
-DATASET_CONFIGS_PATH="${SCRIPT_DIR}/experiments/dataset_configs/multi_basic_120_long.yaml"
+DATASET_CONFIGS_PATH="${SCRIPT_DIR}/experiments/dataset_configs/multi_basic_120_long_rowley.yaml"
 
 # ===================== Environment setup =====================
 
@@ -200,7 +209,7 @@ echo ""
 
 # ===================== Launch training =====================
 
-TRAINING_CMD="uv run python training/train_ddp_multidataset.py \
+TRAINING_CMD="python training/train_ddp_multidataset.py \
     --model_config \"$MODEL_CONFIG\" \
     --dataset_configs_path \"$DATASET_CONFIGS_PATH\" \
     --max_datasets $MAX_DATASETS \
