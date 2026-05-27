@@ -324,7 +324,7 @@ def hires_counterfactual_stim(
         orientation_deg: E orientation (0=opens right, 90=down, 180=left, 270=up)
         logmar: letter size in LogMAR units
         eyepos: (T, 2) float32 eye positions in degrees for this trial
-        condition: 'real', 'stabilized', 'scaled_0.5', 'scaled_2.0', 'matched_null'
+        condition: 'real', 'stabilized', 'fixed_center', 'scaled_0.5', 'scaled_2.0', 'matched_null'
         null_trace: (T, 2) phase-randomized trace (required for matched_null)
         center_offset_deg: (dx, dy) subpixel offset for phase-robustness testing
         n_lags: model temporal history frames
@@ -346,6 +346,12 @@ def hires_counterfactual_stim(
     elif condition == 'stabilized':
         mean = eye_t.mean(0, keepdim=True)
         ep = mean.expand_as(eye_t)
+    elif condition == 'fixed_center':
+        # All frames held at the grand mean position across the full trace library.
+        # Imports lazily to avoid circular dependency.
+        from rate_computation import _get_grand_mean_eye_pos
+        grand_mean = torch.from_numpy(_get_grand_mean_eye_pos())
+        ep = grand_mean.unsqueeze(0).expand_as(eye_t)
     elif condition.startswith('scaled_'):
         scale = float(condition.split('_')[1])
         mean = eye_t.mean(0, keepdim=True)

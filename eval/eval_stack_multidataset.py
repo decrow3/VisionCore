@@ -57,7 +57,8 @@ from .eval_stack_utils import (
 def load_model(model_type=None, model_index=None, checkpoint_path=None,
                checkpoint_dir="/mnt/ssd/YatesMarmoV1/conv_model_fits/experiments/multidataset/checkpoints",
                device='cuda',
-               verbose=True):
+               verbose=True,
+               cfg_dir_override=None):
     """
     Load a model either by type (with automatic best selection) or by specific checkpoint path.
     
@@ -147,10 +148,14 @@ def load_model(model_type=None, model_index=None, checkpoint_path=None,
                     print(f"   Detected torch.compile checkpoint - fixing key mismatch...")
 
                 # Create model first
+                ckpt_kwargs = {}
+                if cfg_dir_override is not None:
+                    ckpt_kwargs['cfg_dir'] = cfg_dir_override
                 model = MultiDatasetModel.load_from_checkpoint(
                     str(checkpoint_path),
                     strict=False,
-                    map_location='cpu'
+                    map_location='cpu',
+                    **ckpt_kwargs
                 )
 
                 # Fix the state dict keys
@@ -176,18 +181,26 @@ def load_model(model_type=None, model_index=None, checkpoint_path=None,
             else:
                 if verbose:
                     print(f"   Standard checkpoint - loading normally...")
+                ckpt_kwargs = {}
+                if cfg_dir_override is not None:
+                    ckpt_kwargs['cfg_dir'] = cfg_dir_override
                 model = MultiDatasetModel.load_from_checkpoint(
                     str(checkpoint_path),
                     strict=False,
-                    map_location='cpu'
+                    map_location='cpu',
+                    **ckpt_kwargs
                 )
         else:
             if verbose:
                 print(f"   No state_dict found in checkpoint - loading as-is...")
+            ckpt_kwargs = {}
+            if cfg_dir_override is not None:
+                ckpt_kwargs['cfg_dir'] = cfg_dir_override
             model = MultiDatasetModel.load_from_checkpoint(
                 str(checkpoint_path),
                 strict=False,
-                map_location='cpu'
+                map_location='cpu',
+                **ckpt_kwargs
             )
 
         model.to(device)

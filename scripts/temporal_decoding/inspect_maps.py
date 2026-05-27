@@ -94,6 +94,120 @@ def select_neurons(maps_real, n_neurons):
     return np.argsort(variances)[-n_neurons:][::-1]
 
 
+def compute_hotspot_metrics(maps_real, maps_stab, neuron_idx, eyepos_real):
+    """
+    Compute the four quantitative B1 decision-gate metrics for one neuron.
+
+    Metrics
+    -------
+    pearson_r   : Pearson r between argmax-y displacement and eye-y position
+                  (real condition). Range [-1, 1].
+    rms_disp    : RMS of argmax displacement from first frame (real condition),
+                  in pixels.
+    frac_gt1px  : Fraction of consecutive frames where argmax moves >1 px
+                  (real condition).
+    rms_ratio   : RMS argmax displacement (real) / RMS argmax displacement
+                  (stabilized). Values >> 1 indicate hotspot moves with eye.
+
+    Thresholds (from plan)
+    ----------------------
+    pearson_r < 0.3            → no eye-hotspot coupling
+    rms_disp  < 0.5 px         → effectively flat
+    frac_gt1px < 0.10          → hotspot barely moves
+    rms_ratio  < 1.5           → no meaningful real vs stabilized difference
+    """
+    from scipy.stats import pearsonr
+
+    def _argmax_xy(maps, nidx):
+        T, _, H, W = maps.shape
+        flat = maps[:, nidx].reshape(T, -1).argmax(axis=1)  # (T,)
+        return flat // W, flat % W  # argmax_y, argmax_x
+
+    T_min = min(maps_real.shape[0], maps_stab.shape[0])
+
+    ay_r, ax_r = _argmax_xy(maps_real[:T_min], neuron_idx)
+    ay_s, ax_s = _argmax_xy(maps_stab[:T_min], neuron_idx)
+
+    # Align eye trace to the map time axis (may have different length)
+    T_eye = min(eyepos_real.shape[0], T_min)
+    eye_y = eyepos_real[:T_eye, 1]  # y component in degrees
+
+    # 1. Pearson r: argmax-y displacement vs eye-y position
+    disp_y = ay_r[:T_eye].astype(float) - ay_r[0]
+    r, _ = pearsonr(disp_y, eye_y)
+
+    # 2. RMS displacement from first frame (real)
+    dy_r = (ay_r.astype(float) - ay_r[0])
+    dx_r = (ax_r.astype(float) - ax_r[0])
+    rms_disp = float(np.sqrt(np.mean(dy_r**2 + dx_r**2)))
+
+    # 3. Fraction of consecutive frames with >1px argmax movement (real)
+    step_dist = np.sqrt(np.diff(ay_r.astype(float))**2 + np.diff(ax_r.astype(float))**2)
+    frac_gt1px = float((step_dist > 1.0).mean())
+
+    # 4. RMS ratio real / stabilized
+    dy_s = (ay_s.astype(float) - ay_s[0])
+    dx_s = (ax_s.astype(float) - ax_s[0])
+    rms_stab = float(np.sqrt(np.mean(dy_s**2 + dx_s**2))) + 1e-9
+    rms_ratio = rms_disp / rms_stab
+
+    return {
+        'pearson_r': float(r),
+        'rms_disp': rms_disp,
+        'frac_gt1px': frac_gt1px,
+        'rms_ratio': rms_ratio,
+    }
+
+
+def print_hotspot_metrics_table(maps_real, maps_stab, top_neurons, eyepos_real):
+    """Print the 4-metric B1 decision-gate table and flag any threshold violations."""
+    THRESH = {
+        'pearson_r': 0.3,
+        'rms_disp': 0.5,
+        'frac_gt1px': 0.10,
+        'rms_ratio': 1.5,
+    }
+    CONCERN = {
+        'pearson_r': lambda v: v < THRESH['pearson_r'],
+        'rms_disp': lambda v: v < THRESH['rms_disp'],
+        'frac_gt1px': lambda v: v < THRESH['frac_gt1px'],
+        'rms_ratio': lambda v: v < THRESH['rms_ratio'],
+    }
+
+    print("\n=== B1 quantitative hotspot metrics ===")
+    print(f"Thresholds: pearson_r≥{THRESH['pearson_r']}, rms_disp≥{THRESH['rms_disp']}px, "
+          f"frac_gt1px≥{THRESH['frac_gt1px']:.0%}, rms_ratio≥{THRESH['rms_ratio']}")
+    print(f"{'Neuron':>8}  {'pearson_r':>10}  {'rms_disp(px)':>13}  "
+          f"{'frac>1px':>9}  {'rms_ratio':>10}  {'flags':>8}")
+    print('-' * 72)
+
+    all_metrics = []
+    for n in top_neurons:
+        m = compute_hotspot_metrics(maps_real, maps_stab, n, eyepos_real)
+        all_metrics.append(m)
+        flags = ''.join([
+            'r' if CONCERN['pearson_r'](m['pearson_r']) else ' ',
+            'd' if CONCERN['rms_disp'](m['rms_disp']) else ' ',
+            'f' if CONCERN['frac_gt1px'](m['frac_gt1px']) else ' ',
+            'R' if CONCERN['rms_ratio'](m['rms_ratio']) else ' ',
+        ]).strip() or 'OK'
+        print(f"{n:>8}  {m['pearson_r']:>10.3f}  {m['rms_disp']:>13.3f}  "
+              f"{m['frac_gt1px']:>9.2%}  {m['rms_ratio']:>10.2f}  {flags:>8}")
+
+    # Summary verdict
+    any_above = all(
+        m['pearson_r'] >= THRESH['pearson_r'] and m['rms_ratio'] >= THRESH['rms_ratio']
+        for m in all_metrics
+    )
+    print()
+    if any_above:
+        print("VERDICT: Hotspots track eye position — amax collapse is losing real signal.")
+        print("         B2/B3 are urgent.")
+    else:
+        print("VERDICT: Hotspots are flat — spatial collapse is not the bottleneck.")
+        print("         B2/B3 can be brief confirmations.")
+
+
 def compute_time_series(maps, neuron_idx):
     """
     From (T, N, H, W) maps, compute three time series for one neuron:
@@ -260,16 +374,8 @@ def main():
 
     lm_str = f'{args.logmar:.2f}'.replace('-', 'neg')
 
-    print("\n=== Position variance (CoM y) across time ===")
-    print(f"{'Neuron':>8}  {'real CoM_y var':>16}  {'stab CoM_y var':>16}  {'ratio':>8}")
-    print('-' * 55)
-    for n in top_neurons:
-        ts_r = compute_time_series(maps_real, n)
-        ts_s = compute_time_series(maps_stab, n)
-        var_r = ts_r['com_y'][:T_min].var()
-        var_s = ts_s['com_y'][:T_min].var()
-        ratio = var_r / (var_s + 1e-12)
-        print(f"{n:>8}  {var_r:>16.4f}  {var_s:>16.4f}  {ratio:>8.2f}")
+    # Quantitative B1 decision-gate metrics
+    print_hotspot_metrics_table(maps_real, maps_stab, top_neurons, eyepos)
 
     # Plot each neuron
     print("\nGenerating figures...")

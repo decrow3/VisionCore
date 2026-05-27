@@ -94,7 +94,7 @@ mpl.rcParams["font.sans-serif"] = ["Arial", "Helvetica", "DejaVu Sans"]
 # Analysis parameters
 # ---------------------------------------------------------------------------
 RECOMPUTE = True # set True to rerun decomposition from raw data
-DT = 1 / 120                # seconds per bin (native 240 Hz sampling)
+DT = 1 / 120                # seconds per bin (native 120 Hz sampling)
 WINDOW_BINS = [1, 2, 4, 8] # counting windows in bins (powers of two)
 N_SHUFFLES = 100             # shuffle null iterations
 MIN_TOTAL_SPIKES = 200       # neuron inclusion threshold (in align step)
@@ -354,6 +354,8 @@ else:
     print(f"\nCached {len(session_results)} sessions to {cache_path}")
 
 # Derive window labels and session metadata
+if not session_results:
+    raise RuntimeError("No sessions loaded — check dataset configs and data availability.")
 WINDOWS_MS = [r["window_ms"] for r in session_results[0]["results"]]
 WINDOWS_BINS = [r["window_bins"] for r in session_results[0]["results"]]
 session_names = [sr["session"] for sr in session_results]
@@ -502,11 +504,12 @@ for w_idx in range(n_windows):
                 )
                 rho_c_shuf = get_upper_triangle(NC_shuf)
                 ok = np.isfinite(rho_c_shuf) & pair_ok
+                ok_in_pair_ok = ok[pair_ok]  # boolean mask within the already-filtered rho_u
                 if ok.sum() > 0:
                     shuff_rho_c_meanz.append(fisher_z_mean(rho_c_shuf[ok], eps=EPS_RHO))
                     shuff_rho_delta_meanz.append(
                         fisher_z_mean(rho_c_shuf[ok], eps=EPS_RHO)
-                        - fisher_z_mean(rho_u[ok[:len(rho_u)]], eps=EPS_RHO)
+                        - fisher_z_mean(rho_u[ok_in_pair_ok], eps=EPS_RHO)
                     )
                     shuff_rho_subject.append(sr["subject"])
 

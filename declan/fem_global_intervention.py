@@ -29,13 +29,14 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.linalg import subspace_angles
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GroupKFold
 from sklearn.preprocessing import StandardScaler
@@ -64,6 +65,10 @@ class InterventionResult:
     top_fem_eigvals: np.ndarray
     n_trials_per_orientation: int
     n_neurons: int
+    # Extended geometry outputs (C-sweep additions)
+    principal_angles: np.ndarray = field(default_factory=lambda: np.array([]))
+    fem_signal_overlap: np.ndarray = field(default_factory=lambda: np.array([]))
+    class_mean_proj_norms: np.ndarray = field(default_factory=lambda: np.array([]))
 
 
 def _normalize_tag(tag: str) -> str:
@@ -129,6 +134,48 @@ def compute_pooled_fem_covariance(ravg_by_stim: dict[str, np.ndarray]) -> np.nda
 def top_eigspace(cov: np.ndarray, n_components: int) -> tuple[np.ndarray, np.ndarray]:
     eigvals, eigvecs = np.linalg.eigh(cov)
     return eigvals, eigvecs[:, -n_components:]
+
+
+def compute_extended_geometry(
+    c_signal: np.ndarray,
+    u_fem: np.ndarray,
+    ravg_by_stim: dict[str, np.ndarray],
+    n_components: int,
+) -> dict:
+    """
+    Compute the extended geometry outputs for the C-sweep.
+
+    Returns
+    -------
+    principal_angles : (n_components,) array of principal angles in radians between
+                       the top-n FEM subspace and the top-n signal subspace.
+    fem_signal_overlap : (n_components, n_components) overlap matrix U_FEM^T @ U_signal.
+    class_mean_proj_norms : (n_orientations,) L2 norm of each class mean projected
+                            onto U_FEM, measuring per-class orientation info in the
+                            FEM subspace.
+    """
+    # Top-n signal eigenvectors
+    eig_s, u_signal = np.linalg.eigh(c_signal)
+    u_signal = u_signal[:, -n_components:]  # (N, n_components), descending
+
+    # Principal angles between FEM and signal subspaces
+    angles = subspace_angles(u_fem, u_signal)  # (n_components,) in radians
+
+    # Overlap matrix: how each FEM mode aligns with each signal mode
+    overlap = u_fem.T @ u_signal  # (n_components, n_components)
+
+    # Per-class projection norms of class means onto U_FEM
+    grand_mean = np.concatenate(list(ravg_by_stim.values()), axis=0).mean(axis=0)
+    proj_norms = np.array([
+        float(np.linalg.norm(u_fem.T @ (ravg_by_stim[k].mean(axis=0) - grand_mean)))
+        for k in ORI_KEYS
+    ])
+
+    return {
+        'principal_angles': angles,
+        'fem_signal_overlap': overlap,
+        'class_mean_proj_norms': proj_norms,
+    }
 
 
 def alignment_fraction(c_signal: np.ndarray, u_fem: np.ndarray) -> tuple[float, float]:
@@ -233,10 +280,13 @@ def analyse_one(logmar: float, condition: str, rates_dir: str, rate_file_tag: st
     eig_signal, _ = top_eigspace(c_signal, n_fem_components)
     eig_fem, u_fem = top_eigspace(c_fem, n_fem_components)
     alpha, alpha_chance = alignment_fraction(c_signal, u_fem)
+    geom = compute_extended_geometry(c_signal, u_fem, ravg, n_fem_components)
 
     print(f'  alpha={alpha:.4f}  chance={alpha_chance:.4f}  xchance={alpha / alpha_chance:.2f}')
     print(f'  top signal eigvals: {np.round(eig_signal[-n_fem_components:][::-1], 6)}')
     print(f'  top FEM eigvals:    {np.round(eig_fem[-n_fem_components:][::-1], 6)}')
+    print(f'  principal angles (deg): {np.round(np.degrees(geom["principal_angles"]), 2)}')
+    print(f'  class mean proj norms:  {np.round(geom["class_mean_proj_norms"], 4)}')
 
     d1_acc, d1_std, d1_folds = run_d1_decoder(ravg, n_splits=n_splits)
     # U_FEM is fit inside each fold to avoid leaking test traces into the subspace estimate.
@@ -263,6 +313,9 @@ def analyse_one(logmar: float, condition: str, rates_dir: str, rate_file_tag: st
         top_fem_eigvals=eig_fem[-n_fem_components:][::-1].copy(),
         n_trials_per_orientation=int(m_min),
         n_neurons=int(n_neurons),
+        principal_angles=geom['principal_angles'].copy(),
+        fem_signal_overlap=geom['fem_signal_overlap'].copy(),
+        class_mean_proj_norms=geom['class_mean_proj_norms'].copy(),
     )
 
 
@@ -284,6 +337,9 @@ def save_results(results: list[InterventionResult], out_dir: str, stem: str) -> 
         save_dict[f'{tag}_top_fem_eigvals'] = np.asarray(r.top_fem_eigvals, dtype=float)
         save_dict[f'{tag}_n_trials_per_orientation'] = np.asarray([r.n_trials_per_orientation], dtype=int)
         save_dict[f'{tag}_n_neurons'] = np.asarray([r.n_neurons], dtype=int)
+        save_dict[f'{tag}_principal_angles'] = np.asarray(r.principal_angles, dtype=float)
+        save_dict[f'{tag}_fem_signal_overlap'] = np.asarray(r.fem_signal_overlap, dtype=float)
+        save_dict[f'{tag}_class_mean_proj_norms'] = np.asarray(r.class_mean_proj_norms, dtype=float)
     np.savez(out_npz, **save_dict)
     print(f'Results saved: {out_npz}')
 
@@ -299,6 +355,21 @@ def make_figure(results: list[InterventionResult]) -> Figure:
 
     labels = [f'{r.logmar:+.2f}' for r in results]
     x = np.arange(len(results))
+
+    # Identify the model-native saturation plateau (lm <= -0.40)
+    plateau_indices = [i for i, r in enumerate(results) if r.logmar <= -0.40]
+    if plateau_indices:
+        x_lo = min(plateau_indices) - 0.5
+        x_hi = max(plateau_indices) + 0.5
+        plateau_kw = dict(alpha=0.12, color='#d62728', zorder=0)
+        for ax in axes:
+            ax.axvspan(x_lo, x_hi, **plateau_kw)
+        # Label on first subplot only
+        axes[0].text(
+            (x_lo + x_hi) / 2, 1.01, 'model-native\nsaturation',
+            ha='center', va='bottom', fontsize=7, color='#d62728',
+            transform=axes[0].get_xaxis_transform()
+        )
 
     axes[0].bar(x - 0.18, [r.d1_acc for r in results], width=0.36, yerr=[r.d1_std for r in results],
                 capsize=3, label='D1 original', color='#4d4d4d')
@@ -338,7 +409,8 @@ def parse_args():
     p = argparse.ArgumentParser(description='Revised global FEM subspace intervention (Priority 2)')
     p.add_argument('--logmars', type=str, default='-0.20,-0.40',
                    help='Comma-separated LogMAR values (default: -0.20,-0.40)')
-    p.add_argument('--condition', type=str, default='real', choices=['real', 'stabilized'],
+    p.add_argument('--condition', type=str, default='real',
+                   choices=['real', 'stabilized', 'fixed_center', 'scaled_0.5', 'scaled_2.0'],
                    help='Condition to analyse (default: real)')
     p.add_argument('--rates_dir', type=str, default=RATES_DIR)
     p.add_argument('--rate_file_tag', type=str, default='',

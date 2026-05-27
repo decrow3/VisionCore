@@ -167,7 +167,11 @@ def add_calibrated_pupil_traces(dset, aux_processed_path):
         if not csv_path.exists():
             print(f'No calibrated pupil CSV for {eye} eye: {csv_path}')
             continue
-        pupil_df = pd.read_csv(csv_path, usecols=['t_ephys', 'pupil_i', 'pupil_j', 'pupil_valid'])
+        try:
+            pupil_df = pd.read_csv(csv_path, usecols=['t_ephys', 'pupil_i', 'pupil_j', 'pupil_valid'])
+        except ValueError as exc:
+            print(f'Skipping {eye} pupil import: {exc}')
+            continue
         sample_times = pupil_df['t_ephys'].to_numpy(dtype=np.float64)
         pupil_xy = pupil_df[['pupil_i', 'pupil_j']].to_numpy(dtype=np.float32)
         pupil_valid = pupil_df['pupil_valid'].to_numpy()

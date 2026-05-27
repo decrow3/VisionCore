@@ -212,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
         "--conditions",
         type=str,
         default="real,stabilized",
-        help="Comma-separated FEM conditions (e.g. 'real,stabilized').",
+        help="Comma-separated FEM conditions (e.g. 'real,stabilized,fixed_center,scaled_0.5,scaled_2.0').",
     )
     parser.add_argument(
         "--rates_dir",
@@ -294,6 +294,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Using {len(traces)} traces", flush=True)
 
     model, readout = _load_model_and_readout(args.device)
+
+    # Print excursion stats for any scaled or fixed_center conditions before caching
+    from rate_computation import print_excursion_stats
+    for condition in conditions:
+        if condition.startswith('scaled_') or condition == 'fixed_center':
+            print_excursion_stats(traces, durations, condition)
 
     # Compute in a deterministic, cache-friendly order
     for logmar in logmars:

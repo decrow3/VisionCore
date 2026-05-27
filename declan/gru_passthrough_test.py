@@ -430,25 +430,113 @@ def run(image_name: str, n_frames: int, label: str):
     }
 
 
+def build_eoptotype_stim(logmar: float, orientation: int, n_frames: int) -> torch.Tensor:
+    """
+    Build a GRU-passthrough stimulus from the high-res E-optotype pipeline.
+
+    Uses a synthetic Brownian FEM trace (same as make_fem_trace) so that the
+    temporal structure is comparable to the natural-image test. The output format
+    is identical to build_stim: (T_out, 1, N_LAGS, H, W) float32 on CPU.
+    """
+    sys.path.insert(0, os.path.join(ROOT, 'scripts', 'temporal_decoding'))
+    from stimulus_hires import hires_counterfactual_stim
+
+    eyepos = make_fem_trace(n_frames, sigma_deg=0.03, seed=1)
+    stim = hires_counterfactual_stim(
+        orientation_deg=float(orientation),
+        logmar=float(logmar),
+        eyepos=eyepos,
+        condition='real',
+        device='cpu',
+    )  # (T_valid, 1, n_lags, H, W) float32
+    return stim
+
+
+def run_eoptotype(logmar: float, orientation: int, n_frames: int) -> dict:
+    """E-optotype variant of run() — replaces natural image with E at given LogMAR."""
+    label = f'eoptotype_lm{logmar:+.2f}_ori{orientation}'
+    device = get_device()
+    print(f'\n=== {label} | T={n_frames} ===')
+
+    print('Building E-optotype stimuli ...')
+    stim_dynamic = build_eoptotype_stim(logmar, orientation, n_frames)
+    T_out = stim_dynamic.shape[0]
+    print(f'  Windows: {T_out}')
+
+    model = load_model()
+    gru_t = diagnose_shapes(model, device)
+
+    print('Test 1: Temporal integration ...')
+    pred_dyn = predict_batched(model, stim_dynamic, device=device, static_history=False)
+    pred_sta = predict_batched(model, stim_dynamic, device=device, static_history=True)
+
+    r2_neurons = per_neuron_r2(pred_dyn, pred_sta)
+    med_r2 = float(np.median(r2_neurons))
+    mean_r2 = float(np.mean(r2_neurons))
+
+    print(f'  Median per-neuron R²(dynamic vs static) = {med_r2:.4f}')
+    print(f'  Mean   per-neuron R²(dynamic vs static) = {mean_r2:.4f}')
+
+    # Qualitative verdict (same thresholds as run())
+    if med_r2 > 0.98:
+        verdict = 'temporal history adds <2% variance — effectively single-frame'
+    elif med_r2 > 0.90:
+        verdict = 'temporal history adds modest variance — some temporal filtering'
+    else:
+        verdict = 'temporal history substantially changes predictions — active temporal integration'
+    print(f'\n  VERDICT: {verdict}\n')
+
+    plot_temporal_integration(pred_dyn, pred_sta, r2_neurons, label)
+
+    if device == 'cuda':
+        torch.cuda.empty_cache()
+
+    print('Test 2: Feature RSA ...')
+    conv_feats, gru_feats = extract_features_batched(model, stim_dynamic, device=device)
+    rsa_r = rsa_correlation(conv_feats, gru_feats, n_samples=500)
+    print(f'  RSA (ConvNet vs GRU) = {rsa_r:.4f}')
+    plot_rsa(conv_feats, gru_feats, rsa_r, label)
+
+    return {
+        'label': label,
+        'n_windows': T_out,
+        'med_r2': med_r2,
+        'mean_r2': mean_r2,
+        'rsa_r': rsa_r,
+        'r2_neurons': r2_neurons,
+        'verdict_ti': verdict,
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument('--stimulus', default='natural', choices=['natural', 'eoptotype'],
+                    help='Stimulus type: natural image or E-optotype (default: natural)')
     ap.add_argument('--image', default='BrightTrees.JPG',
-                    help='Background image filename')
+                    help='Background image filename (natural stimulus only)')
+    ap.add_argument('--logmar', type=float, default=-0.40,
+                    help='LogMAR letter size for eoptotype stimulus (default: -0.40)')
+    ap.add_argument('--orientation', type=int, default=0,
+                    help='E orientation in degrees for eoptotype stimulus (default: 0)')
     ap.add_argument('--n-frames', type=int, default=500,
                     help='Number of movie frames to generate (default: 500)')
     args = ap.parse_args()
 
-    results = run(args.image, args.n_frames, label=args.image.split('.')[0])
+    if args.stimulus == 'eoptotype':
+        results = run_eoptotype(args.logmar, args.orientation, args.n_frames)
+    else:
+        results = run(args.image, args.n_frames, label=args.image.split('.')[0])
 
     print('\n' + '=' * 60)
     print('SUMMARY')
     print('=' * 60)
-    print(f"  Image              : {results['label']}")
+    print(f"  Stimulus           : {results['label']}")
     print(f"  Windows analysed   : {results['n_windows']}")
     print(f"  Temporal R² (med)  : {results['med_r2']:.4f}  "
           f"← does history matter for predictions?")
-    print(f"  Feature RSA        : {results['rsa_r']:.4f}  "
-          f"← are conv and GRU features similar?")
+    if 'rsa_r' in results:
+        print(f"  Feature RSA        : {results['rsa_r']:.4f}  "
+              f"← are conv and GRU features similar?")
     print()
     print(f"  Temporal verdict   : {results['verdict_ti']}")
     print(f"  RSA verdict        : {results['verdict_rsa']}")

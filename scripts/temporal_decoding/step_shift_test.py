@@ -130,6 +130,27 @@ def collapse_mean(maps):
     return maps.mean(axis=-1).mean(axis=-1)
 
 
+def collapse_com(maps):
+    """
+    (T, N, H, W) → (T, N*2): y-CoM and x-CoM per neuron concatenated.
+
+    This is the "known-preserved" control: a spatial shift should move the
+    centre of mass proportionally regardless of peak value changes. If CoM
+    sensitivity is high but amax sensitivity is low, amax is the bottleneck.
+    """
+    T, N, H, W = maps.shape
+    ys = np.arange(H, dtype=float)
+    xs = np.arange(W, dtype=float)
+    out = np.zeros((T, N * 2), dtype=float)
+    for t in range(T):
+        for n in range(N):
+            m = np.clip(maps[t, n], 0, None)
+            total = m.sum() + 1e-12
+            out[t, n] = (m.sum(axis=1) * ys).sum() / total       # y-CoM
+            out[t, N + n] = (m.sum(axis=0) * xs).sum() / total   # x-CoM
+    return out
+
+
 def map_diff_stats(maps_ref, maps_shift):
     """
     Compute mean |map_shift - map_ref| across neurons and space, per time frame.
@@ -270,13 +291,15 @@ def main():
             print(f"  *** WARNING: retinal diff exists but model map diff is zero — "
                   f"model is insensitive at this scale ***")
 
-        # ── Rung 3: collapse comparison ────────────────────────────────────────
+        # ── Rung 3: collapse comparison (raw → CoM → mean → amax) ─────────────
         max_diff_ts = collapsed_diff_stats(maps_ref, maps_shift, collapse_max)
         mean_diff_ts = collapsed_diff_stats(maps_ref, maps_shift, collapse_mean)
-        print(f"  [Rung 3] After amax: {max_diff_ts.mean():.6f}  "
-              f"(ratio vs pre-collapse: {max_diff_ts.mean()/(map_diff_ts.mean()+1e-12):.3f})")
-        print(f"           After mean: {mean_diff_ts.mean():.6f}  "
-              f"(ratio vs pre-collapse: {mean_diff_ts.mean()/(map_diff_ts.mean()+1e-12):.3f})")
+        com_diff_ts = collapsed_diff_stats(maps_ref, maps_shift, collapse_com)
+        pre = map_diff_ts.mean() + 1e-12
+        print(f"  [Rung 3] raw (pre-collapse): {map_diff_ts.mean():.6f}")
+        print(f"           CoM:  {com_diff_ts.mean():.6f}  (ratio={com_diff_ts.mean()/pre:.3f})")
+        print(f"           mean: {mean_diff_ts.mean():.6f}  (ratio={mean_diff_ts.mean()/pre:.3f})")
+        print(f"           amax: {max_diff_ts.mean():.6f}  (ratio={max_diff_ts.mean()/pre:.3f})")
 
         T_mid = maps_ref[0].shape[0] // 2
         diff_image = representative_neuron_diff_image(maps_ref, maps_shift, neuron_idx, T_mid)
@@ -290,6 +313,7 @@ def main():
             'map_diff_ts': map_diff_ts,
             'max_diff_ts': max_diff_ts,
             'mean_diff_ts': mean_diff_ts,
+            'com_diff_ts': com_diff_ts,
             'diff_image': diff_image,
             'neuron_idx': neuron_idx,
         }
@@ -325,9 +349,10 @@ def main():
 
         # Panel 3: time series of pre-collapse vs post-collapse diff
         t_ax = np.arange(len(r['map_diff_ts']))
-        ax[2].plot(t_ax, r['map_diff_ts'], 'k-', label='pre-collapse', linewidth=1.5)
-        ax[2].plot(t_ax, r['max_diff_ts'], 'r--', label='after amax', linewidth=1.5)
-        ax[2].plot(t_ax, r['mean_diff_ts'], 'b--', label='after mean', linewidth=1.5)
+        ax[2].plot(t_ax, r['map_diff_ts'], 'k-', label='raw (pre-collapse)', linewidth=1.5)
+        ax[2].plot(t_ax, r['com_diff_ts'], 'm--', label='CoM', linewidth=1.5)
+        ax[2].plot(t_ax, r['mean_diff_ts'], 'b--', label='mean', linewidth=1.5)
+        ax[2].plot(t_ax, r['max_diff_ts'], 'r--', label='amax', linewidth=1.5)
         ax[2].plot(t_ax[:len(r['input_diff_ts'])], r['input_diff_ts'],
                    'g:', label='retinal input', linewidth=1.5)
         ax[2].set_title(f'Mean |diff| over time\n(shift={shift_arcmin} arcmin)', fontsize=8)
@@ -337,13 +362,15 @@ def main():
         ax[2].grid(True, alpha=0.3)
 
         # Panel 4: bar chart — sensitivity ratio (after collapse / pre-collapse)
+        # raw→CoM→mean→amax is the information-preservation chain
         pre = r['map_diff_ts'].mean()
         ratios = {
-            'amax / pre': r['max_diff_ts'].mean() / (pre + 1e-12),
+            'CoM / pre': r['com_diff_ts'].mean() / (pre + 1e-12),
             'mean / pre': r['mean_diff_ts'].mean() / (pre + 1e-12),
+            'amax / pre': r['max_diff_ts'].mean() / (pre + 1e-12),
         }
         bars = ax[3].bar(list(ratios.keys()), list(ratios.values()),
-                          color=['tomato', 'steelblue'])
+                          color=['mediumorchid', 'steelblue', 'tomato'])
         ax[3].axhline(1.0, color='k', linestyle='--', alpha=0.5, linewidth=0.8)
         ax[3].set_ylim([0, max(1.5, max(ratios.values()) * 1.2)])
         ax[3].set_title(f'Sensitivity ratio\n(after/before collapse)', fontsize=8)
@@ -365,18 +392,20 @@ def main():
     print(f"\nSaved: {out_path}")
 
     # Print summary table
-    print("\n=== Summary ===")
+    print("\n=== Summary (information-preservation chain: raw → CoM → mean → amax) ===")
     print(f"{'Shift (arcmin)':>16}  {'World px':>9}  {'WorldDiff':>10}  "
-          f"{'RetinalDiff':>12}  {'MapDiff':>9}  {'amaxRatio':>10}  {'meanRatio':>10}")
-    print('-' * 95)
+          f"{'RetinalDiff':>12}  {'MapDiff':>9}  {'CoMRatio':>9}  {'meanRatio':>9}  {'amaxRatio':>9}")
+    print('-' * 108)
     for shift_arcmin in SHIFT_ARCMIN:
         r = all_shift_results[shift_arcmin]
+        pre = r['map_diff_ts'].mean() + 1e-12
         print(f"{shift_arcmin:>16.1f}  {r['shift_world_px']:>9.2f}  "
               f"{r['world_max_diff']:>10.5f}  "
               f"{r['input_diff_ts'].mean():>12.5f}  "
               f"{r['map_diff_ts'].mean():>9.6f}  "
-              f"{r['max_diff_ts'].mean()/(r['map_diff_ts'].mean()+1e-12):>10.3f}  "
-              f"{r['mean_diff_ts'].mean()/(r['map_diff_ts'].mean()+1e-12):>10.3f}")
+              f"{r['com_diff_ts'].mean()/pre:>9.3f}  "
+              f"{r['mean_diff_ts'].mean()/pre:>9.3f}  "
+              f"{r['max_diff_ts'].mean()/pre:>9.3f}")
 
 
 if __name__ == '__main__':

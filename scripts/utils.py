@@ -18,20 +18,21 @@ from eval.eval_stack_multidataset import load_model
 def get_model_and_dataset_configs(mode='standard'):
 
     if mode == 'standard':
-        dataset_configs_path = "experiments/dataset_configs/multi_basic_240_all.yaml"
+        dataset_configs_path = "experiments/dataset_configs/multi_basic_120_long_legacy.yaml"
         checkpoint_dir = "/mnt/ssd/YatesMarmoV1/conv_model_fits/experiments/multidataset_120_long/checkpoints"
 
         model_type = 'resnet_none_convgru'
         model, model_info = load_model(
             model_type=model_type,
-            model_index=0, # none for best model
+            model_index=0,
             checkpoint_path=None,
             checkpoint_dir=checkpoint_dir,
+            cfg_dir_override="experiments/dataset_configs/multi_basic_120_long_legacy.yaml",
             device='cpu'
         )
 
         model.model.eval()
-        model.model.convnet.use_checkpointing = False 
+        model.model.convnet.use_checkpointing = False
         dataset_configs = load_dataset_configs(dataset_configs_path)
     elif mode == 'frozencore':
         checkpoint_path = "/mnt/ssd/YatesMarmoV1/conv_model_fits/experiments/frozencore_readouts_120/checkpoints/frozencore_resnet_none_convgru_bs256_ds30_lr1e-3_wd1.0e-5_warmup5/epoch=46-val_bps_overall=0.5462.ckpt"

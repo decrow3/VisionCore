@@ -1963,10 +1963,6 @@ for eye_subdir_name, eye_source in eye_configs:
             print(f"  {n_good_trials_src} / {len(good_trials_src)} trials kept  (Pool B: {pool_b_mask.sum()})")
             print("  Pool B has fewer than 2 units — skipping covariance.")
             _run_cov = False
-        if pool_b_mask.sum() == 0:
-            print(f"  {n_good_trials_src} / {len(good_trials_src)} trials kept  (Pool B: 0)")
-            print("  Pool B is empty — skipping covariance.")
-            _run_cov = False
         elif pool_b_mask.sum() >= 2:
             robs_b_src        = robs_mc_all[:, :, pool_b_mask]
             unit_missing_src  = (np.isnan(robs_b_src) & dfs_mc_all[:, :, None]).any(axis=1)

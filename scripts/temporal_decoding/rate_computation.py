@@ -41,6 +41,38 @@ def _scale_trace(eyepos: torch.Tensor, eye_scale: float) -> torch.Tensor:
     return mean + (eyepos - mean) * eye_scale
 
 
+# Module-level cache for the grand mean eye position (computed once from eye_traces.npz).
+_GRAND_MEAN_EYE_POS: np.ndarray | None = None
+
+def _get_grand_mean_eye_pos() -> np.ndarray:
+    """
+    Return the grand mean eye position (2,) in degrees across all traces.
+
+    Loads eye_traces.npz on first call and caches the result. All trials in the
+    fixed_center condition are rendered at this single shared position, removing
+    both within-trial and across-trial positional variance.
+    """
+    global _GRAND_MEAN_EYE_POS
+    if _GRAND_MEAN_EYE_POS is not None:
+        return _GRAND_MEAN_EYE_POS
+    traces_path = os.path.join(os.path.dirname(__file__), 'data', 'eye_traces.npz')
+    if not os.path.exists(traces_path):
+        raise FileNotFoundError(
+            f'eye_traces.npz not found at {traces_path}. '
+            'Run scripts/temporal_decoding/extract_eye_traces.py first, '
+            'or pass fixed_pos explicitly.'
+        )
+    td = np.load(traces_path, allow_pickle=True)
+    traces = td['traces']       # (M, T_max, 2)
+    durations = td['durations'].astype(int)
+    # Compute grand mean over all valid frames across all traces
+    all_pos = np.concatenate(
+        [traces[i, :durations[i]] for i in range(len(durations))], axis=0
+    )  # (sum_T, 2)
+    _GRAND_MEAN_EYE_POS = all_pos.mean(axis=0).astype(np.float32)
+    return _GRAND_MEAN_EYE_POS
+
+
 def build_counterfactual_stim(
     full_stack: np.ndarray,
     eyepos: np.ndarray,
@@ -57,8 +89,8 @@ def build_counterfactual_stim(
         full_stack: (N_frames, H, W) uint8 stimulus frames
         eyepos: (T, 2) float32 eye positions in degrees for this trial
         condition: one of 'real', 'stabilized', 'scaled_0.5', 'scaled_2.0',
-                   'shuffled' (caller must pass shuffled eyepos), 'matched_null'
-                   (caller must pass null_trace)
+                   'fixed_center', 'shuffled' (caller must pass shuffled eyepos),
+                   'matched_null' (caller must pass null_trace)
         n_lags: number of temporal history frames for the model
         out_size: (H_out, W_out) output spatial size
         ppd: pixels per degree
@@ -74,6 +106,11 @@ def build_counterfactual_stim(
         ep = eye_t
     elif condition == 'stabilized':
         ep = _scale_trace(eye_t, 0.0)
+    elif condition == 'fixed_center':
+        # All frames of all trials held at the grand mean position across the
+        # full trace library — removes both within-trial and across-trial variance.
+        grand_mean = torch.from_numpy(_get_grand_mean_eye_pos())
+        ep = grand_mean.unsqueeze(0).expand_as(eye_t)
     elif condition.startswith('scaled_'):
         scale = float(condition.split('_')[1])
         ep = _scale_trace(eye_t, scale)
@@ -346,6 +383,71 @@ def rates_to_padded_array(rates_list: list) -> tuple:
         lengths[i] = T
 
     return rates_padded, lengths
+
+
+def print_excursion_stats(
+    eye_traces: np.ndarray,
+    durations: np.ndarray,
+    condition: str,
+    ppd: float = PPD,
+    tail_pct: float = 99.0,
+) -> None:
+    """
+    Print retinal excursion statistics for a given condition before rate caching.
+
+    For scaled conditions (2×, 0.5×) some traces may push the stimulus outside
+    the model's learned operating range. Call this before the full cache run to
+    check for out-of-distribution frames.
+
+    Args:
+        eye_traces: (M, T_max, 2) eye positions in degrees
+        durations:  (M,) valid frame counts
+        condition:  FEM condition string (used to compute effective positions)
+        ppd:        pixels per degree for pixel-space stats
+        tail_pct:   percentile used to report the "extreme" position threshold
+    """
+    all_pos = []
+    for i in range(len(durations)):
+        ep = torch.from_numpy(eye_traces[i, :int(durations[i])]).float()
+        if condition == 'real':
+            pos = ep
+        elif condition in ('stabilized', 'fixed_center'):
+            if condition == 'stabilized':
+                mean = ep.mean(0, keepdim=True)
+                pos = mean.expand_as(ep)
+            else:
+                grand_mean = torch.from_numpy(_get_grand_mean_eye_pos())
+                pos = grand_mean.unsqueeze(0).expand_as(ep)
+        elif condition.startswith('scaled_'):
+            scale = float(condition.split('_')[1])
+            mean = ep.mean(0, keepdim=True)
+            pos = mean + (ep - mean) * scale
+        else:
+            pos = ep
+        all_pos.append(pos.numpy())
+
+    all_pos = np.concatenate(all_pos, axis=0)  # (sum_T, 2)
+    radii = np.sqrt((all_pos ** 2).sum(axis=1))
+
+    p99_radius = float(np.percentile(radii, tail_pct))
+    p99_real = float(np.percentile(
+        np.sqrt((np.concatenate([eye_traces[i, :int(durations[i])]
+                                 for i in range(len(durations))], axis=0) ** 2).sum(axis=1)),
+        tail_pct,
+    ))
+    frac_beyond = float((radii > p99_real).mean())
+
+    print(f'\n  [Excursion check] condition={condition}')
+    print(f'    Eccentricity: mean={radii.mean():.4f}°  p99={p99_radius:.4f}°  '
+          f'max={radii.max():.4f}°')
+    print(f'    Real p{tail_pct:.0f} radius: {p99_real:.4f}°')
+    print(f'    Fraction of frames beyond real p{tail_pct:.0f}: {frac_beyond:.1%}')
+    if frac_beyond > 0.20:
+        print(f'    *** WARNING: >{frac_beyond:.0%} of frames are out-of-real-distribution '
+              f'eccentricity. A drop in accuracy for this condition may reflect '
+              f'a support/rendering artifact rather than a true effect. ***')
+    else:
+        print(f'    OK: frame eccentricity distribution looks within real-data range.')
 
 
 def save_rates(result: dict, path: str) -> None:

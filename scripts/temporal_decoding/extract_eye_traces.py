@@ -229,11 +229,14 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     import dill
-    from utils import get_model_and_dataset_configs
+    from types import SimpleNamespace
+    from models.config_loader import load_dataset_configs
 
-    print("Loading model...")
-    model, dataset_configs = get_model_and_dataset_configs(mode=args.mode)
-    model.model.eval()
+    dataset_configs_path = "experiments/dataset_configs/multi_basic_240_all.yaml"
+    print(f"Loading dataset configs from {dataset_configs_path}...")
+    dataset_configs = load_dataset_configs(dataset_configs_path)
+    names = [cfg['session'] for cfg in dataset_configs]
+    model = SimpleNamespace(names=names, dataset_configs=dataset_configs)
 
     pkl_path = os.path.join(os.path.dirname(__file__), '..', 'mcfarland_outputs_mono.pkl')
     print(f"Loading outputs from {pkl_path}...")

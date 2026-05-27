@@ -9,7 +9,7 @@ description = "Machine learning toolkit for the Yates lab"
 readme = "README.md"
 requires-python = "==3.12.*"
 dependencies = [
-    "torch>=2.7.0",
+    "torch>=2.7.0,<2.10.0",
     "torchvision",
     "numpy",
     "pandas",
