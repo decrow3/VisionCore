@@ -88,7 +88,7 @@ def get_dataset_from_config(subject, date, dataset_configs_path, dataset_type='f
 
 
 REFERENCE_RATE_HZ = 240.0
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 
 
 def _get_target_rate_hz(dataset_config):
@@ -186,7 +186,7 @@ def validate_image_ids(image_ids, dataset, dset_idx):
 
 
 def remove_duplicate_trials(robs, dfs, eyepos, fix_dur, image_ids,
-                           spike_times_trials=None, trial_time_windows=None, trial_t_bins=None, stim=None):
+                           spike_times_trials=None, trial_time_windows=None, trial_t_bins=None, stim=None, trial_ids=None):
     """
     Remove duplicate trials based on robs and eyepos signatures.
 
@@ -243,6 +243,8 @@ def remove_duplicate_trials(robs, dfs, eyepos, fix_dur, image_ids,
     image_ids = image_ids[keep]
     if stim is not None:
         stim = stim[keep]
+    if trial_ids is not None:
+        trial_ids = np.asarray(trial_ids)[keep]
     
     if spike_times_trials is not None:
         spike_times_trials = [spike_times_trials[i] for i in keep]
@@ -262,14 +264,22 @@ def remove_duplicate_trials(robs, dfs, eyepos, fix_dur, image_ids,
     
     if spike_times_trials is not None:
         if stim is not None:
+            if trial_ids is not None:
+                return robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, stim, trial_ids
             return robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, stim
+        if trial_ids is not None:
+            return robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, trial_ids
         return robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins
     if stim is not None:
+        if trial_ids is not None:
+            return robs, dfs, eyepos, fix_dur, image_ids, stim, trial_ids
         return robs, dfs, eyepos, fix_dur, image_ids, stim
+    if trial_ids is not None:
+        return robs, dfs, eyepos, fix_dur, image_ids, trial_ids
     return robs, dfs, eyepos, fix_dur, image_ids
 
 def remove_below_fixation_threshold_trials(robs, dfs, eyepos, fix_dur, image_ids, fixation_duration_bins_threshold,
-                                           spike_times_trials=None, trial_time_windows=None, trial_t_bins=None, stim=None):
+                                           spike_times_trials=None, trial_time_windows=None, trial_t_bins=None, stim=None, trial_ids=None):
     """
     Remove trials with fixation duration below a minimum threshold.
 
@@ -310,6 +320,8 @@ def remove_below_fixation_threshold_trials(robs, dfs, eyepos, fix_dur, image_ids
     image_ids = image_ids[good_trials]
     if stim is not None:
         stim = stim[good_trials]
+    if trial_ids is not None:
+        trial_ids = np.asarray(trial_ids)[good_trials]
     
     # Filter spike times data if provided
     if spike_times_trials is not None:
@@ -324,10 +336,18 @@ def remove_below_fixation_threshold_trials(robs, dfs, eyepos, fix_dur, image_ids
 
     if spike_times_trials is not None:
         if stim is not None:
+            if trial_ids is not None:
+                return robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, stim, trial_ids
             return robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, stim
+        if trial_ids is not None:
+            return robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, trial_ids
         return robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins
     if stim is not None:
+        if trial_ids is not None:
+            return robs, dfs, eyepos, fix_dur, image_ids, stim, trial_ids
         return robs, dfs, eyepos, fix_dur, image_ids, stim
+    if trial_ids is not None:
+        return robs, dfs, eyepos, fix_dur, image_ids, trial_ids
     return robs, dfs, eyepos, fix_dur, image_ids
 
 def collate_fixrsvp_data(dataset, dset_idx, fixation_degree_radius, legacy_stim_path=False):
@@ -439,7 +459,7 @@ def collate_fixrsvp_data(dataset, dset_idx, fixation_degree_radius, legacy_stim_
     }
 
     
-    return robs, dfs, eyepos, stim, fix_dur, image_ids
+    return robs, dfs, eyepos, stim, fix_dur, image_ids, trials.astype(np.int64)
 
 
 def _get_psth_inds_for_trial(trial_t_bins_trial, trial_time_windows_trial, dt=1/240):
@@ -611,7 +631,7 @@ def get_image_ids_reference(image_ids, start_ind_trial=0, verbose=False):
         return get_image_ids_reference(image_ids, start_ind_trial + 1, verbose)
     return reference_trial_ind, image_ids_reference, unmatched_trials_and_start_time_ind_of_mismatch
 def align_image_ids(robs, dfs, eyepos, fix_dur, image_ids, salvageable_mismatch_time_threshold=25, verbose=True,
-                    spike_times_trials=None, trial_time_windows=None, trial_t_bins=None, dt=1/240, stim=None):
+                    spike_times_trials=None, trial_time_windows=None, trial_t_bins=None, dt=1/240, stim=None, trial_ids=None):
     """
     Align image IDs across trials by truncating, shifting, or removing mismatched trials.
 
@@ -781,6 +801,8 @@ def align_image_ids(robs, dfs, eyepos, fix_dur, image_ids, salvageable_mismatch_
     image_ids = image_ids[keep_mask]
     if stim is not None:
         stim = stim[keep_mask]
+    if trial_ids is not None:
+        trial_ids = np.asarray(trial_ids)[keep_mask]
     
     if spike_times_trials is not None:
         keep_indices = np.where(keep_mask)[0]
@@ -799,10 +821,18 @@ def align_image_ids(robs, dfs, eyepos, fix_dur, image_ids, salvageable_mismatch_
 
     if spike_times_trials is not None:
         if stim is not None:
+            if trial_ids is not None:
+                return robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, stim, trial_ids
             return robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, stim
+        if trial_ids is not None:
+            return robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, trial_ids
         return robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins
     if stim is not None:
+        if trial_ids is not None:
+            return robs, dfs, eyepos, fix_dur, image_ids, stim, trial_ids
         return robs, dfs, eyepos, fix_dur, image_ids, stim
+    if trial_ids is not None:
+        return robs, dfs, eyepos, fix_dur, image_ids, trial_ids
     return robs, dfs, eyepos, fix_dur, image_ids
 
 
@@ -1187,18 +1217,19 @@ def get_fixrsvp_data(subject, date, dataset_configs_path,
         stim = data_dict.get('stim', None)
         fix_dur = data_dict['fix_dur']
         image_ids = data_dict['image_ids']
+        trial_ids = data_dict.get('trial_ids')
         spike_times_trials = data_dict['spike_times_trials']
         trial_time_windows = data_dict['trial_time_windows']
         trial_t_bins = data_dict['trial_t_bins']
         rsvp_images = data_dict.get('rsvp_images')
         if stim is None:
-            robs, dfs, eyepos, stim, fix_dur, image_ids = collate_fixrsvp_data(
+            robs, dfs, eyepos, stim, fix_dur, image_ids, trial_ids = collate_fixrsvp_data(
                 dataset, dset_idx, fixation_degree_radius, legacy_stim_path=legacy_stim_path
             )
             validate_image_ids(image_ids, dataset, dset_idx)
     else:
         # Extract trial-aligned data from dataset
-        robs, dfs, eyepos, stim, fix_dur, image_ids = collate_fixrsvp_data(
+        robs, dfs, eyepos, stim, fix_dur, image_ids, trial_ids = collate_fixrsvp_data(
             dataset, dset_idx, fixation_degree_radius, legacy_stim_path=legacy_stim_path
         )
         validate_image_ids(image_ids, dataset, dset_idx)
@@ -1222,6 +1253,7 @@ def get_fixrsvp_data(subject, date, dataset_configs_path,
         'stim': stim,
         'fix_dur': fix_dur,
         'image_ids': image_ids,
+        'trial_ids': trial_ids,
         'cids': dataset_config['cids'],
         'rsvp_images': rsvp_images,
         'spike_times_trials': spike_times_trials,
@@ -1245,50 +1277,50 @@ def get_fixrsvp_data(subject, date, dataset_configs_path,
     # Clean data: remove duplicates, short trials, and align image IDs
     # =========================================================================
     if legacy_stim_path:
-        robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins = \
+        robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, trial_ids = \
             remove_duplicate_trials(robs, dfs, eyepos, fix_dur, image_ids,
-                                    spike_times_trials, trial_time_windows, trial_t_bins)
+                                    spike_times_trials, trial_time_windows, trial_t_bins, trial_ids=trial_ids)
     elif use_spike_time_validation:
-        robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, stim = \
+        robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, stim, trial_ids = \
             remove_duplicate_trials(robs, dfs, eyepos, fix_dur, image_ids,
-                                    spike_times_trials, trial_time_windows, trial_t_bins, stim=stim)
+                                    spike_times_trials, trial_time_windows, trial_t_bins, stim=stim, trial_ids=trial_ids)
     else:
-        robs, dfs, eyepos, fix_dur, image_ids, stim = \
-            remove_duplicate_trials(robs, dfs, eyepos, fix_dur, image_ids, stim=stim)
+        robs, dfs, eyepos, fix_dur, image_ids, stim, trial_ids = \
+            remove_duplicate_trials(robs, dfs, eyepos, fix_dur, image_ids, stim=stim, trial_ids=trial_ids)
 
     if legacy_stim_path:
-        robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins = \
+        robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, trial_ids = \
             remove_below_fixation_threshold_trials(robs, dfs, eyepos, fix_dur, image_ids, fixation_duration_bins_threshold,
-                                                   spike_times_trials, trial_time_windows, trial_t_bins)
+                                                   spike_times_trials, trial_time_windows, trial_t_bins, trial_ids=trial_ids)
     elif use_spike_time_validation:
-        robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, stim = \
+        robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, stim, trial_ids = \
             remove_below_fixation_threshold_trials(robs, dfs, eyepos, fix_dur, image_ids, fixation_duration_bins_threshold,
-                                                   spike_times_trials, trial_time_windows, trial_t_bins, stim=stim)
+                                                   spike_times_trials, trial_time_windows, trial_t_bins, stim=stim, trial_ids=trial_ids)
     else:
-        robs, dfs, eyepos, fix_dur, image_ids, stim = \
+        robs, dfs, eyepos, fix_dur, image_ids, stim, trial_ids = \
             remove_below_fixation_threshold_trials(robs, dfs, eyepos, fix_dur, image_ids, fixation_duration_bins_threshold,
-                                                   stim=stim)
+                                                   stim=stim, trial_ids=trial_ids)
     
     if int(target_rate_hz) == int(REFERENCE_RATE_HZ):
         if legacy_stim_path:
-            robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins = \
+            robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, trial_ids = \
                 align_image_ids(robs, dfs, eyepos, fix_dur, image_ids,
                                 salvageable_mismatch_time_threshold=salvageable_mismatch_time_threshold, verbose=verbose,
                                 spike_times_trials=spike_times_trials,
                                 trial_time_windows=trial_time_windows,
-                                trial_t_bins=trial_t_bins, dt=dt)
+                                trial_t_bins=trial_t_bins, dt=dt, trial_ids=trial_ids)
         elif use_spike_time_validation:
-            robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, stim = \
+            robs, dfs, eyepos, fix_dur, image_ids, spike_times_trials, trial_time_windows, trial_t_bins, stim, trial_ids = \
                 align_image_ids(robs, dfs, eyepos, fix_dur, image_ids,
                                 salvageable_mismatch_time_threshold=salvageable_mismatch_time_threshold, verbose=verbose,
                                 spike_times_trials=spike_times_trials,
                                 trial_time_windows=trial_time_windows,
-                                trial_t_bins=trial_t_bins, dt=dt, stim=stim)
+                                trial_t_bins=trial_t_bins, dt=dt, stim=stim, trial_ids=trial_ids)
         else:
-            robs, dfs, eyepos, fix_dur, image_ids, stim = \
+            robs, dfs, eyepos, fix_dur, image_ids, stim, trial_ids = \
                 align_image_ids(robs, dfs, eyepos, fix_dur, image_ids,
                                 salvageable_mismatch_time_threshold=salvageable_mismatch_time_threshold, verbose=verbose,
-                                dt=dt, stim=stim)
+                                dt=dt, stim=stim, trial_ids=trial_ids)
     
     # =========================================================================
     # Final validation: ensure spike times still match after all processing
@@ -1306,6 +1338,7 @@ def get_fixrsvp_data(subject, date, dataset_configs_path,
         'stim': stim,
         'fix_dur': fix_dur,
         'image_ids': image_ids,
+        'trial_ids': trial_ids,
         'cids': dataset_config['cids'],
         'rsvp_images': rsvp_images,
         'spike_times_trials': spike_times_trials,

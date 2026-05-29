@@ -58,7 +58,8 @@ def load_model(model_type=None, model_index=None, checkpoint_path=None,
                checkpoint_dir="/mnt/ssd/YatesMarmoV1/conv_model_fits/experiments/multidataset/checkpoints",
                device='cuda',
                verbose=True,
-               cfg_dir_override=None):
+               cfg_dir_override=None,
+               model_config_dict=None):
     """
     Load a model either by type (with automatic best selection) or by specific checkpoint path.
     
@@ -151,6 +152,8 @@ def load_model(model_type=None, model_index=None, checkpoint_path=None,
                 ckpt_kwargs = {}
                 if cfg_dir_override is not None:
                     ckpt_kwargs['cfg_dir'] = cfg_dir_override
+                if model_config_dict is not None:
+                    ckpt_kwargs['model_config_dict'] = model_config_dict
                 model = MultiDatasetModel.load_from_checkpoint(
                     str(checkpoint_path),
                     strict=False,
@@ -184,6 +187,8 @@ def load_model(model_type=None, model_index=None, checkpoint_path=None,
                 ckpt_kwargs = {}
                 if cfg_dir_override is not None:
                     ckpt_kwargs['cfg_dir'] = cfg_dir_override
+                if model_config_dict is not None:
+                    ckpt_kwargs['model_config_dict'] = model_config_dict
                 model = MultiDatasetModel.load_from_checkpoint(
                     str(checkpoint_path),
                     strict=False,
@@ -196,6 +201,8 @@ def load_model(model_type=None, model_index=None, checkpoint_path=None,
             ckpt_kwargs = {}
             if cfg_dir_override is not None:
                 ckpt_kwargs['cfg_dir'] = cfg_dir_override
+            if model_config_dict is not None:
+                ckpt_kwargs['model_config_dict'] = model_config_dict
             model = MultiDatasetModel.load_from_checkpoint(
                 str(checkpoint_path),
                 strict=False,

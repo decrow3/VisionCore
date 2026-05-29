@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 
+from scripts.fixrsvp_eye_conventions import stored_eyepos_to_eye_norm
 from mcfarland_sim import get_fixrsvp_stack, eye_deg_to_norm, shift_movie_with_eye
 
 def embed_time_lags(movie, n_lags=32):
@@ -247,9 +248,7 @@ def make_counterfactual_stim(full_stack, eyepos,
         out_size: (H, W) size of output stimulus
     '''
 
-    #eye_norm = eye_deg_to_norm(torch.fliplr(eyepos), ppd, full_stack.shape[1:3])
-    #removing the flip, since shift_movie_with_eye expects (x,y) in that order, and eye_deg_to_norm also expects (x,y) in that order.
-    eye_norm = eye_deg_to_norm(eyepos, ppd, full_stack.shape[1:3])
+    eye_norm = stored_eyepos_to_eye_norm(eyepos, ppd, full_stack.shape[1:3], device=eyepos.device)
 
     eye_movie = shift_movie_with_eye(
         torch.from_numpy(full_stack[:eyepos.shape[0] + n_lags]).float(),
@@ -290,9 +289,7 @@ def make_integrated_counterfactual_stim(full_stack, eyepos, ppd=37.50476617, n_l
     
     # 2. Convert to normalized coordinates
     img_shape = full_stack.shape[2:] # (H, W)
-    #eye_norm_high_res = eye_deg_to_norm(torch.fliplr(eyepos_high_res), ppd, img_shape)
-    #removing the flip, since shift_movie_with_eye expects (x,y) in that order, and eye_deg_to_norm also expects (x,y) in that order.
-    eye_norm_high_res = eye_deg_to_norm(eyepos_high_res, ppd, img_shape)
+    eye_norm_high_res = stored_eyepos_to_eye_norm(eyepos_high_res, ppd, img_shape, device=device)
 
     # 3. Upsample the base image stack to match (nearest neighbor so we don't blend images across cuts)
     # This assumes full_stack changes slowly or we are in a single continuous trial

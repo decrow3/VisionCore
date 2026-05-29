@@ -1,0 +1,6 @@
+comparison,corr,mae,max_abs,probe_axis,transform_mode,window_id
+collated_vs_dataset_replay,1.0,0.0,0.0,baseline,none,image_6
+vetted_vs_audit_shift,1.0,0.0,0.0,pos_x,xy,image_6
+vetted_vs_audit_shift,1.0,0.0,0.0,pos_x,x_negy,image_6
+vetted_vs_audit_shift,0.5640707262042882,0.06728724104513488,0.8549020290374756,pos_y,xy,image_6
+vetted_vs_audit_shift,1.0,0.0,0.0,pos_y,x_negy,image_6

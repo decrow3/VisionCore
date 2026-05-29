@@ -12,6 +12,7 @@ from matplotlib.animation import FFMpegWriter
 
 from DataYatesV1 import enable_autoreload, get_free_device
 from eval.eval_stack_multidataset import load_model, load_single_dataset, scan_checkpoints
+from scripts.fixrsvp_eye_conventions import stored_eyepos_to_eye_norm
 from mcfarland_sim import get_fixrsvp_stack, eye_deg_to_norm, shift_movie_with_eye
 
 enable_autoreload()
@@ -73,7 +74,7 @@ eyepos = dataset.dsets[dset_idx]['eyepos'][ix]
 print(f"Trial {itrial}: {stim.shape[0]} frames")
 
 #%% Reconstruct stimulus using eye position
-eye_norm = eye_deg_to_norm(torch.fliplr(eyepos), ppd, full_stack.shape[1:3])
+eye_norm = stored_eyepos_to_eye_norm(eyepos, ppd, full_stack.shape[1:3], device=eyepos.device)
 eye_movie = shift_movie_with_eye(
     torch.from_numpy(full_stack[:stim.shape[0]]).float(),
     eye_norm,
