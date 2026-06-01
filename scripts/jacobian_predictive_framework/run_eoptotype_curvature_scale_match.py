@@ -243,6 +243,7 @@ class CurvatureScaleMatchRunner:
         jacobian_step_px: float,
         model_batch_size: int,
         load_model: bool = True,
+        pkl_path: Path | None = None,
     ):
         self.device = torch.device(device)
         self.pixels_per_degree = float(pixels_per_degree)
@@ -253,13 +254,16 @@ class CurvatureScaleMatchRunner:
         self.model = None
         self.readout = None
         if load_model:
+            resolved_pkl = Path(pkl_path) if pkl_path is not None else PKL_PATH
             model, _dataset_configs = get_model_and_dataset_configs()
-            with PKL_PATH.open("rb") as handle:
+            with resolved_pkl.open("rb") as handle:
                 outputs = dill.load(handle)
             self.model = model.to(self.device)
             self.model.model.eval()
             self.readout = get_spatial_readout(self.model, outputs).to(self.device)
             self.readout.eval()
+            print(f"    Readout: {resolved_pkl.name}  "
+                  f"({self.readout.feat_weights.shape[0] if hasattr(self.readout, 'feat_weights') else '?'} units)")
         self.renderer = HiResERenderer(device=device).to(self.device)
         self.renderer.eval()
         self.retina = HiResRetina().to(self.device)

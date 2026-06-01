@@ -120,6 +120,15 @@ def _format_duration(seconds: float) -> str:
     return f"{m}m{s:02d}s"
 
 
+def _eta_str(n_done: int, n_total: int, elapsed: float) -> str:
+    """Return 'ETA Xm__s (Ys/unit)' given progress and elapsed seconds."""
+    if n_done <= 0 or elapsed <= 0:
+        return "ETA unknown"
+    rate = elapsed / n_done          # seconds per unit
+    remaining = rate * (n_total - n_done)
+    return f"ETA {_format_duration(remaining)} ({rate:.2f}s/unit)"
+
+
 def _arcmin_to_px(value_arcmin: float, pixels_per_degree: float) -> float:
     return float(value_arcmin) / 60.0 * float(pixels_per_degree)
 
@@ -395,9 +404,121 @@ def _threshold_key(t: float) -> str:
     return f"{t:.2f}".replace(".", "p")
 
 
+def _load_mcfarland_export_metadata(mcfarland_path: Path | None) -> dict:
+    """Extract minimal readout/session metadata for raw μ/J export files."""
+    meta = {
+        "mcfarland_outputs_path": "",
+        "mcfarland_session": "",
+        "mcfarland_ccnorm_count": np.int32(-1),
+        "mcfarland_readout_units_gt_0p5": np.int32(-1),
+        "mcfarland_cids_count": np.int32(-1),
+        "mcfarland_cids_used_count": np.int32(-1),
+    }
+    if mcfarland_path is None:
+        return meta
+    p = Path(mcfarland_path)
+    meta["mcfarland_outputs_path"] = str(p)
+    if not p.exists():
+        return meta
+
+    try:
+        import dill  # type: ignore
+
+        with p.open("rb") as f:
+            payload = dill.load(f)
+        if not isinstance(payload, list) or not payload:
+            return meta
+        entry = payload[0]
+        if not isinstance(entry, dict):
+            return meta
+
+        cc = np.asarray(entry.get("ccnorm", {}).get("ccnorm", []), dtype=float)
+        cids = np.asarray(entry.get("cids", []))
+        cids_used = np.asarray(entry.get("cids_used", []))
+
+        meta.update({
+            "mcfarland_session": str(entry.get("sess", "")),
+            "mcfarland_ccnorm_count": np.int32(cc.size),
+            "mcfarland_readout_units_gt_0p5": np.int32(np.sum(np.isfinite(cc) & (cc > 0.5))),
+            "mcfarland_cids_count": np.int32(cids.size),
+            "mcfarland_cids_used_count": np.int32(cids_used.size),
+        })
+    except Exception:
+        # Metadata is advisory; never fail the main Jacobian export on this parse.
+        return meta
+
+    return meta
+
+
 # ---------------------------------------------------------------------------
 # Main per-condition analysis
 # ---------------------------------------------------------------------------
+
+def _save_mu_J_arrays(
+    logmar: float,
+    orientations: list[int],
+    grid_px: np.ndarray,
+    responses_by_ori: dict,
+    jacobians: dict,
+    output_dir: Path,
+    export_metadata: dict | None = None,
+) -> None:
+    """Persist raw μ(p,L) and J(p,L) arrays to a .npz file for downstream use.
+
+    Output file: <output_dir>/mu_and_J_lm{logmar_str}.npz
+
+    Arrays (all float64):
+      phase_grid_px   : (N_grid, 2) — grid positions in pixels
+      mu_ori{k}       : (N_grid, N_units) — mean response at each grid point
+      J_ori{k}        : (N_grid, N_units, 2) — Jacobian [∂μ/∂x, ∂μ/∂y] at each grid point
+    Scalars:
+      logmar, orientations, n_grid, n_units
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    n_grid = len(grid_px)
+    grid_arr = np.array(grid_px, dtype=np.float64)  # (N_grid, 2)
+
+    arrays: dict[str, np.ndarray] = {"phase_grid_px": grid_arr}
+    n_units: int | None = None
+
+    for ori in orientations:
+        resp = responses_by_ori[ori]
+        jac_map = jacobians[ori]
+        mu_rows: list[np.ndarray] = []
+        J_rows: list[np.ndarray] = []
+        for p in grid_px:
+            k = _pos_key(p)
+            mu = resp.get(k)
+            J = jac_map.get(k)
+            if mu is None or J is None:
+                raise KeyError(f"Missing response or Jacobian at position {k} for ori={ori}")
+            mu_rows.append(mu.astype(np.float64))
+            J_rows.append(J.astype(np.float64))
+            if n_units is None:
+                n_units = int(mu.shape[0])
+        arrays[f"mu_ori{ori}"] = np.stack(mu_rows, axis=0)   # (N_grid, N_units)
+        arrays[f"J_ori{ori}"] = np.stack(J_rows, axis=0)     # (N_grid, N_units, 2)
+
+    lm_str = f"{float(logmar):+.3f}".replace("+", "p").replace("-", "m").replace(".", "d")
+    out_path = output_dir / f"mu_and_J_lm{lm_str}.npz"
+    extra = export_metadata or {}
+    np.savez(
+        str(out_path),
+        **arrays,
+        logmar=np.float64(logmar),
+        orientations=np.array(orientations, dtype=np.int32),
+        n_grid=np.int32(n_grid),
+        n_units=np.int32(n_units or 0),
+        mcfarland_outputs_path=np.array(str(extra.get("mcfarland_outputs_path", ""))),
+        mcfarland_session=np.array(str(extra.get("mcfarland_session", ""))),
+        mcfarland_ccnorm_count=np.int32(extra.get("mcfarland_ccnorm_count", -1)),
+        mcfarland_readout_units_gt_0p5=np.int32(extra.get("mcfarland_readout_units_gt_0p5", -1)),
+        mcfarland_cids_count=np.int32(extra.get("mcfarland_cids_count", -1)),
+        mcfarland_cids_used_count=np.int32(extra.get("mcfarland_cids_used_count", -1)),
+    )
+    print(f"    Saved μ/J arrays → {out_path.name}  "
+          f"({n_grid} grid pts × {n_units} units)")
+
 
 def _run_condition(
     runner: CurvatureScaleMatchRunner,
@@ -409,6 +530,9 @@ def _run_condition(
     near_center_radius_arcmin: float,
     norm_product_min: float,
     axis_threshold_arcmin: float,
+    save_arrays: bool = False,
+    output_dir: Path | None = None,
+    export_metadata: dict | None = None,
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """
     Returns (pair_rows_J, pair_rows_id, jacobian_grid_rows).
@@ -416,6 +540,9 @@ def _run_condition(
     pair_rows_J : one row per (orientation, phase pair) with J alignment metrics
     pair_rows_id: one row per (identity pair, phase pair) with d_ab cosine metrics
     jacobian_grid_rows: per-grid-point Jacobian diagnostics
+
+    If save_arrays=True and output_dir is given, also writes mu_and_J_lm*.npz with
+    raw μ(p,L) and J(p,L) arrays at each grid point for downstream Arm-A/B analysis.
     """
     t0 = time.time()
     n_grid = len(grid_px)
@@ -426,11 +553,19 @@ def _run_condition(
 
     # Evaluate all orientations, store responses keyed by pos_key
     responses_by_ori: dict[int, dict[tuple[float, float], np.ndarray]] = {}
-    for ori in orientations:
+    t_inference_start = time.time()
+    for k_ori, ori in enumerate(orientations):
         t_ori = time.time()
+        print(f"    [{k_ori+1}/{len(orientations)}] ori={ori}: "
+              f"evaluating {len(eval_positions)} positions ...", flush=True)
         resp, _support = runner.evaluate_condition(logmar, ori, eval_positions)
         responses_by_ori[ori] = resp
-        print(f"    ori={ori}: {len(resp)} responses in {_format_duration(time.time() - t_ori)}")
+        elapsed_ori = time.time() - t_ori
+        done_oris = k_ori + 1
+        print(f"    [{k_ori+1}/{len(orientations)}] ori={ori}: "
+              f"{len(resp)} responses in {_format_duration(elapsed_ori)}  "
+              f"({elapsed_ori/max(len(eval_positions),1)*1000:.1f}ms/pos)  "
+              f"{_eta_str(done_oris, len(orientations), time.time()-t_inference_start)}")
 
     # Compute Jacobians at each grid point for each orientation
     jacobians: dict[int, dict[tuple[float, float], np.ndarray]] = {}
@@ -465,12 +600,24 @@ def _run_condition(
                 "J_col_y_norm": float(np.linalg.norm(J[:, 1])),
             })
 
+    # Persist raw μ and J arrays for downstream Arm-A/B analysis
+    if save_arrays and output_dir is not None:
+        _save_mu_J_arrays(logmar, orientations, grid_px,
+                          responses_by_ori, jacobians, output_dir,
+                          export_metadata=export_metadata)
+
     # -----------------------------------------------------------------
     # Analysis 1: Jacobian field pairwise alignment
     # -----------------------------------------------------------------
-    print(f"    Computing J pairwise alignment ({n_grid}x{n_grid}/2 pairs) ...")
+    n_pairs_J = n_grid * (n_grid - 1) // 2 * len(orientations)
+    print(f"    Computing J pairwise alignment: "
+          f"{n_grid}×(N-1)/2 × {len(orientations)} ori = {n_pairs_J:,} pairs ...")
     pair_rows_J: list[dict] = []
     grid_list = list(grid_px)
+    t_pairs_J = time.time()
+    pairs_J_done = 0
+    _J_report_every = max(1, n_pairs_J // 20)   # print ~20 progress lines
+
     for ori in orientations:
         jac_map = jacobians[ori]
         for ii in range(n_grid):
@@ -504,6 +651,16 @@ def _run_condition(
                 }
                 row.update(aln)
                 pair_rows_J.append(row)
+                pairs_J_done += 1
+                if pairs_J_done % _J_report_every == 0:
+                    pct = 100 * pairs_J_done / n_pairs_J
+                    print(f"      J pairs: {pairs_J_done:,}/{n_pairs_J:,} "
+                          f"({pct:.0f}%)  "
+                          f"{_eta_str(pairs_J_done, n_pairs_J, time.time()-t_pairs_J)}",
+                          flush=True)
+
+    print(f"    J pairs done: {len(pair_rows_J):,} in "
+          f"{_format_duration(time.time()-t_pairs_J)}")
 
     # -----------------------------------------------------------------
     # Analysis 2: Identity vector pairwise cosines
@@ -511,8 +668,13 @@ def _run_condition(
     pair_rows_id: list[dict] = []
     identity_pairs = list(itertools.combinations(orientations, 2))
     if identity_pairs:
-        print(f"    Computing identity vector cosines for {len(identity_pairs)} pairs ...")
+        n_pairs_id = len(identity_pairs) * n_grid * (n_grid - 1) // 2
+        print(f"    Computing identity vector cosines: "
+              f"{len(identity_pairs)} id-pairs × {n_grid}×(N-1)/2 = {n_pairs_id:,} pairs ...")
         near_r_px = _arcmin_to_px(near_center_radius_arcmin, pixels_per_degree)
+        t_pairs_id = time.time()
+        pairs_id_done = 0
+        _id_report_every = max(1, n_pairs_id // 20)
 
         for src_ori, tgt_ori in identity_pairs:
             resp_a = responses_by_ori[src_ori]
@@ -616,9 +778,19 @@ def _run_condition(
                         "perp_identity_inner_product": float(np.dot(f_i, f_j)) if np.isfinite(perp_cos) else float("nan"),
                         "norm_product_flag": norm_prod_flag,
                     })
+                    pairs_id_done += 1
+                    if pairs_id_done % _id_report_every == 0:
+                        pct = 100 * pairs_id_done / n_pairs_id
+                        print(f"      id pairs: {pairs_id_done:,}/{n_pairs_id:,} "
+                              f"({pct:.0f}%)  "
+                              f"{_eta_str(pairs_id_done, n_pairs_id, time.time()-t_pairs_id)}",
+                              flush=True)
+
+        print(f"    id pairs done: {len(pair_rows_id):,} in "
+              f"{_format_duration(time.time()-t_pairs_id)}")
 
     elapsed = _format_duration(time.time() - t0)
-    print(f"    Done in {elapsed}. J pairs={len(pair_rows_J)}, id pairs={len(pair_rows_id)}")
+    print(f"    Done in {elapsed}. J pairs={len(pair_rows_J):,}, id pairs={len(pair_rows_id):,}")
     return pair_rows_J, pair_rows_id, jacobian_grid_rows
 
 
@@ -1141,6 +1313,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--eye-traces-path", type=Path, default=EYE_TRACES_PATH)
     parser.add_argument("--device", type=str, default="")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--mcfarland-outputs", type=Path, default=None,
+                        help="Path to mcfarland outputs pkl used to build the neural readout. "
+                             "Defaults to PKL_PATH in run_eoptotype_curvature_scale_match.py "
+                             "(mcfarland_outputs_mono.pkl). Pass scripts/mcfarland_outputs.pkl "
+                             "to match the Allen_2022-04-13 10-neuron population used by D1.")
+    parser.add_argument("--no-save-arrays", action="store_true",
+                        help="Skip writing mu_and_J_lm*.npz raw array files. "
+                             "By default these are saved for downstream Arm-A/B analysis.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print config and exit without running model")
     return parser.parse_args()
@@ -1233,14 +1413,27 @@ def main() -> None:
         n_lags=args.n_lags,
         jacobian_step_px=jacobian_step_px,
         model_batch_size=args.model_batch_size,
+        pkl_path=args.mcfarland_outputs,
     )
+    export_metadata = _load_mcfarland_export_metadata(args.mcfarland_outputs)
 
     all_pair_rows_J: list[dict] = []
     all_pair_rows_id: list[dict] = []
     all_jacobian_grid_rows: list[dict] = []
 
-    for logmar in logmars:
-        print(f"\n=== logmar={logmar:+.2f} ===")
+    n_lm = len(logmars)
+    t_job_start = time.time()
+    lm_times: list[float] = []
+
+    for lm_idx, logmar in enumerate(logmars):
+        lm_done = lm_idx  # number completed before this one
+        if lm_times:
+            avg_lm = sum(lm_times) / len(lm_times)
+            eta = _eta_str(lm_done, n_lm, time.time() - t_job_start)
+        else:
+            eta = "ETA unknown"
+        print(f"\n=== logmar={logmar:+.2f}  [{lm_idx+1}/{n_lm}]  "
+              f"elapsed {_format_duration(time.time()-t_job_start)}  {eta} ===")
         pair_rows_J, pair_rows_id, jac_grid_rows = _run_condition(
             runner=runner,
             logmar=logmar,
@@ -1251,10 +1444,18 @@ def main() -> None:
             near_center_radius_arcmin=args.near_center_radius_arcmin,
             norm_product_min=args.norm_product_min,
             axis_threshold_arcmin=axis_threshold_arcmin,
+            save_arrays=not args.no_save_arrays,
+            output_dir=output_dir,
+            export_metadata=export_metadata,
         )
         all_pair_rows_J.extend(pair_rows_J)
         all_pair_rows_id.extend(pair_rows_id)
         all_jacobian_grid_rows.extend(jac_grid_rows)
+        lm_times.append(time.time() - t_job_start - sum(lm_times))
+        avg_lm = sum(lm_times) / len(lm_times)
+        print(f"  logmar={logmar:+.2f} complete in {_format_duration(lm_times[-1])}  "
+              f"(avg {_format_duration(avg_lm)}/logmar, "
+              f"{_format_duration(avg_lm * (n_lm - lm_idx - 1))} remaining)")
 
     print("\n=== Writing outputs ===")
 
