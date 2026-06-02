@@ -1180,7 +1180,8 @@ def estimate_linear_eye_covariance(SpikeCounts, EyeTraj, T_idx,
 # ---------------------------------------------------------------------------
 
 def estimate_rate_covariance(SpikeCounts, EyeTraj, T_idx, n_bins=25,
-                             Ctotal=None, intercept_mode='linear'):
+                             Ctotal=None, intercept_mode='linear',
+                             intercept_kwargs=None):
     """
     Estimate eye-conditioned rate covariance matrix (Crate).
 
@@ -1195,7 +1196,10 @@ def estimate_rate_covariance(SpikeCounts, EyeTraj, T_idx, n_bins=25,
     Ctotal : ndarray (C, C), optional
         Total covariance for physical limit check.
     intercept_mode : str
-        'linear', 'isotonic', 'log_euclidean', or 'lowest_bin'.
+        'linear', 'isotonic', 'log_euclidean', 'lowest_bin', or
+        'below_threshold'. The 'below_threshold' mode takes a
+        `threshold` kwarg (degrees) and pools all pair samples with
+        Δe < threshold into a single bin used as the intercept.
 
     Returns
     -------
@@ -1246,15 +1250,39 @@ def estimate_rate_covariance(SpikeCounts, EyeTraj, T_idx, n_bins=25,
 
     Ceye = MM - Erate[:, None] * Erate[None, :]
 
+    ikw = dict(intercept_kwargs) if intercept_kwargs else {}
     if intercept_mode == 'linear':
-        Crate = fit_intercept_linear(Ceye, bin_centers, count_e, eval_at_first_bin=True)
+        ikw.setdefault('eval_at_first_bin', True)
+        Crate = fit_intercept_linear(Ceye, bin_centers, count_e, **ikw)
     elif intercept_mode == 'isotonic':
         Crate = fit_intercept_pava(Ceye, count_e)
     elif intercept_mode == 'log_euclidean':
-        Crate = fit_intercept_log_euclidean(Ceye, bin_centers, count_e,
-                                            eval_at_first_bin=True)
+        ikw.setdefault('eval_at_first_bin', True)
+        Crate = fit_intercept_log_euclidean(Ceye, bin_centers, count_e, **ikw)
     elif intercept_mode == 'lowest_bin':
         Crate = Ceye[0].copy()
+    elif intercept_mode == 'below_threshold':
+        threshold = float(ikw.get('threshold', 0.05))
+        # Recompute conditional second moments pooling all pairs with
+        # Δe < threshold into a single bin. Independent of the caller's
+        # n_bins, so the intercept estimate is session-invariant.
+        EyeFlat = EyeTraj.reshape(EyeTraj.shape[0], -1)
+        max_dist = float(
+            (torch.cdist(EyeFlat, EyeFlat).max()
+             / torch.sqrt(torch.tensor(float(EyeTraj.shape[1]),
+                                       device=EyeTraj.device,
+                                       dtype=EyeTraj.dtype))
+             ).detach().cpu()
+        )
+        bin_edges_thr = np.array([0.0, threshold, max(max_dist, threshold) + 1e-6])
+        MM_thr, _, count_thr, _ = compute_conditional_second_moments(
+            SpikeCounts, EyeTraj, T_idx, n_bins=bin_edges_thr
+        )
+        if count_thr[0] == 0:
+            raise ValueError(
+                f"below_threshold: no pairs with Δe < {threshold}"
+            )
+        Crate = MM_thr[0] - Erate[:, None] * Erate[None, :]
     else:
         raise ValueError(f"Invalid intercept_mode: {intercept_mode!r}")
 
@@ -1266,6 +1294,351 @@ def estimate_rate_covariance(SpikeCounts, EyeTraj, T_idx, n_bins=25,
         Ceye[:, :, bad_mask] = np.nan
 
     return Crate, Erate, Ceye, bin_centers, count_e, bin_edges
+
+
+# ---------------------------------------------------------------------------
+# Deterministic-rate variance decomposition (model digital twin)
+# ---------------------------------------------------------------------------
+
+def rate_variance_components(rate, valid=None, min_trials_per_phase=2):
+    """Decompose a deterministic rate matrix into PSTH and FEM variance.
+
+    This is the model-side analogue of the empirical Law-of-Total-Covariance
+    decomposition (see ``run_covariance_decomposition``). It returns, per
+    neuron, the fraction of rate variance driven by fixational eye movements
+    (``one_minus_alpha``) so the digital twin's 1-alpha can be compared cell by
+    cell against the empirically measured 1-alpha.
+
+    Why the empirical machinery is unnecessary here
+    ------------------------------------------------
+    For real neurons, spike counts S are noisy observations of a latent rate
+    r(t, e) that depends on stimulus phase t and the within-trial eye
+    trajectory e. The empirical decomposition estimates the *rate* variance and
+    splits it into a stimulus-locked (PSTH) part and an eye-movement (FEM) part:
+
+        Var_{t,e}(r) = Var_t(E_e[r|t])      +   E_t[Var_e(r|t)]
+                       \\_____ PSTH ______/      \\_____ FEM _____/   (law of total variance)
+
+    Every heavy step in ``covariance.py`` exists only to strip Poisson
+    observation noise out of S: the eye-distance binning + intercept fit
+    extrapolate distinct-trial cross-products to delta_e -> 0 (giving the
+    Poisson-free rate variance ``Crate``), and ``bagged_split_half_psth_covariance``
+    debiases the PSTH variance against the same Poisson noise.
+
+    The digital twin is *deterministic*: given its inputs it emits the rate
+    rhat[i, t] directly, with no observation noise, evaluated at each trial's
+    actual eye trajectory. So there is no Poisson term to remove, the
+    eye-distance apparatus is unnecessary, and the whole thing collapses to a
+    textbook one-way random-effects ANOVA of rhat grouped by stimulus phase t.
+
+    Estimator (analytic random-effects ANOVA)
+    ------------------------------------------
+    Group rates by phase t (column); phase t has n_t valid trials, with T kept
+    phases and N = sum_t n_t total samples. With phase mean rhat_bar(t) and
+    grand mean rhat_bar:
+
+        SS_within  = sum_t sum_i (rhat[i,t] - rhat_bar(t))^2 ,  df = N - T
+        SS_between = sum_t n_t (rhat_bar(t) - rhat_bar)^2     ,  df = T - 1
+        MS_within  = SS_within / (N - T)
+        MS_between = SS_between / (T - 1)
+
+    The mean squares have exact expectations (method of moments, no Gaussian
+    assumption) E[MS_within] = sigma2_W and E[MS_between] = sigma2_W + n0 sigma2_B
+    with the unbalanced effective group size
+
+        n0 = (N - sum_t n_t^2 / N) / (T - 1)   (= n when balanced),
+
+    yielding the unbiased component estimates
+
+        sigma2_within  (FEM)  = MS_within
+        sigma2_between (PSTH) = max((MS_between - MS_within) / n0, 0)
+        one_minus_alpha       = clip(sigma2_within / (sigma2_within + sigma2_between), 0, 1)
+
+    Note the convention difference from the empirical pipeline: the empirical
+    side estimates the total rate variance directly and takes FEM as the
+    residual ``Crate - Cpsth``; here both components are estimated directly and
+    the total is their sum. Both target the identical population ratio
+    sigma2_W / (sigma2_W + sigma2_B).
+
+    Why MS_between must be debiased even with exact rates
+    -----------------------------------------------------
+    With finite n_t the naive between-phase variance Var_t(rhat_bar(t)) is
+    biased up by E_t[Var_e(r|t)/n_t]: each phase mean still averages only n_t
+    eye-trajectory draws. Subtracting MS_within / n0 removes exactly this term.
+    Skipping it would inflate alpha (deflate 1-alpha) by an alpha-dependent
+    amount -- a pure estimator artifact, worst precisely for the FEM-dominated
+    cells this comparison is about. ``psth_variance_splithalf`` is an
+    assumption-light cross-check that achieves the same debiasing by cancelling
+    the per-phase sampling noise across disjoint trial halves.
+
+    1-alpha is invariant to the affine rescaling rhat -> a*rhat + b applied
+    upstream (rescale_rhat): a shift leaves every variance unchanged and a scale
+    multiplies both components by a^2, cancelling in the ratio.
+
+    Parameters
+    ----------
+    rate : ndarray (n_trials, n_phases)
+        Per-trial deterministic rate (or expected count) for ONE neuron.
+        Columns are stimulus phase (time bin); rows are repeats/trials.
+        Non-finite entries are treated as missing.
+    valid : ndarray (n_trials, n_phases) of bool, optional
+        Mask of usable samples (e.g. the data filter ``dfs != 0`` intersected
+        with fixation bins). Combined with ``isfinite(rate)``. If None, only
+        the finite-entry mask is used.
+    min_trials_per_phase : int
+        Phases with fewer valid trials than this are dropped (>= 2 needed for a
+        within-phase variance). Mirrors the empirical ``min_trials_per_time``.
+
+    Returns
+    -------
+    dict with keys:
+        sigma2_within  : float -- FEM (within-phase) variance component.
+        sigma2_between : float -- PSTH (between-phase) variance component (>= 0).
+        sigma2_total   : float -- sigma2_within + sigma2_between.
+        one_minus_alpha: float -- FEM fraction in [0, 1], NaN if undetermined.
+        n_phases       : int   -- number of phases retained.
+        n_samples      : int   -- total valid trial x phase samples retained.
+    """
+    rate = np.asarray(rate, dtype=np.float64)
+    if rate.ndim != 2:
+        raise ValueError(f"rate must be 2D (trials, phases), got {rate.shape}")
+
+    finite = np.isfinite(rate)
+    if valid is None:
+        valid = finite
+    else:
+        valid = np.asarray(valid, dtype=bool) & finite
+
+    nan_result = {
+        "sigma2_within": np.nan, "sigma2_between": np.nan,
+        "sigma2_total": np.nan, "one_minus_alpha": np.nan,
+        "n_phases": 0, "n_samples": 0,
+    }
+
+    r0 = np.where(valid, rate, 0.0)
+    n_t = valid.sum(axis=0).astype(np.float64)        # trials per phase
+    keep = n_t >= min_trials_per_phase
+    if keep.sum() < 2:
+        return nan_result
+
+    n_t = n_t[keep]
+    sum_t = r0.sum(axis=0)[keep]
+    sumsq_t = (r0 ** 2).sum(axis=0)[keep]
+    mu_t = sum_t / n_t
+    ss_within_t = sumsq_t - n_t * mu_t ** 2           # within-phase SS per phase
+
+    T = int(keep.sum())
+    N = float(n_t.sum())
+    if N <= T:                                        # no within-phase df
+        return nan_result
+
+    grand = (n_t * mu_t).sum() / N
+    ss_within = float(ss_within_t.sum())
+    ss_between = float((n_t * (mu_t - grand) ** 2).sum())
+
+    ms_within = ss_within / (N - T)
+    ms_between = ss_between / (T - 1)
+    n0 = (N - (n_t ** 2).sum() / N) / (T - 1)
+
+    sigma2_within = ms_within
+    sigma2_between = max((ms_between - ms_within) / n0, 0.0)
+    sigma2_total = sigma2_within + sigma2_between
+
+    if sigma2_total <= 0:
+        one_minus_alpha = np.nan
+    else:
+        one_minus_alpha = float(np.clip(sigma2_within / sigma2_total, 0.0, 1.0))
+
+    return {
+        "sigma2_within": sigma2_within,
+        "sigma2_between": sigma2_between,
+        "sigma2_total": sigma2_total,
+        "one_minus_alpha": one_minus_alpha,
+        "n_phases": T,
+        "n_samples": int(N),
+    }
+
+
+def psth_variance_splithalf(rate, valid=None, min_trials_per_phase=2,
+                            n_boot=50, seed=0):
+    """Bagged split-half estimate of the between-phase (PSTH) variance.
+
+    Assumption-light cross-check on the analytic ``sigma2_between`` from
+    ``rate_variance_components``. At each phase the valid trials are randomly
+    split into disjoint halves A and B; the cross-covariance of the two
+    half-PSTHs across phases cancels the per-phase finite-trial sampling noise
+    in expectation (the noise in A and B is independent), leaving the true
+    between-phase variance. Averaged ("bagged") over ``n_boot`` random splits.
+
+    Parameters
+    ----------
+    rate : ndarray (n_trials, n_phases)
+        Per-trial deterministic rate for ONE neuron (see
+        ``rate_variance_components``).
+    valid : ndarray (n_trials, n_phases) of bool, optional
+        Usable-sample mask, combined with isfinite(rate).
+    min_trials_per_phase : int
+        Phases with fewer valid trials are dropped (need >= 2 to split).
+    n_boot : int
+        Number of random split-half repetitions to average.
+    seed : int
+        RNG seed for reproducibility.
+
+    Returns
+    -------
+    float
+        Bagged split-half between-phase variance (may be negative for a
+        near-zero-PSTH cell), or NaN if fewer than two phases qualify.
+    """
+    rate = np.asarray(rate, dtype=np.float64)
+    finite = np.isfinite(rate)
+    if valid is None:
+        valid = finite
+    else:
+        valid = np.asarray(valid, dtype=bool) & finite
+
+    n_trials, n_phases = rate.shape
+    phase_trials = []
+    for t in range(n_phases):
+        idx = np.where(valid[:, t])[0]
+        if len(idx) >= min_trials_per_phase:
+            phase_trials.append((t, idx))
+    if len(phase_trials) < 2:
+        return np.nan
+
+    rng = np.random.default_rng(seed)
+    acc = 0.0
+    for _ in range(n_boot):
+        mu_a, mu_b = [], []
+        for t, idx in phase_trials:
+            perm = rng.permutation(idx)
+            mid = len(perm) // 2
+            if mid < 1 or len(perm) - mid < 1:
+                continue
+            mu_a.append(rate[perm[:mid], t].mean())
+            mu_b.append(rate[perm[mid:], t].mean())
+        if len(mu_a) < 2:
+            continue
+        a = np.asarray(mu_a)
+        b = np.asarray(mu_b)
+        acc += np.mean((a - a.mean()) * (b - b.mean())) * len(a) / (len(a) - 1)
+    return acc / n_boot
+
+
+def pipeline_one_minus_alpha(rate, eyepos, valid=None, threshold=0.05,
+                             min_trials_per_phase=10, n_bins=10, n_boot=20,
+                             seed=42, device="cpu"):
+    """Per-cell 1-alpha via the empirical close-pair estimator on deterministic rates.
+
+    "Estimator B": the SAME machinery fig2 uses on real spikes -- the
+    ``below_threshold`` (Delta_e < ``threshold`` deg) close-pair intercept for the
+    rate covariance Crate (``estimate_rate_covariance``) and the bagged split-half
+    PSTH covariance (``bagged_split_half_psth_covariance``) -- but applied to a
+    DETERMINISTIC multi-neuron rate field rather than noisy spike counts. Each
+    (trial, phase) is one sample; phases are the stimulus time bins (T_idx); close
+    pairs are distinct-trial pairs whose instantaneous eye positions lie within
+    ``threshold`` degrees. There is no Poisson noise to remove and no Ctotal
+    physical-limit mask (``Ctotal=None``), so the estimator reports the rate
+    variance split directly.
+
+    This is the companion to ``rate_variance_components`` ("estimator A", the
+    all-samples one-way ANOVA). The two target the same population ratio
+    sigma2_FEM / sigma2_rate but differ in (i) estimator form and (ii) the
+    eye-position distribution they integrate FEM over: A uses *all* (trial, phase)
+    samples (the full fixational distribution) while B uses only *close pairs*
+    (Delta_e < threshold). Running both on the *same* rates isolates the
+    estimator's effect from the signal's, so panel D can place the model and the
+    neurons on the same estimator instead of comparing A-on-model to B-on-neurons.
+
+    Parameters
+    ----------
+    rate : ndarray (n_trials, n_phases, n_cells)
+        Per-trial deterministic rate; columns are stimulus phase.
+    eyepos : ndarray (n_trials, n_phases, 2)
+        Per-(trial, phase) eye position in degrees.
+    valid : ndarray (n_trials, n_phases) of bool, optional
+        Usable-sample mask; combined with finiteness of ``rate`` (over cells) and
+        ``eyepos``. If None, derived from finiteness alone.
+    threshold : float
+        Close-pair eye-distance threshold (deg) for the Crate intercept.
+    min_trials_per_phase : int
+        Phases with fewer valid trials are dropped (mirrors the empirical
+        ``min_trials_per_time``).
+    n_bins : int
+        Bin count for the initial (discarded) percentile binning inside
+        ``estimate_rate_covariance``; the ``below_threshold`` intercept itself is
+        independent of it.
+    n_boot, seed : int
+        Bagged split-half PSTH controls.
+    device : str
+        Torch device for the pairwise ops.
+
+    Returns
+    -------
+    dict with keys:
+        one_minus_alpha : ndarray (n_cells,) -- 1 - clip(Cpsth_diag/Crate_diag, 0, 1),
+                          NaN where Crate_diag <= 0.
+        crate_diag      : ndarray (n_cells,) -- diag of the close-pair rate cov.
+        cpsth_diag      : ndarray (n_cells,) -- diag of the split-half PSTH cov.
+        n_phases        : int -- phases retained.
+        n_samples       : int -- total (trial, phase) samples retained.
+    """
+    rate = np.asarray(rate, dtype=np.float64)
+    eyepos = np.asarray(eyepos, dtype=np.float64)
+    if rate.ndim != 3:
+        raise ValueError(f"rate must be 3D (trials, phases, cells), got {rate.shape}")
+    n_trials, n_phases, n_cells = rate.shape
+
+    finite = np.isfinite(rate).all(axis=2) & np.isfinite(eyepos).all(axis=2)
+    if valid is None:
+        valid = finite
+    else:
+        valid = np.asarray(valid, dtype=bool) & finite
+
+    keep_phase = valid.sum(axis=0) >= min_trials_per_phase
+    sample_mask = valid & keep_phase[None, :]
+
+    nan_diag = np.full(n_cells, np.nan)
+    nan_result = {
+        "one_minus_alpha": nan_diag.copy(), "crate_diag": nan_diag.copy(),
+        "cpsth_diag": nan_diag.copy(), "n_phases": int(keep_phase.sum()),
+        "n_samples": int(sample_mask.sum()),
+    }
+    if keep_phase.sum() < 2 or sample_mask.sum() < 2 * min_trials_per_phase:
+        return nan_result
+
+    tr_idx, ph_idx = np.where(sample_mask)
+    dev = torch.device(device if (device != "cuda" or torch.cuda.is_available())
+                       else "cpu")
+    S = torch.as_tensor(rate[tr_idx, ph_idx, :], dtype=torch.float32, device=dev)
+    EyeTraj = torch.as_tensor(eyepos[tr_idx, ph_idx, :], dtype=torch.float32,
+                              device=dev).unsqueeze(1)        # (N, 1, 2)
+    T_idx = torch.as_tensor(ph_idx, dtype=torch.long, device=dev)
+
+    Crate, Erate, *_ = estimate_rate_covariance(
+        S, EyeTraj, T_idx, n_bins=n_bins, Ctotal=None,
+        intercept_mode="below_threshold",
+        intercept_kwargs={"threshold": threshold},
+    )
+    Cpsth, _ = bagged_split_half_psth_covariance(
+        S, T_idx, n_boot=n_boot, min_trials_per_time=min_trials_per_phase,
+        seed=seed, global_mean=Erate,
+    )
+
+    crate_diag = np.diag(Crate).astype(np.float64).copy()
+    cpsth_diag = np.diag(Cpsth).astype(np.float64).copy()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        alpha = np.clip(cpsth_diag / crate_diag, 0.0, 1.0)
+    one_minus_alpha = 1.0 - alpha
+    one_minus_alpha[~(crate_diag > 0)] = np.nan
+
+    return {
+        "one_minus_alpha": one_minus_alpha,
+        "crate_diag": crate_diag,
+        "cpsth_diag": cpsth_diag,
+        "n_phases": int(keep_phase.sum()),
+        "n_samples": int(sample_mask.sum()),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1383,8 +1756,8 @@ def run_covariance_decomposition(robs, eyepos, valid_mask,
                                  t_hist_ms=None, t_hist_bins=None,
                                  n_bins=15, n_shuffles=0,
                                  seed=42, dt=1 / 240, min_seg_len=36,
-                                 intercept_mode='linear', device="cuda",
-                                 eyepos_vergence=None):
+                                 intercept_mode='linear', intercept_kwargs=None,
+                                 device="cuda"):
     """
     Full LOTC decomposition sweep across counting windows.
 
@@ -1499,7 +1872,8 @@ def run_covariance_decomposition(robs, eyepos, valid_mask,
         # Rate covariance
         Crate, Erate, Ceye, bin_centers, count_e, bin_edges = estimate_rate_covariance(
             SpikeCounts, EyeTraj, T_idx, n_bins=n_bins,
-            Ctotal=Ctotal, intercept_mode=intercept_mode
+            Ctotal=Ctotal, intercept_mode=intercept_mode,
+            intercept_kwargs=intercept_kwargs,
         )
 
         # PSTH covariance
@@ -1541,7 +1915,8 @@ def run_covariance_decomposition(robs, eyepos, valid_mask,
                 EyeTraj_shuff = EyeTraj[perm]
                 Crate_shuff, _, _, _, _, _ = estimate_rate_covariance(
                     SpikeCounts, EyeTraj_shuff, T_idx, n_bins=bin_edges,
-                    Ctotal=Ctotal, intercept_mode=intercept_mode
+                    Ctotal=Ctotal, intercept_mode=intercept_mode,
+                    intercept_kwargs=intercept_kwargs,
                 )
                 shuffled_intercepts.append(Crate_shuff)
 
