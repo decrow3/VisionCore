@@ -31,8 +31,8 @@ def _parse_k_list(raw: str) -> list[int]:
     return [int(piece) for piece in parts] if parts else [0]
 
 
-def _recorded_rates(data: dict[str, Any]) -> np.ndarray:
-    return np.asarray(data["robs"], dtype=np.float64)
+def _source_rates(args: argparse.Namespace, data: dict[str, Any]) -> tuple[np.ndarray, int | None]:
+    return stg1._build_source_rates(args, data)
 
 
 def _sample_images(
@@ -156,17 +156,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--subject", type=str, required=True)
     p.add_argument("--date", type=str, required=True)
     p.add_argument("--dataset-configs-path", type=Path, default=Path("experiments") / "dataset_configs" / "multi_basic_240_rsvp.yaml")
+    p.add_argument("--source", choices=("recorded", "twin"), default="recorded")
     p.add_argument("--sample-mode", choices=("all_available", "fixed_n"), default="fixed_n")
     p.add_argument("--n-samples-threshold", type=int, default=320)
     p.add_argument("--min-samples", type=int, default=320)
-    p.add_argument("--recorded-nuisance", choices=("none", "time", "time_global"), default="time_global")
-    p.add_argument("--recorded-axis-projection", choices=("none", "global_rate", "pc1", "both"), default="both")
-    p.add_argument("--recorded-shared-mode-projection-k", type=str, default="0,1,2,3,5,10")
+    nuisance_choices = ("none", "time", "time_global", "time_fixed_effect", "time_spline", "time_global_fixed_effect", "time_global_spline")
+    p.add_argument("--nuisance", choices=nuisance_choices, default="time_global")
+    p.add_argument("--axis-projection", choices=("none", "global_rate", "pc1", "both"), default="both")
+    p.add_argument("--shared-mode-projection-k", type=str, default="0,1,2,3,5,10")
+    p.add_argument("--recorded-nuisance", choices=nuisance_choices, default=None)
+    p.add_argument("--recorded-axis-projection", choices=("none", "global_rate", "pc1", "both"), default=None)
+    p.add_argument("--recorded-shared-mode-projection-k", type=str, default=None)
     p.add_argument("--ridge-alpha", type=float, default=1e-3)
     p.add_argument("--rank-tol-rel", type=float, default=1e-6)
     p.add_argument("--n-nulls", type=int, default=200)
     p.add_argument("--bootstrap-repeats", type=int, default=2000)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--predict-batch-size", type=int, default=64)
+    p.add_argument("--model-device", type=str, default="cuda")
     p.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_ROOT)
     p.add_argument("--use-cached-data", action="store_true", default=True)
     p.add_argument("--drift-only", action="store_true", help="Restrict recorded samples to drift-only windows")
@@ -177,6 +184,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--drift-exclusion-pre-ms", type=float, default=50.0)
     p.add_argument("--drift-exclusion-post-ms", type=float, default=150.0)
     return p
+
+
+def _resolve_source_options(args: argparse.Namespace) -> tuple[str, str, str]:
+    nuisance = str(args.recorded_nuisance) if args.recorded_nuisance is not None else str(args.nuisance)
+    axis_projection = str(args.recorded_axis_projection) if args.recorded_axis_projection is not None else str(args.axis_projection)
+    shared_k = str(args.recorded_shared_mode_projection_k) if args.recorded_shared_mode_projection_k is not None else str(args.shared_mode_projection_k)
+    return nuisance, axis_projection, shared_k
 
 
 def _fit_one_projection(
@@ -191,11 +205,14 @@ def _fit_one_projection(
     drift_support: dict[str, object],
     n_images_meeting_sampling_before: int,
     n_images_meeting_sampling_after: int,
+    source: str,
+    nuisance_model: str,
+    axis_projection: str,
 ) -> dict[str, object]:
     global_axes = []
-    if args.recorded_axis_projection in ("global_rate", "both"):
+    if axis_projection in ("global_rate", "both"):
         global_axes.append(global_rate_axis)
-    if args.recorded_axis_projection in ("pc1", "both"):
+    if axis_projection in ("pc1", "both"):
         global_axes.append(global_pc1_axis)
 
     pooled_arr, shared_basis, var_expl = _shared_basis(sampled, global_axes, k)
@@ -217,10 +234,21 @@ def _fit_one_projection(
 
         dxdy = x - np.mean(x, axis=0, keepdims=True)
         nuisance_cols: list[np.ndarray] = []
-        if args.recorded_nuisance != "none":
+        if nuisance_model != "none":
             t_z = (tt - float(np.mean(tt))) / (float(np.std(tt)) + 1e-12)
-            nuisance_cols.extend([t_z, t_z * t_z])
-            if args.recorded_nuisance == "time_global":
+            if nuisance_model in {"time", "time_global"}:
+                nuisance_cols.extend([t_z, t_z * t_z])
+            elif nuisance_model in {"time_fixed_effect", "time_global_fixed_effect"}:
+                t_int = np.clip(np.rint(tt).astype(np.int64), 0, global_mean_by_time.shape[0] - 1)
+                one_hot = np.eye(global_mean_by_time.shape[0], dtype=np.float64)[t_int]
+                if one_hot.shape[1] > 1:
+                    nuisance_cols.append(one_hot[:, 1:])
+            elif nuisance_model in {"time_spline", "time_global_spline"}:
+                t_unit = np.asarray(tt, dtype=np.float64)
+                t_unit = (t_unit - np.nanmin(t_unit)) / (np.nanmax(t_unit) - np.nanmin(t_unit) + 1e-12)
+                nuisance_cols.extend([t_unit, t_unit * t_unit, t_unit * t_unit * t_unit])
+
+            if nuisance_model in {"time_global", "time_global_fixed_effect", "time_global_spline"}:
                 t_int = np.clip(np.rint(tt).astype(np.int64), 0, global_mean_by_time.shape[0] - 1)
                 nuisance_cols.append(global_mean_by_time[t_int])
                 nuisance_cols.append(global_pc1_by_time[t_int])
@@ -233,12 +261,14 @@ def _fit_one_projection(
                 "session_id": f"{args.subject}_{args.date}",
                 "subject": args.subject,
                 "date": args.date,
-                "source": "recorded",
+                "source": str(source),
                 "image_set": "high_support",
                 "analysis_representation": "raw_samples",
                 "sample_mode": args.sample_mode,
-                "recorded_axis_projection": str(args.recorded_axis_projection),
-                "recorded_nuisance": str(args.recorded_nuisance),
+                "axis_projection": str(axis_projection),
+                "nuisance_model": str(nuisance_model),
+                "recorded_axis_projection": str(axis_projection),
+                "recorded_nuisance": str(nuisance_model),
                 "recorded_shared_mode_projection_k": int(k),
                 "image_id": int(img),
                 "n_samples_available": int(sampled[img]["n_available"]),
@@ -393,15 +423,18 @@ def _fit_one_projection(
         "session_id": f"{args.subject}_{args.date}",
         "subject": args.subject,
         "date": args.date,
-        "source": "recorded",
+        "source": str(source),
         "image_set": "high_support",
         "analysis_representation": "raw_samples",
         "sample_mode": args.sample_mode,
         "drift_only": bool(args.drift_only),
         "bootstrap_unit": "image",
-        "recorded_nuisance": str(args.recorded_nuisance),
-        "recorded_axis_projection": str(args.recorded_axis_projection),
+        "nuisance_model": str(nuisance_model),
+        "axis_projection": str(axis_projection),
+        "recorded_nuisance": str(nuisance_model),
+        "recorded_axis_projection": str(axis_projection),
         "recorded_shared_mode_projection_k": int(k),
+        "projection_k": int(k),
         "shared_mode_basis_source": "global_response_pca",
         "n_modes_projected": int(k),
         "variance_explained_by_projected_modes": float(var_expl),
@@ -425,14 +458,22 @@ def _fit_one_projection(
         "effect_minus_random_map": float(np.nanmean(diff_signed_rand)) if diff_signed_rand.size else float("nan"),
         "bootstrap_ci_low_minus_eye_shuffle": float(ci_signed_eye[0]),
         "bootstrap_ci_high_minus_eye_shuffle": float(ci_signed_eye[1]),
+        "ci_low_minus_eye_shuffle": float(ci_signed_eye[0]),
+        "ci_high_minus_eye_shuffle": float(ci_signed_eye[1]),
         "bootstrap_ci_low_minus_random": float(ci_signed_rand[0]),
         "bootstrap_ci_high_minus_random": float(ci_signed_rand[1]),
+        "ci_low_minus_random_map": float(ci_signed_rand[0]),
+        "ci_high_minus_random_map": float(ci_signed_rand[1]),
         "effect_minus_eye_shuffle_subspace": float(np.nanmean(diff_sub_eye)) if diff_sub_eye.size else float("nan"),
         "effect_minus_random_map_subspace": float(np.nanmean(diff_sub_rand)) if diff_sub_rand.size else float("nan"),
         "bootstrap_ci_low_minus_eye_shuffle_subspace": float(ci_sub_eye[0]),
         "bootstrap_ci_high_minus_eye_shuffle_subspace": float(ci_sub_eye[1]),
+        "ci_low_minus_eye_shuffle_subspace": float(ci_sub_eye[0]),
+        "ci_high_minus_eye_shuffle_subspace": float(ci_sub_eye[1]),
         "bootstrap_ci_low_minus_random_subspace": float(ci_sub_rand[0]),
         "bootstrap_ci_high_minus_random_subspace": float(ci_sub_rand[1]),
+        "ci_low_minus_random_subspace": float(ci_sub_rand[0]),
+        "ci_high_minus_random_subspace": float(ci_sub_rand[1]),
         "mean_align_bx_global_rate_axis": float(np.nanmean([float(v["align_bx_global_rate_axis"]) for v in image_metric_rows])) if image_metric_rows else float("nan"),
         "mean_align_bx_global_pc1_axis": float(np.nanmean([float(v["align_bx_global_pc1_axis"]) for v in image_metric_rows])) if image_metric_rows else float("nan"),
         "controlled_regression_status": controlled_regression_status,
@@ -441,7 +482,7 @@ def _fit_one_projection(
         **controlled,
     }
 
-    out_dir = Path(args.out_dir) / f"{args.subject}_{args.date}" / "source_recorded" / f"projection_k{int(k)}"
+    out_dir = Path(args.out_dir) / f"{args.subject}_{args.date}" / f"source_{source}" / f"projection_k{int(k)}"
     out_dir.mkdir(parents=True, exist_ok=True)
     with (out_dir / "stg_tangent_maps.pkl").open("wb") as handle:
         pickle.dump(
@@ -449,10 +490,12 @@ def _fit_one_projection(
                 "session_id": f"{args.subject}_{args.date}",
                 "subject": args.subject,
                 "date": args.date,
-                "source": "recorded",
+                "source": str(source),
                 "sample_mode": args.sample_mode,
-                "recorded_nuisance": str(args.recorded_nuisance),
-                "recorded_axis_projection": str(args.recorded_axis_projection),
+                "nuisance_model": str(nuisance_model),
+                "axis_projection": str(axis_projection),
+                "recorded_nuisance": str(nuisance_model),
+                "recorded_axis_projection": str(axis_projection),
                 "recorded_shared_mode_projection_k": int(k),
                 "shared_mode_basis_source": "global_response_pca",
                 "variance_explained_by_projected_modes": float(var_expl),
@@ -497,6 +540,7 @@ def _fit_one_projection(
 
 def main() -> None:
     args = build_parser().parse_args()
+    nuisance_model, axis_projection, shared_mode_k = _resolve_source_options(args)
     data = harmonize_fixrsvp_arrays(
         get_fixrsvp_data(
             subject=args.subject,
@@ -505,7 +549,7 @@ def main() -> None:
             use_cached_data=bool(args.use_cached_data),
         )
     )
-    rates = _recorded_rates(data)
+    rates, _ = _source_rates(args, data)
     eyepos = np.asarray(data["eyepos"], dtype=np.float64)
     image_ids = np.asarray(data["image_ids"], dtype=np.int64)
     stim = np.asarray(data["stim"], dtype=np.float64)
@@ -549,7 +593,10 @@ def main() -> None:
     n_images_meeting_sampling_after = int(sum(v >= min_needed for v in after_counts.values()))
 
     sweep_rows: list[dict[str, object]] = []
-    for k in _parse_k_list(args.recorded_shared_mode_projection_k):
+    source_dir = Path(args.out_dir) / f"{args.subject}_{args.date}" / f"source_{args.source}"
+    source_dir.mkdir(parents=True, exist_ok=True)
+
+    for k in _parse_k_list(shared_mode_k):
         sweep_rows.append(
             _fit_one_projection(
                 args=args,
@@ -562,57 +609,19 @@ def main() -> None:
                 drift_support=drift_support,
                 n_images_meeting_sampling_before=n_images_meeting_sampling_before,
                 n_images_meeting_sampling_after=n_images_meeting_sampling_after,
+                source=str(args.source),
+                nuisance_model=str(nuisance_model),
+                axis_projection=str(axis_projection),
             )
         )
 
     session_root = Path(args.out_dir) / f"{args.subject}_{args.date}"
-    twin_summary_path = session_root / "source_twin" / "stg_tangent_summary.csv"
-    if twin_summary_path.exists():
-        with twin_summary_path.open("r", encoding="utf-8", newline="") as handle:
-            twin_rows = list(csv.DictReader(handle))
-        if twin_rows:
-            twin = twin_rows[0]
-            sweep_rows.append(
-                {
-                    "session_id": f"{args.subject}_{args.date}",
-                    "subject": args.subject,
-                    "date": args.date,
-                    "source": "twin_benchmark",
-                    "recorded_shared_mode_projection_k": 0,
-                    "drift_only": bool(args.drift_only),
-                    "recorded_nuisance": str(args.recorded_nuisance),
-                    "recorded_axis_projection": str(args.recorded_axis_projection),
-                    "shared_mode_basis_source": "n/a",
-                    "n_modes_projected": 0,
-                    "variance_explained_by_projected_modes": 0.0,
-                    "n_images_with_samples_before_exclusion": int(drift_support.get("n_images_with_samples_before_exclusion", 0)),
-                    "n_images_with_samples_after_exclusion": int(drift_support.get("n_images_with_samples_after_exclusion", 0)),
-                    "n_images_meeting_sampling_before_exclusion": int(n_images_meeting_sampling_before),
-                    "n_images_meeting_sampling_after_exclusion": int(n_images_meeting_sampling_after),
-                    "n_valid_samples_before_exclusion": int(drift_support.get("n_valid_samples_before_exclusion", 0)),
-                    "n_valid_samples_excluded": int(drift_support.get("n_valid_samples_excluded", 0)),
-                    "n_valid_samples_after_exclusion": int(drift_support.get("n_valid_samples_after_exclusion", 0)),
-                    "fraction_valid_samples_after_exclusion": float(drift_support.get("fraction_valid_samples_after_exclusion", float("nan"))),
-                    "drift_n_events_detected": int(drift_support.get("drift_n_events_detected", 0)),
-                    "drift_speed_threshold_deg_s": float(drift_support.get("drift_speed_threshold_deg_s", float("nan"))),
-                    "n_images": int(float(twin.get("n_images", 0))),
-                    "n_pairs": int(float(twin.get("n_pairs", 0))),
-                    "mean_signed_column_alignment": float(twin.get("mean_signed_column_alignment", float("nan"))),
-                    "effect_minus_eye_shuffle": float(twin.get("effect_minus_eye_shuffle", float("nan"))),
-                    "effect_minus_random_map": float(twin.get("effect_minus_random_map", float("nan"))),
-                    "mean_subspace_overlap_k2": float(twin.get("mean_subspace_overlap_k2", float("nan"))),
-                    "effect_minus_eye_shuffle_subspace": float(twin.get("effect_minus_eye_shuffle_subspace", float("nan"))),
-                    "effect_minus_random_map_subspace": float(twin.get("effect_minus_random_map_subspace", float("nan"))),
-                    "mean_align_bx_global_rate_axis": float(twin.get("mean_align_bx_global_rate_axis", float("nan"))),
-                    "mean_align_bx_global_pc1_axis": float(twin.get("mean_align_bx_global_pc1_axis", float("nan"))),
-                    "controlled_regression_status": "twin_benchmark",
-                    "control_is_evaluable": True,
-                    "interpretation_label": str(twin.get("interpretation_label", "not_available")),
-                }
-            )
-
     _write_csv(session_root / "stg_shared_mode_projection_sweep.csv", sweep_rows)
-    print(str(session_root / "stg_shared_mode_projection_sweep.csv"))
+    if str(args.source) == "twin":
+        _write_csv(session_root / "stg_twin_symmetric_processing_sweep.csv", sweep_rows)
+        print(str(session_root / "stg_twin_symmetric_processing_sweep.csv"))
+    else:
+        print(str(session_root / "stg_shared_mode_projection_sweep.csv"))
 
 
 if __name__ == "__main__":

@@ -256,14 +256,18 @@ def _fit_unitwise_nuisance_residual(y: np.ndarray, nuisance_cols: list[np.ndarra
     yy = np.asarray(y, dtype=np.float64)
     cols = [np.ones(yy.shape[0], dtype=np.float64)]
     for c in nuisance_cols:
-        cc = np.asarray(c, dtype=np.float64).ravel()
-        if cc.shape[0] != yy.shape[0]:
+        cc = np.asarray(c, dtype=np.float64)
+        if cc.ndim == 1:
+            cc = cc[:, None]
+        if cc.ndim != 2 or cc.shape[0] != yy.shape[0]:
             continue
-        if not np.all(np.isfinite(cc)):
-            continue
-        if float(np.std(cc)) <= 1e-12:
-            continue
-        cols.append(cc)
+        for j in range(cc.shape[1]):
+            col = cc[:, j]
+            if not np.all(np.isfinite(col)):
+                continue
+            if float(np.std(col)) <= 1e-12:
+                continue
+            cols.append(col)
     if len(cols) == 1:
         return yy
     x = np.stack(cols, axis=1)
@@ -535,9 +539,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--n-samples-threshold", type=int, default=320)
     p.add_argument("--min-samples", type=int, default=160)
     p.add_argument("--ridge-alpha", type=float, default=1e-3)
-    p.add_argument("--recorded-nuisance", choices=("none", "time", "time_global"), default="time_global")
-    p.add_argument("--recorded-axis-projection", choices=("none", "global_rate", "pc1", "both"), default="none")
-    p.add_argument("--recorded-shared-mode-projection-k", type=str, default="0")
+    nuisance_choices = ("none", "time", "time_global", "time_fixed_effect", "time_spline", "time_global_fixed_effect", "time_global_spline")
+    p.add_argument("--recorded-nuisance", choices=nuisance_choices, default=None)
+    p.add_argument("--recorded-axis-projection", choices=("none", "global_rate", "pc1", "both"), default=None)
+    p.add_argument("--recorded-shared-mode-projection-k", type=str, default=None)
+    p.add_argument("--nuisance", choices=nuisance_choices, default=None, help="Source-general nuisance model (overrides --recorded-nuisance)")
+    p.add_argument("--axis-projection", choices=("none", "global_rate", "pc1", "both"), default=None, help="Source-general axis projection (overrides --recorded-axis-projection)")
+    p.add_argument("--shared-mode-projection-k", type=str, default=None, help="Source-general k sweep list (overrides --recorded-shared-mode-projection-k)")
     p.add_argument("--rank-tol-rel", type=float, default=1e-6)
     p.add_argument("--n-nulls", type=int, default=200)
     p.add_argument("--bootstrap-repeats", type=int, default=2000)
@@ -554,6 +562,33 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--drift-exclusion-pre-ms", type=float, default=50.0)
     p.add_argument("--drift-exclusion-post-ms", type=float, default=150.0)
     return p
+
+
+def _parse_k_list(raw: str) -> list[int]:
+    parts = [piece.strip() for piece in str(raw).split(",") if piece.strip()]
+    return [int(piece) for piece in parts] if parts else [0]
+
+
+def _resolve_source_options(args: argparse.Namespace) -> tuple[str, str, str]:
+    default_nuisance = "time_global"
+    default_axis_projection = "both" if str(args.source) == "twin" else "none"
+    default_shared_k = "0"
+    nuisance = (
+        str(args.nuisance)
+        if args.nuisance is not None
+        else (str(args.recorded_nuisance) if args.recorded_nuisance is not None else default_nuisance)
+    )
+    axis_projection = (
+        str(args.axis_projection)
+        if args.axis_projection is not None
+        else (str(args.recorded_axis_projection) if args.recorded_axis_projection is not None else default_axis_projection)
+    )
+    shared_k = (
+        str(args.shared_mode_projection_k)
+        if args.shared_mode_projection_k is not None
+        else (str(args.recorded_shared_mode_projection_k) if args.recorded_shared_mode_projection_k is not None else default_shared_k)
+    )
+    return nuisance, axis_projection, shared_k
 
 
 def _build_source_rates(args: argparse.Namespace, data: dict[str, Any]) -> tuple[np.ndarray, int | None]:
@@ -577,7 +612,8 @@ def _build_source_rates(args: argparse.Namespace, data: dict[str, Any]) -> tuple
 
 def main() -> None:
     args = build_parser().parse_args()
-    if args.source == "recorded" and str(args.recorded_shared_mode_projection_k).strip() not in {"", "0"}:
+    nuisance_model, axis_projection, shared_mode_k = _resolve_source_options(args)
+    if _parse_k_list(shared_mode_k) != [0]:
         import subprocess
         import sys
 
@@ -597,12 +633,14 @@ def main() -> None:
             str(args.n_samples_threshold),
             "--min-samples",
             str(args.min_samples),
-            "--recorded-nuisance",
-            str(args.recorded_nuisance),
-            "--recorded-axis-projection",
-            str(args.recorded_axis_projection),
-            "--recorded-shared-mode-projection-k",
-            str(args.recorded_shared_mode_projection_k),
+            "--source",
+            str(args.source),
+            "--nuisance",
+            str(nuisance_model),
+            "--axis-projection",
+            str(axis_projection),
+            "--shared-mode-projection-k",
+            str(shared_mode_k),
             "--ridge-alpha",
             str(args.ridge_alpha),
             "--rank-tol-rel",
@@ -627,6 +665,10 @@ def main() -> None:
             str(args.drift_exclusion_pre_ms),
             "--drift-exclusion-post-ms",
             str(args.drift_exclusion_post_ms),
+            "--predict-batch-size",
+            str(args.predict_batch_size),
+            "--model-device",
+            str(args.model_device),
         ]
         if args.use_cached_data:
             cmd.append("--use-cached-data")
@@ -675,7 +717,7 @@ def main() -> None:
     global_pc1_axis = np.zeros(rates.shape[2], dtype=np.float64)
     global_mean_by_time = np.zeros(n_time, dtype=np.float64)
     global_pc1_by_time = np.zeros(n_time, dtype=np.float64)
-    if args.source == "recorded":
+    if axis_projection != "none" or nuisance_model in {"time_global", "time_global_fixed_effect", "time_global_spline"}:
         y_valid = rates[valid]
         if y_valid.ndim == 2 and y_valid.shape[0] >= 2:
             global_rate_axis = _safe_unit_axis(np.nanmean(y_valid, axis=0))
@@ -723,19 +765,30 @@ def main() -> None:
         dxdy = x - np.mean(x, axis=0, keepdims=True)
 
         y_for_fit = np.asarray(y, dtype=np.float64)
-        if args.source == "recorded" and args.recorded_axis_projection != "none":
+        if axis_projection != "none":
             proj_axes: list[np.ndarray] = []
-            if args.recorded_axis_projection in ("global_rate", "both"):
+            if axis_projection in ("global_rate", "both"):
                 proj_axes.append(global_rate_axis)
-            if args.recorded_axis_projection in ("pc1", "both"):
+            if axis_projection in ("pc1", "both"):
                 proj_axes.append(global_pc1_axis)
             y_for_fit = _project_responses_out_axes(y_for_fit, proj_axes)
 
         nuisance_cols: list[np.ndarray] = []
-        if args.source == "recorded" and args.recorded_nuisance != "none":
+        if nuisance_model != "none":
             t_z = (tt - float(np.mean(tt))) / (float(np.std(tt)) + 1e-12)
-            nuisance_cols.extend([t_z, t_z * t_z])
-            if args.recorded_nuisance == "time_global":
+            if nuisance_model in {"time", "time_global"}:
+                nuisance_cols.extend([t_z, t_z * t_z])
+            elif nuisance_model in {"time_fixed_effect", "time_global_fixed_effect"}:
+                t_int = np.clip(np.rint(tt).astype(np.int64), 0, n_time - 1)
+                one_hot = np.eye(n_time, dtype=np.float64)[t_int]
+                if one_hot.shape[1] > 1:
+                    nuisance_cols.append(one_hot[:, 1:])
+            elif nuisance_model in {"time_spline", "time_global_spline"}:
+                t_unit = np.asarray(tt, dtype=np.float64)
+                t_unit = (t_unit - np.nanmin(t_unit)) / (np.nanmax(t_unit) - np.nanmin(t_unit) + 1e-12)
+                nuisance_cols.extend([t_unit, t_unit * t_unit, t_unit * t_unit * t_unit])
+
+            if nuisance_model in {"time_global", "time_global_fixed_effect", "time_global_spline"}:
                 t_int = np.clip(np.rint(tt).astype(np.int64), 0, n_time - 1)
                 nuisance_cols.append(global_mean_by_time[t_int])
                 nuisance_cols.append(global_pc1_by_time[t_int])
@@ -1065,6 +1118,25 @@ def main() -> None:
             float(np.mean(low_rand_boot <= 0.0)) if low_rand_boot.size else float("nan")
         )
 
+    ctrl_eye_vals = [
+        float(controlled[f"controlled_effect_minus_eye_shuffle_{c}"])
+        for c in CONTROL_METRICS
+        if np.isfinite(float(controlled[f"controlled_effect_minus_eye_shuffle_{c}"]))
+    ]
+    ctrl_rand_vals = [
+        float(controlled[f"controlled_effect_minus_random_map_{c}"])
+        for c in CONTROL_METRICS
+        if np.isfinite(float(controlled[f"controlled_effect_minus_random_map_{c}"]))
+    ]
+    controlled_regression_status = (
+        "suspect_identical_controls"
+        if ctrl_eye_vals
+        and ctrl_rand_vals
+        and (max(ctrl_eye_vals) - min(ctrl_eye_vals) < 1e-12)
+        and (max(ctrl_rand_vals) - min(ctrl_rand_vals) < 1e-12)
+        else "ok"
+    )
+
     primary_control = "pixel_correlation"
     low_ci_eye_primary = float(controlled[f"low_similarity_ci_low_minus_eye_shuffle_{primary_control}"])
     low_ci_rand_primary = float(controlled[f"low_similarity_ci_low_minus_random_map_{primary_control}"])
@@ -1113,8 +1185,11 @@ def main() -> None:
             "drift_n_events_detected": int(drift_support["drift_n_events_detected"]),
             "drift_speed_threshold_deg_s": float(drift_support["drift_speed_threshold_deg_s"]),
             "n_samples_threshold": int(args.n_samples_threshold),
-            "recorded_nuisance": str(args.recorded_nuisance),
-            "recorded_axis_projection": str(args.recorded_axis_projection),
+            "nuisance_model": str(nuisance_model),
+            "axis_projection": str(axis_projection),
+            "shared_mode_projection_k": str(shared_mode_k),
+            "recorded_nuisance": str(nuisance_model),
+            "recorded_axis_projection": str(axis_projection),
             "n_units": int(next(iter(per_image.values()))["n_units"]) if per_image else 0,
             "mean_n_samples_available": float(np.mean([int(v["n_samples_available"]) for v in per_image.values()])) if per_image else float("nan"),
             "mean_n_samples_used": float(np.mean([int(v["n_samples_used"]) for v in per_image.values()])) if per_image else float("nan"),
@@ -1130,7 +1205,7 @@ def main() -> None:
             ),
             "mean_align_bx_global_pc1_axis": (
                 float(np.nanmean([float(r["align_bx_global_pc1_axis"]) for r in image_metric_rows]))
-                if (image_metric_rows and args.source == "recorded")
+                if image_metric_rows
                 else float("nan")
             ),
             "mean_cos_bx": float(np.nanmean([float(r["cos_bx"]) for r in alignment_rows])) if alignment_rows else float("nan"),
@@ -1157,6 +1232,7 @@ def main() -> None:
             "bootstrap_ci_low_minus_random_subspace": ci_sub_rand[0],
             "bootstrap_ci_high_minus_random_subspace": ci_sub_rand[1],
             "bootstrap_p_minus_random_subspace_le_0": p_sub_rand,
+            "controlled_regression_status": controlled_regression_status,
             "tangent_sanity_label": (
                 "non_degenerate"
                 if image_metric_rows
@@ -1200,9 +1276,13 @@ def main() -> None:
         "n_nulls": int(args.n_nulls),
         "bootstrap_repeats": int(args.bootstrap_repeats),
         "bootstrap_unit": "image",
-        "recorded_nuisance": str(args.recorded_nuisance),
-        "recorded_axis_projection": str(args.recorded_axis_projection),
+        "nuisance_model": str(nuisance_model),
+        "axis_projection": str(axis_projection),
+        "shared_mode_projection_k": str(shared_mode_k),
+        "recorded_nuisance": str(nuisance_model),
+        "recorded_axis_projection": str(axis_projection),
         "image_similarity_controls": list(CONTROL_METRICS),
+        "controlled_regression_status": controlled_regression_status,
         "controlled_label_basis": "low_similarity_pairs_pixel_correlation",
         "controlled_primary_metric": primary_control,
         "control_not_evaluable_label": "control_not_evaluable",
