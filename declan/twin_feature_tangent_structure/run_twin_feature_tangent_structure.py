@@ -1017,20 +1017,27 @@ def _fit_tangent_for_history(
     history: np.ndarray,
     delta_px: float,
     model_device: str,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> dict[str, np.ndarray]:
+    """Return base response and translated endpoint rates for one history object.
+
+    Keys: ``r0``, ``bx``, ``by``, ``rx_p``, ``rx_m``, ``ry_p``, ``ry_m``.
+    Storing the raw endpoints (``rx_p`` etc.) alongside the linearized tangent
+    vectors (``bx``, ``by``) allows Panel B to draw either finite-translation
+    patches or linearized arrows from ``r0``.
+    """
     h = _movie_to_thw(history).to(str(model_device))
     hx_p = _shift_movie_subpixel(h, dx_px=float(delta_px), dy_px=0.0).detach().cpu().numpy()
     hx_m = _shift_movie_subpixel(h, dx_px=-float(delta_px), dy_px=0.0).detach().cpu().numpy()
     hy_p = _shift_movie_subpixel(h, dx_px=0.0, dy_px=float(delta_px)).detach().cpu().numpy()
     hy_m = _shift_movie_subpixel(h, dx_px=0.0, dy_px=-float(delta_px)).detach().cpu().numpy()
-    r0 = _predict_rate_from_history(ctx, history, model_device=model_device)
-    rx_p = _predict_rate_from_history(ctx, hx_p, model_device=model_device)
-    rx_m = _predict_rate_from_history(ctx, hx_m, model_device=model_device)
-    ry_p = _predict_rate_from_history(ctx, hy_p, model_device=model_device)
-    ry_m = _predict_rate_from_history(ctx, hy_m, model_device=model_device)
+    r0   = _predict_rate_from_history(ctx, history, model_device=model_device)
+    rx_p = _predict_rate_from_history(ctx, hx_p,    model_device=model_device)
+    rx_m = _predict_rate_from_history(ctx, hx_m,    model_device=model_device)
+    ry_p = _predict_rate_from_history(ctx, hy_p,    model_device=model_device)
+    ry_m = _predict_rate_from_history(ctx, hy_m,    model_device=model_device)
     bx = (rx_p - rx_m) / (2.0 * float(delta_px))
     by = (ry_p - ry_m) / (2.0 * float(delta_px))
-    return r0, bx, by
+    return {"r0": r0, "bx": bx, "by": by, "rx_p": rx_p, "rx_m": rx_m, "ry_p": ry_p, "ry_m": ry_m}
 
 
 def _local_linear_r2(
@@ -1343,7 +1350,8 @@ def main() -> None:
 
         for d_arcmin in delta_arcmins:
             delta_px = float(d_arcmin) * arcmin_to_model_px
-            r0, bx, by = _fit_tangent_for_history(ctx, history, delta_px=delta_px, model_device=str(args.model_device))
+            tang = _fit_tangent_for_history(ctx, history, delta_px=delta_px, model_device=str(args.model_device))
+            r0, bx, by = tang["r0"], tang["bx"], tang["by"]
             r2, r2x, r2y = _local_linear_r2(
                 ctx,
                 history,
@@ -1357,12 +1365,19 @@ def main() -> None:
             svals = _safe_svdvals(np.stack([bx, by], axis=1))
             e = svals * svals
             object_payload[float(d_arcmin)][obj.object_id] = {
-                "bx": bx,
-                "by": by,
+                "r0":   tang["r0"].astype(np.float32),
+                "bx":   tang["bx"].astype(np.float32),
+                "by":   tang["by"].astype(np.float32),
+                "rx_p": tang["rx_p"].astype(np.float32),
+                "rx_m": tang["rx_m"].astype(np.float32),
+                "ry_p": tang["ry_p"].astype(np.float32),
+                "ry_m": tang["ry_m"].astype(np.float32),
                 "history": history,
-                "image_id": int(obj.image_id),
+                "image_id":    int(obj.image_id),
                 "trial_index": int(obj.trial_index),
-                "time_index": int(obj.time_index),
+                "time_index":  int(obj.time_index),
+                "delta_arcmin":    float(d_arcmin),
+                "delta_model_px":  float(delta_px),
             }
             object_rows.append(
                 {
@@ -1577,6 +1592,7 @@ def main() -> None:
 
     union_rows: list[dict[str, object]] = []
     union_summary: list[dict[str, object]] = []
+    null_spectrum_rows: list[dict[str, object]] = []
     for d_arcmin in delta_arcmins:
         payload = filtered_object_payload[float(d_arcmin)]
         object_ids = sorted(payload.keys())
@@ -1642,7 +1658,26 @@ def main() -> None:
                     nrng = np.random.default_rng(int(args.seed) + 10000 + nrep)
                     m_shuf = np.stack([col[nrng.permutation(col.shape[0])] for col in mat.T], axis=1)
                     es, _ = _eigh_desc(m_shuf @ m_shuf.T)
-                    null_pr.append(_participation_ratio(np.maximum(es, 0.0)))
+                    es = np.maximum(es, 0.0)
+                    null_pr_val = _participation_ratio(es)
+                    null_pr.append(null_pr_val)
+                    # Persist per-component data so Panel C can draw a real null band.
+                    null_total = float(np.sum(es))
+                    null_frac = es / (null_total + 1e-12)
+                    null_cum = np.cumsum(null_frac)
+                    for i in range(min(64, int(es.size))):
+                        null_spectrum_rows.append({
+                            "delta":                       float(d_arcmin),
+                            "space":                       space_name,
+                            "tangent_set":                 set_name,
+                            "null_type":                   "unit_shuffle",
+                            "null_repeat":                 int(nrep),
+                            "component_index":             int(i + 1),
+                            "eigenvalue":                  float(es[i]),
+                            "fraction_variance":           float(null_frac[i]),
+                            "cumulative_fraction_variance": float(null_cum[i]),
+                            "participation_ratio":         float(null_pr_val),
+                        })
                 null_pr = np.asarray(null_pr, dtype=np.float64)
                 union_summary.append(
                     {
@@ -1683,6 +1718,32 @@ def main() -> None:
                     )
     _write_csv(out_root / "union_spectrum" / "twin_tangent_union_spectrum.csv", union_rows)
     _write_csv(out_root / "union_spectrum" / "twin_tangent_union_summary.csv", union_summary)
+    _write_csv(out_root / "union_spectrum" / "twin_tangent_union_null_spectrum.csv", null_spectrum_rows)
+
+    # Summary by (delta, space, tangent_set, component_index) for Panel C fill_between.
+    from collections import defaultdict
+    _comp_groups: dict[tuple, list[dict]] = defaultdict(list)
+    for row in null_spectrum_rows:
+        key = (row["delta"], row["space"], row["tangent_set"], row["component_index"])
+        _comp_groups[key].append(row)
+    null_spectrum_summary_rows: list[dict[str, object]] = []
+    for (delta, space, tangent_set, comp_idx), rows in sorted(_comp_groups.items()):
+        cumvars  = np.asarray([r["cumulative_fraction_variance"] for r in rows], dtype=np.float64)
+        fracvars = np.asarray([r["fraction_variance"]           for r in rows], dtype=np.float64)
+        null_spectrum_summary_rows.append({
+            "delta":           float(delta),
+            "space":           str(space),
+            "tangent_set":     str(tangent_set),
+            "component_index": int(comp_idx),
+            "n_null_repeats":  len(rows),
+            "cumvar_median":   float(np.median(cumvars)),
+            "cumvar_ci_low":   float(np.percentile(cumvars, 2.5)),
+            "cumvar_ci_high":  float(np.percentile(cumvars, 97.5)),
+            "fracvar_median":  float(np.median(fracvars)),
+            "fracvar_ci_low":  float(np.percentile(fracvars, 2.5)),
+            "fracvar_ci_high": float(np.percentile(fracvars, 97.5)),
+        })
+    _write_csv(out_root / "union_spectrum" / "twin_tangent_union_null_spectrum_summary.csv", null_spectrum_summary_rows)
 
     basis_rows: list[dict[str, object]] = []
     k_grid = [2, 5, 10, 20]

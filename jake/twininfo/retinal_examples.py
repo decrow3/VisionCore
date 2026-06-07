@@ -452,7 +452,16 @@ def _phase_scramble_pyramid_coeffs(coeffs, rng: np.random.Generator):
 
 
 def _pyramid_level_indices(coeffs) -> list[int]:
-    """Return the spatial-frequency level indices present in pyramid coeffs."""
+    """Return the spatial-frequency level indices present in pyramid coeffs.
+
+    Handles both plenoptic < 1.4 (tuple keys per orientation) and
+    plenoptic >= 1.4 (integer keys, all orientations packed into one tensor).
+    """
+    # plenoptic >= 1.4: level keys are plain integers
+    int_keys = sorted(k for k in coeffs if isinstance(k, int))
+    if int_keys:
+        return int_keys
+    # plenoptic < 1.4: level keys are (level, orientation) tuples
     return sorted({int(key[0]) for key in coeffs if isinstance(key, tuple)})
 
 
@@ -462,24 +471,33 @@ def _selected_band_coeffs(coeffs, band: str):
     if not levels:
         raise ValueError("No oriented pyramid levels found.")
     low_level = levels[-1]
+
+    # plenoptic >= 1.4 uses plain integer level keys; < 1.4 uses (level, orient) tuples.
+    new_api = any(isinstance(k, int) for k in coeffs)
+
+    def _is_level(key, lvl: int) -> bool:
+        if new_api:
+            return isinstance(key, int) and key == lvl
+        return isinstance(key, tuple) and int(key[0]) == lvl
+
     if band == "sf_high":
         keep = {"residual_highpass"}
-        keep.update(key for key in coeffs if isinstance(key, tuple) and int(key[0]) == 0)
+        keep.update(key for key in coeffs if _is_level(key, 0))
     elif band == "sf_mid_high":
         if len(levels) < 3:
             raise ValueError("sf_mid_high requires at least three pyramid levels.")
-        keep = {key for key in coeffs if isinstance(key, tuple) and int(key[0]) == levels[1]}
+        keep = {key for key in coeffs if _is_level(key, levels[1])}
     elif band == "sf_mid_low":
         if len(levels) < 4:
             raise ValueError("sf_mid_low requires a four-level pyramid.")
-        keep = {key for key in coeffs if isinstance(key, tuple) and int(key[0]) == levels[2]}
+        keep = {key for key in coeffs if _is_level(key, levels[2])}
     elif band == "sf_mid":
         if len(levels) < 2:
             raise ValueError("sf_mid requires at least two pyramid levels.")
-        keep = {key for key in coeffs if isinstance(key, tuple) and int(key[0]) == 1}
+        keep = {key for key in coeffs if _is_level(key, 1)}
     elif band == "sf_low":
         keep = {"residual_lowpass"}
-        keep.update(key for key in coeffs if isinstance(key, tuple) and int(key[0]) == low_level)
+        keep.update(key for key in coeffs if _is_level(key, low_level))
     else:
         raise ValueError(f"Unsupported pyramid band: {band}")
     for key in keep:

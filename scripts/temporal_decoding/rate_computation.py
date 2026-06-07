@@ -7,6 +7,11 @@ through the digital twin for different FEM conditions.
 FEM conditions:
     'real'          — measured fixational eye traces
     'stabilized'    — eye fixed at trial mean (eye_scale=0)
+    'stationary_phase_jittered'
+                    — alias for trial-mean stationary; preserves across-trial
+                      phase diversity without within-trial phase sampling
+    'trial_mean_stabilized'
+                    — explicit alias for 'stabilized'
     'scaled_0.5'    — FEM scaled to half amplitude around mean
     'scaled_2.0'    — FEM scaled to double amplitude around mean
     'shuffled'      — traces shuffled across trials (breaks stimulus-trace coupling)
@@ -88,7 +93,8 @@ def build_counterfactual_stim(
     Args:
         full_stack: (N_frames, H, W) uint8 stimulus frames
         eyepos: (T, 2) float32 eye positions in degrees for this trial
-        condition: one of 'real', 'stabilized', 'scaled_0.5', 'scaled_2.0',
+        condition: one of 'real', 'stabilized', 'stationary_phase_jittered',
+                   'trial_mean_stabilized', 'scaled_0.5', 'scaled_2.0',
                    'fixed_center', 'shuffled' (caller must pass shuffled eyepos),
                    'matched_null' (caller must pass null_trace)
         n_lags: number of temporal history frames for the model
@@ -104,7 +110,7 @@ def build_counterfactual_stim(
 
     if condition == 'real':
         ep = eye_t
-    elif condition == 'stabilized':
+    elif condition in ('stabilized', 'stationary_phase_jittered', 'trial_mean_stabilized'):
         ep = _scale_trace(eye_t, 0.0)
     elif condition == 'fixed_center':
         # All frames of all trials held at the grand mean position across the
@@ -411,8 +417,8 @@ def print_excursion_stats(
         ep = torch.from_numpy(eye_traces[i, :int(durations[i])]).float()
         if condition == 'real':
             pos = ep
-        elif condition in ('stabilized', 'fixed_center'):
-            if condition == 'stabilized':
+        elif condition in ('stabilized', 'stationary_phase_jittered', 'trial_mean_stabilized', 'fixed_center'):
+            if condition in ('stabilized', 'stationary_phase_jittered', 'trial_mean_stabilized'):
                 mean = ep.mean(0, keepdim=True)
                 pos = mean.expand_as(ep)
             else:

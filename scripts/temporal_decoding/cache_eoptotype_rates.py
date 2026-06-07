@@ -145,6 +145,7 @@ def _compute_and_save_one(
     spatial_collapse: str,
     force: bool,
     file_tag: str,
+    trace_indices: np.ndarray,
 ) -> Path:
     from rate_computation import compute_population_rates, compute_population_rates_hires, save_rates
 
@@ -170,7 +171,12 @@ def _compute_and_save_one(
             condition=condition,
             batch_size=batch_size,
             spatial_collapse=spatial_collapse,
-            stim_params={"logmar": float(logmar), "orientation": int(orientation)},
+            stim_params={
+                "logmar": float(logmar),
+                "orientation": int(orientation),
+                "trace_indices": trace_indices.astype(np.int32).tolist(),
+                "eye_trace_source": "scripts/temporal_decoding/data/eye_traces.npz",
+            },
             verbose=True,
         )
     else:
@@ -186,7 +192,12 @@ def _compute_and_save_one(
             condition=condition,
             batch_size=batch_size,
             spatial_collapse=spatial_collapse,
-            stim_params={"logmar": float(logmar), "orientation": int(orientation)},
+            stim_params={
+                "logmar": float(logmar),
+                "orientation": int(orientation),
+                "trace_indices": trace_indices.astype(np.int32).tolist(),
+                "eye_trace_source": "scripts/temporal_decoding/data/eye_traces.npz",
+            },
             verbose=True,
         )
 
@@ -264,6 +275,13 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Limit number of eye traces (debug/quick run).",
     )
+    parser.add_argument(
+        "--trace_selection",
+        type=str,
+        default="random",
+        choices=("random", "first"),
+        help="How to select traces when --n_traces is set. The selected source indices are saved in each cache.",
+    )
     args = parser.parse_args(argv)
 
     file_tag = _normalize_file_tag(args.file_tag)
@@ -284,12 +302,18 @@ def main(argv: list[str] | None = None) -> int:
 
     traces, durations = _load_eye_traces(Path(args.eye_traces_path))
 
+    trace_indices = np.arange(len(traces), dtype=np.int32)
     if args.n_traces is not None:
+        n_select = min(int(args.n_traces), len(traces))
         rng = np.random.default_rng(42)
-        idx = rng.choice(len(traces), size=min(int(args.n_traces), len(traces)), replace=False)
+        if args.trace_selection == "first":
+            idx = np.arange(n_select, dtype=np.int32)
+        else:
+            idx = rng.choice(len(traces), size=n_select, replace=False).astype(np.int32)
         traces = traces[idx]
         durations = durations[idx]
-        print(f"Using {len(traces)} traces (subsample)", flush=True)
+        trace_indices = trace_indices[idx]
+        print(f"Using {len(traces)} traces (subsample: {args.trace_selection})", flush=True)
     else:
         print(f"Using {len(traces)} traces", flush=True)
 
@@ -321,6 +345,7 @@ def main(argv: list[str] | None = None) -> int:
                     spatial_collapse=str(args.spatial_collapse),
                     force=bool(args.force),
                     file_tag=file_tag,
+                    trace_indices=trace_indices,
                 )
                 if out_path.exists():
                     print(f"    [ok] {out_path.name}", flush=True)
