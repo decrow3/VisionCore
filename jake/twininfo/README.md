@@ -13,7 +13,7 @@ Run a small real-data validation pass:
 ```bash
 conda run --no-capture-output -n yatesfv python -m jake.twininfo.pipeline \
   --run-name validation_three_images \
-  --image-indices 24 29 30 \
+  --image-indices 24 25 26 \
   --n-crops-per-image 1 \
   --n-examples-per-kind 2 \
   --population-size 16 \
@@ -71,7 +71,7 @@ Activation-map movies are slow and are off by default:
 ```bash
 conda run --no-capture-output -n yatesfv python -m jake.twininfo.pipeline \
   --run-name validation_three_images_with_activations \
-  --image-indices 24 29 30 \
+  --image-indices 24 25 26 \
   --n-crops-per-image 1 \
   --n-examples-per-kind 2 \
   --population-size 16 \
@@ -109,6 +109,49 @@ pipeline returns the existing run summary.
 7. Average gain summaries relative to stabilized movies:
    `pipeline.py`, `_plot_gain_summary`
 
+8. Matched trajectory controls:
+   `pipeline.py`, `TRAJECTORY_CONTROL_CONDITIONS`
+
+The default model conditions now include:
+
+- `real`
+- `stabilized`
+- `random_amp`: measured step amplitudes with randomized directions
+- `random_cov`: Gaussian step sequence with measured step covariance
+- `trajectory_order_shuffle`: same sampled eye positions in shuffled temporal order
+- `pyramid_phase_scrambled`: visual/image phase scramble from the local pyramid control
+- `sf_low`, `sf_mid_low`, `sf_mid_high`, `sf_high`
+
+For the Rucci-style image-content interaction, the pipeline also supports
+augmented stabilized visual-control conditions:
+
+- `stabilized_pyramid_phase_scrambled`
+- `stabilized_sf_low`, `stabilized_sf_mid_low`, `stabilized_sf_mid_high`,
+  `stabilized_sf_high`
+
+These reuse the same local pyramid control image as the FEM-rendered visual
+control and replay it at the trial-mean stabilized trace. To add just the
+missing lowpass, highpass, and visual-phase stabilized controls to an existing
+standard run:
+
+```bash
+conda run --no-capture-output -n yatesfv python -m jake.twininfo.pipeline \
+  --run-name production_all_images \
+  --augment-existing \
+  --conditions stabilized_sf_low stabilized_sf_high stabilized_pyramid_phase_scrambled
+```
+
+When `metadata/run_config.json` exists, `--augment-existing` reuses the original
+image, trace, crop, population, and information-grid settings, skips condition
+rows already present in the summary/cache, and merges the new rows into
+`metadata/05_lagcube_information_summary.csv` plus
+`cache/cumulative_information_series.npz`.
+
+Legacy output note: earlier pilot runs used the name `phase_order_shuffle` for
+the trajectory-order control. That condition is not a visual phase scramble; it
+is now named `trajectory_order_shuffle`. The visual phase control remains
+`pyramid_phase_scrambled`.
+
 Core reusable helpers:
 
 - `common.py`: shared model/data loading and constants from Ryan's `_common.py`
@@ -126,6 +169,8 @@ Each run has:
 - `metadata/00_population_units.csv`: selected model units, performance scores,
   and retinotopic grid positions
 - `figures/01_*trace_selection*.pdf`: trace selector QC
+- `metadata/03_trajectory_control_qc.csv`: matched-motion control audits
+  including path length, RMS displacement, step RMS, and step covariance errors
 - `metadata/02_image_crop_hotspots.csv`: selected crop centers and offsets
 - `figures/02_image_selection_page_*.pdf`: image selector QC
 - `movies/stimulus_*.mp4`: retinal stimulus MP4s, when enabled

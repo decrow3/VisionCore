@@ -15,24 +15,95 @@ from jake.twininfo.lagcube_information import (
     unique_shifts,
 )
 from jake.twininfo.run_lagcube_information import (
+    ALL_CONDITIONS,
     MAIN_CONDITIONS,
     PHASE_COMPARISON_CONDITIONS,
     SF_COMPARISON_CONDITIONS,
+    STABILIZED_VISUAL_CONTROL_CONDITIONS,
+    TRAJECTORY_COMPARISON_CONDITIONS,
+    TRAJECTORY_CONTROL_CONDITIONS,
 )
+from jake.twininfo.pipeline import _trajectory_for_condition
 
 
 def test_main_lagcube_conditions_use_pyramid_phase_and_sf_bands():
     assert PHASE_COMPARISON_CONDITIONS == ("real", "stabilized", "pyramid_phase_scrambled")
     assert SF_COMPARISON_CONDITIONS == ("real", "sf_low", "sf_mid_low", "sf_mid_high", "sf_high")
+    assert TRAJECTORY_CONTROL_CONDITIONS == (
+        "random_amp",
+        "random_amp_cloud_matched",
+        "random_cov",
+        "trajectory_order_shuffle",
+    )
+    assert TRAJECTORY_COMPARISON_CONDITIONS == (
+        "real",
+        "stabilized",
+        "random_amp",
+        "random_amp_cloud_matched",
+        "random_cov",
+        "trajectory_order_shuffle",
+    )
     assert MAIN_CONDITIONS == (
         "real",
         "stabilized",
+        "random_amp",
+        "random_amp_cloud_matched",
+        "random_cov",
+        "trajectory_order_shuffle",
         "pyramid_phase_scrambled",
         "sf_low",
         "sf_mid_low",
         "sf_mid_high",
         "sf_high",
     )
+    assert STABILIZED_VISUAL_CONTROL_CONDITIONS == (
+        "stabilized_pyramid_phase_scrambled",
+        "stabilized_sf_low",
+        "stabilized_sf_mid_low",
+        "stabilized_sf_mid_high",
+        "stabilized_sf_high",
+    )
+    assert ALL_CONDITIONS == MAIN_CONDITIONS + STABILIZED_VISUAL_CONTROL_CONDITIONS
+
+
+def test_trajectory_controls_are_deterministic_and_matched():
+    t = np.arange(64, dtype=np.float32)
+    trace = np.column_stack([
+        0.002 * np.sin(t / 7.0) + 0.0005 * t,
+        0.0015 * np.cos(t / 9.0),
+    ]).astype(np.float32)
+
+    amp_a, amp_desc = _trajectory_for_condition(trace, "random_amp", t_max=64, seed=13)
+    amp_b, _ = _trajectory_for_condition(trace, "random_amp", t_max=64, seed=13)
+    cloud_trace, cloud_desc = _trajectory_for_condition(trace, "random_amp_cloud_matched", t_max=64, seed=13)
+    cov_trace, cov_desc = _trajectory_for_condition(trace, "random_cov", t_max=64, seed=13)
+    shuffled, shuffle_desc = _trajectory_for_condition(trace, "trajectory_order_shuffle", t_max=64, seed=13)
+    legacy_shuffled, legacy_desc = _trajectory_for_condition(trace, "phase_order_shuffle", t_max=64, seed=13)
+
+    assert amp_desc == "step_amplitude_matched_random_directions"
+    assert cloud_desc.startswith((
+        "step_amplitude_and_cloud_matched_random_directions",
+        "inverted_time_reversed_exact_scale_cloud_fallback",
+    ))
+    assert cov_desc == "step_covariance_matched_gaussian"
+    assert shuffle_desc == "same_positions_time_order_shuffled"
+    assert legacy_desc == shuffle_desc
+    assert np.allclose(amp_a, amp_b)
+    assert amp_a.shape == trace.shape
+    assert cov_trace.shape == trace.shape
+    assert cloud_trace.shape == trace.shape
+    assert shuffled.shape == trace.shape
+    assert np.allclose(np.mean(amp_a, axis=0), np.mean(trace, axis=0), atol=1e-7)
+    assert np.allclose(np.mean(cov_trace, axis=0), np.mean(trace, axis=0), atol=1e-7)
+    assert np.allclose(np.mean(cloud_trace, axis=0), np.mean(trace, axis=0), atol=1e-7)
+    assert np.allclose(np.sort(shuffled[:, 0]), np.sort(trace[:, 0]))
+    assert np.allclose(legacy_shuffled, shuffled)
+
+    real_step_amp = np.linalg.norm(np.diff(trace, axis=0), axis=1)
+    amp_step_amp = np.linalg.norm(np.diff(amp_a, axis=0), axis=1)
+    cloud_step_amp = np.linalg.norm(np.diff(cloud_trace, axis=0), axis=1)
+    assert np.allclose(np.sort(amp_step_amp), np.sort(real_step_amp), atol=1e-7)
+    assert np.allclose(np.sort(cloud_step_amp), np.sort(real_step_amp), atol=1e-7)
 
 
 def test_lag_cubes_use_all_overlapping_current_samples():

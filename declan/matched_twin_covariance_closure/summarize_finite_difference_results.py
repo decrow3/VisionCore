@@ -66,6 +66,22 @@ def _summarize_grouped(metrics: pd.DataFrame, *, n_boot: int, seed: int) -> list
         random_effect_mean, random_lo, random_hi = _bootstrap_mean_ci(
             g["effect_minus_random_subspace_median"].to_numpy(), rng=rng, n_boot=n_boot
         )
+        if "effect_minus_rf_fixed_permutation_median" in g:
+            rf_effect_mean, rf_lo, rf_hi = _bootstrap_mean_ci(
+                g["effect_minus_rf_fixed_permutation_median"].to_numpy(), rng=rng, n_boot=n_boot
+            )
+            rf_eff = _finite(g["effect_minus_rf_fixed_permutation_median"].to_numpy())
+            rf_n_pos = int(np.sum(rf_eff > 0.0))
+        else:
+            rf_effect_mean, rf_lo, rf_hi = float("nan"), float("nan"), float("nan")
+            rf_eff = np.array([], dtype=np.float64)
+            rf_n_pos = 0
+        if "rf_fixed_permutation_null_median" in g:
+            rf_null_median_mean, rf_null_lo, rf_null_hi = _bootstrap_mean_ci(
+                g["rf_fixed_permutation_null_median"].to_numpy(), rng=rng, n_boot=n_boot
+            )
+        else:
+            rf_null_median_mean, rf_null_lo, rf_null_hi = float("nan"), float("nan"), float("nan")
         eff = _finite(g["effect_minus_unit_shuffle_median"].to_numpy())
         n_pos = int(np.sum(eff > 0.0))
         rows.append(
@@ -81,11 +97,22 @@ def _summarize_grouped(metrics: pd.DataFrame, *, n_boot: int, seed: int) -> list
                 "effect_random_mean": random_effect_mean,
                 "effect_random_boot_ci_low": random_lo,
                 "effect_random_boot_ci_high": random_hi,
+                "rf_fixed_null_median_mean": rf_null_median_mean,
+                "rf_fixed_null_median_boot_ci_low": rf_null_lo,
+                "rf_fixed_null_median_boot_ci_high": rf_null_hi,
+                "effect_rf_fixed_mean": rf_effect_mean,
+                "effect_rf_fixed_boot_ci_low": rf_lo,
+                "effect_rf_fixed_boot_ci_high": rf_hi,
                 "n_effect_positive": n_pos,
                 "n_effect_nonzero": int(eff.size),
                 "sign_test_p_two_sided": _sign_test_p_two_sided(n_pos, int(eff.size)),
+                "n_effect_rf_fixed_positive": rf_n_pos,
+                "n_effect_rf_fixed_nonzero": int(rf_eff.size),
+                "sign_test_rf_fixed_p_two_sided": _sign_test_p_two_sided(rf_n_pos, int(rf_eff.size)),
                 "effect_unit_min": float(np.min(eff)) if eff.size else float("nan"),
                 "effect_unit_max": float(np.max(eff)) if eff.size else float("nan"),
+                "effect_rf_fixed_min": float(np.min(rf_eff)) if rf_eff.size else float("nan"),
+                "effect_rf_fixed_max": float(np.max(rf_eff)) if rf_eff.size else float("nan"),
             }
         )
     return sorted(rows, key=lambda r: (str(r["target_variant"]), str(r["projection_control"]), str(r["basis_source"]), int(r["k"])))
@@ -122,6 +149,10 @@ def _audit(root: Path, manifest: dict[str, Any], sessions: pd.DataFrame, metrics
         "manifest_step_px": manifest.get("step_px"),
         "manifest_max_samples": manifest.get("max_samples"),
         "manifest_n_nulls": manifest.get("n_nulls"),
+        "manifest_enable_rf_readout_null": manifest.get("enable_rf_readout_null"),
+        "manifest_rf_null_n_nulls": manifest.get("rf_null_n_nulls"),
+        "manifest_rf_null_min_bin_units": manifest.get("rf_null_min_bin_units"),
+        "manifest_rf_null_bin_features": manifest.get("rf_null_bin_features"),
         "manifest_rescale_mode": manifest.get("rescale_mode"),
         "checkpoint": manifest.get("checkpoint"),
         "model_config": manifest.get("model_config"),
@@ -158,6 +189,7 @@ def _audit(root: Path, manifest: dict[str, Any], sessions: pd.DataFrame, metrics
             "Existing finite_difference_metric_summary.csv CI columns are session percentiles, not bootstrap CIs.",
             "PSD targets are eigenvalue-clipped recorded FEM covariance; raw target rows are also reported.",
             "Unit-shuffle null breaks unit identity while preserving source loading structure; random-subspace null is also reported.",
+            "When enabled, RF/readout fixed-permutation nulls permute source units only within adaptive recorded-RF/scale bins.",
         ],
     }
 

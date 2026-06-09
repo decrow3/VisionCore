@@ -12,7 +12,9 @@ import dill
 import numpy as np
 import torch
 import torch.nn.functional as F
+import yaml
 
+from eval.sta_ste import load_cached_sta_ste
 from eval.eval_stack_multidataset import load_model
 from eval.eval_stack_utils import load_single_dataset, rescale_rhat
 from models.config_loader import load_config
@@ -20,6 +22,7 @@ from models.config_loader import load_config
 from .run_cache_closure import (
     DEFAULT_FIG2_CACHE,
     DEFAULT_FIG3_CACHE,
+    VISIONCORE_ROOT,
     _apply_projection_to_cov,
     _basis_from_cov_or_matrix,
     _capture,
@@ -61,9 +64,25 @@ class SessionSamples:
     n_trials_total: int
 
 
+@dataclass
+class RFNullMetadata:
+    status: str
+    bins: np.ndarray | None
+    unit_rows: list[dict[str, Any]]
+    n_bins: int
+    largest_bin_fraction: float
+    bin_features: str
+
+
 def _resolve_device(device: str) -> str:
     if device != "auto":
         return device
+    try:
+        from DataYatesV1 import get_free_device
+
+        return str(get_free_device())
+    except Exception as exc:
+        print(f"Warning: get_free_device() failed ({type(exc).__name__}: {exc}); falling back to torch device check.")
     return "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
@@ -136,6 +155,115 @@ def _pixels_per_degree(dset: Any, fallback: float) -> float:
         if val is not None:
             return float(val)
     return float(fallback)
+
+
+def _session_yaml_candidates(session: str, args: argparse.Namespace) -> list[Path]:
+    candidates: list[Path] = []
+    if getattr(args, "rf_null_session_yaml_dir", None):
+        candidates.append(Path(args.rf_null_session_yaml_dir) / f"{session}.yaml")
+    dataset_config = Path(args.dataset_config)
+    try:
+        cfg = load_config(dataset_config)
+        session_dir = cfg.get("session_dir")
+        if session_dir:
+            sd = Path(session_dir)
+            if not sd.is_absolute():
+                candidates.append(dataset_config.parent / sd / f"{session}.yaml")
+                candidates.append(VISIONCORE_ROOT / "experiments" / "dataset_configs" / sd / f"{session}.yaml")
+    except Exception:
+        pass
+    candidates.extend(
+        [
+            VISIONCORE_ROOT / "experiments" / "dataset_configs" / "sessions" / f"{session}.yaml",
+            VISIONCORE_ROOT / "experiments" / "dataset_configs" / "sessions_legacy_e482ece" / f"{session}.yaml",
+            VISIONCORE_ROOT / "experiments" / "dataset_configs" / "sessions_all_cells" / f"{session}.yaml",
+        ]
+    )
+    out: list[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path.resolve()) if path.exists() else str(path)
+        if key not in seen:
+            seen.add(key)
+            out.append(path)
+    return out
+
+
+def _load_session_cids(session: str, args: argparse.Namespace) -> tuple[np.ndarray | None, str, str]:
+    for path in _session_yaml_candidates(session, args):
+        if not path.exists():
+            continue
+        try:
+            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception as exc:
+            return None, f"session_yaml_load_failed_{type(exc).__name__}", str(path)
+        cids = payload.get("cids")
+        if cids is None:
+            return None, "session_yaml_missing_cids", str(path)
+        arr = np.asarray(cids, dtype=np.int64).ravel()
+        if arr.size == 0:
+            return None, "session_yaml_empty_cids", str(path)
+        return arr, "ok_session_yaml_cids", str(path)
+    return None, "missing_session_yaml", ""
+
+
+def _rf_centers_from_sta_cache(session: str) -> tuple[np.ndarray | None, np.ndarray | None, str]:
+    arrs = load_cached_sta_ste(session)
+    if arrs is None:
+        return None, None, "missing_sta_cache"
+    stes = np.asarray(arrs.get("stes"), dtype=np.float64)
+    if stes.ndim != 4:
+        return None, None, "invalid_sta_cache_shape"
+    n_units, _n_lags, h, w = stes.shape
+    xx, yy = np.meshgrid(np.arange(w, dtype=np.float64), np.arange(h, dtype=np.float64))
+    rf_x = np.full(n_units, np.nan, dtype=np.float64)
+    rf_y = np.full(n_units, np.nan, dtype=np.float64)
+    for u in range(n_units):
+        ste_u = stes[u]
+        if not np.isfinite(ste_u).any():
+            continue
+        lag = int(np.nanargmax(np.nanstd(ste_u, axis=(1, 2))))
+        im = ste_u[lag]
+        weights = np.abs(im - np.nanmedian(im))
+        weights = np.where(np.isfinite(weights), weights, 0.0)
+        mass = float(np.sum(weights))
+        if mass <= 1e-12:
+            continue
+        rf_x[u] = float(np.sum(weights * xx) / mass)
+        rf_y[u] = float(np.sum(weights * yy) / mass)
+    return rf_x, rf_y, f"ok_sta_cache_pixels_h{h}_w{w}"
+
+
+def _load_matched_recorded_rfs(
+    *,
+    session: str,
+    common_units: np.ndarray,
+    args: argparse.Namespace,
+) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None, str, dict[str, Any]]:
+    selected_cids, cid_status, cid_path = _load_session_cids(session, args)
+    meta: dict[str, Any] = {
+        "rf_cid_status": cid_status,
+        "rf_cid_source": cid_path,
+        "rf_coordinate_source": "",
+    }
+    if selected_cids is None:
+        return None, None, None, cid_status, meta
+    common = np.asarray(common_units, dtype=np.int64).ravel()
+    if common.size == 0 or int(np.max(common)) >= selected_cids.size or int(np.min(common)) < 0:
+        meta["rf_selected_cids_count"] = int(selected_cids.size)
+        return None, None, None, "common_units_outside_selected_cids", meta
+    matched_cids = selected_cids[common]
+
+    rf_x_all, rf_y_all, rf_status = _rf_centers_from_sta_cache(session)
+    meta["rf_coordinate_source"] = rf_status
+    if rf_x_all is None or rf_y_all is None:
+        return None, None, matched_cids, rf_status, meta
+    if matched_cids.size == 0 or int(np.nanmax(matched_cids)) >= rf_x_all.size or int(np.nanmin(matched_cids)) < 0:
+        meta["rf_sta_units_count"] = int(rf_x_all.size)
+        meta["rf_matched_cid_min"] = int(np.nanmin(matched_cids)) if matched_cids.size else None
+        meta["rf_matched_cid_max"] = int(np.nanmax(matched_cids)) if matched_cids.size else None
+        return None, None, matched_cids, "matched_cids_outside_sta_cache", meta
+    return rf_x_all[matched_cids], rf_y_all[matched_cids], matched_cids, rf_status, meta
 
 
 def _collect_samples(
@@ -400,6 +528,249 @@ def _compact_crossfit_payload(
     return source_name, {"cov": cov, "mat": None, "status": status}, stats
 
 
+def _quantile_split_indices(values: np.ndarray, indices: np.ndarray, q: int, min_bin_units: int) -> list[np.ndarray] | None:
+    idx = np.asarray(indices, dtype=np.int64)
+    if int(q) <= 1 or idx.size < int(q) * int(min_bin_units):
+        return None
+    vals = np.asarray(values, dtype=np.float64)[idx]
+    finite = np.isfinite(vals)
+    if int(np.sum(finite)) != idx.size:
+        return None
+    order = idx[np.argsort(vals, kind="mergesort")]
+    parts = [np.asarray(part, dtype=np.int64) for part in np.array_split(order, int(q)) if part.size]
+    if len(parts) != int(q) or any(part.size < int(min_bin_units) for part in parts):
+        return None
+    return parts
+
+
+def _split_bins_by_feature(
+    bins: list[np.ndarray],
+    values: np.ndarray,
+    *,
+    q: int,
+    min_bin_units: int,
+) -> tuple[list[np.ndarray], bool]:
+    out: list[np.ndarray] = []
+    changed = False
+    for idx in bins:
+        parts = _quantile_split_indices(values, idx, int(q), int(min_bin_units))
+        if parts is None:
+            out.append(idx)
+        else:
+            out.extend(parts)
+            changed = True
+    return out, changed
+
+
+def _label_bins(bins: list[np.ndarray], n_units: int) -> np.ndarray:
+    labels = np.full(int(n_units), -1, dtype=np.int64)
+    for i, idx in enumerate(bins):
+        labels[np.asarray(idx, dtype=np.int64)] = int(i)
+    return labels
+
+
+def _make_adaptive_bins(
+    *,
+    rf_x: np.ndarray | None,
+    rf_y: np.ndarray | None,
+    tangent_norm: np.ndarray,
+    mean_rate: np.ndarray,
+    ccnorm: np.ndarray | None,
+    min_bin_units: int,
+    requested_features: str,
+) -> tuple[np.ndarray | None, str, str, float]:
+    n_units = int(np.asarray(tangent_norm).size)
+    if n_units < max(2, int(min_bin_units)):
+        return None, "too_few_units_for_bins", "", float("nan")
+
+    features = {x.strip() for x in str(requested_features).split(",") if x.strip()}
+    bins: list[np.ndarray] = [np.arange(n_units, dtype=np.int64)]
+    used: list[str] = []
+
+    has_rf = (
+        rf_x is not None
+        and rf_y is not None
+        and np.asarray(rf_x).size == n_units
+        and np.asarray(rf_y).size == n_units
+        and np.all(np.isfinite(rf_x))
+        and np.all(np.isfinite(rf_y))
+    )
+    if "rf_xy" in features and has_rf:
+        if n_units >= 4 * int(min_bin_units):
+            q_spatial = 3 if n_units >= 9 * int(min_bin_units) else 2
+            bins, changed_x = _split_bins_by_feature(bins, np.asarray(rf_x, dtype=np.float64), q=q_spatial, min_bin_units=int(min_bin_units))
+            bins, changed_y = _split_bins_by_feature(bins, np.asarray(rf_y, dtype=np.float64), q=q_spatial, min_bin_units=int(min_bin_units))
+            if changed_x or changed_y:
+                used.append(f"rf_xy_q{q_spatial}")
+        elif n_units >= 2 * int(min_bin_units):
+            x_span = float(np.nanpercentile(rf_x, 90) - np.nanpercentile(rf_x, 10))
+            y_span = float(np.nanpercentile(rf_y, 90) - np.nanpercentile(rf_y, 10))
+            axis_values = np.asarray(rf_x if x_span >= y_span else rf_y, dtype=np.float64)
+            bins, changed = _split_bins_by_feature(bins, axis_values, q=2, min_bin_units=int(min_bin_units))
+            if changed:
+                used.append("rf_xy_1d_q2")
+
+    if "tangent_norm" in features and np.all(np.isfinite(tangent_norm)):
+        bins, changed = _split_bins_by_feature(bins, np.asarray(tangent_norm, dtype=np.float64), q=2, min_bin_units=int(min_bin_units))
+        if changed:
+            used.append("tangent_norm_q2")
+
+    if "mean_rate" in features and np.all(np.isfinite(mean_rate)):
+        bins, changed = _split_bins_by_feature(bins, np.asarray(mean_rate, dtype=np.float64), q=2, min_bin_units=int(min_bin_units))
+        if changed:
+            used.append("mean_rate_q2")
+
+    if "ccnorm" in features and ccnorm is not None and np.asarray(ccnorm).size == n_units and np.all(np.isfinite(ccnorm)):
+        bins, changed = _split_bins_by_feature(bins, np.asarray(ccnorm, dtype=np.float64), q=2, min_bin_units=int(min_bin_units))
+        if changed:
+            used.append("ccnorm_q2")
+
+    labels = _label_bins(bins, n_units)
+    if np.any(labels < 0) or any(np.sum(labels == b) < int(min_bin_units) for b in np.unique(labels)):
+        return None, "invalid_bins_after_adaptive_split", ",".join(used), float("nan")
+    largest = float(max(np.sum(labels == b) for b in np.unique(labels)) / max(n_units, 1))
+    status = "ok_rf_bins" if has_rf and any(u.startswith("rf_xy") for u in used) else "ok_nonspatial_bins"
+    return labels, status, ",".join(used), largest
+
+
+def _constrained_permutation(bins: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    labels = np.asarray(bins, dtype=np.int64).ravel()
+    perm = np.arange(labels.size, dtype=np.int64)
+    for label in np.unique(labels):
+        idx = np.flatnonzero(labels == int(label))
+        if idx.size > 1:
+            shuffled = idx.copy()
+            rng.shuffle(shuffled)
+            perm[idx] = shuffled
+    return perm
+
+
+def _rf_null_captures(
+    *,
+    rng: np.random.Generator,
+    target: np.ndarray,
+    source_name: str,
+    source_cov: np.ndarray | None,
+    source_matrix: np.ndarray | None,
+    projection: np.ndarray,
+    bins: np.ndarray | None,
+    k: int,
+    n_nulls: int,
+) -> dict[str, Any]:
+    if bins is None:
+        return {
+            "rf_fixed_permutation_null_mean": float("nan"),
+            "rf_fixed_permutation_null_median": float("nan"),
+            "rf_fixed_permutation_null_ci_low": float("nan"),
+            "rf_fixed_permutation_null_ci_high": float("nan"),
+        }
+    vals: list[float] = []
+    for _ in range(int(n_nulls)):
+        perm = _constrained_permutation(np.asarray(bins, dtype=np.int64), rng)
+        if source_name.endswith("_cov") and source_cov is not None:
+            cov_null = np.asarray(source_cov, dtype=np.float64)[np.ix_(perm, perm)]
+            cov_null = _apply_projection_to_cov(cov_null, projection)
+            eigvals, eigvecs = _basis_from_cov_or_matrix(source_name, cov_null, None)
+        elif source_matrix is not None:
+            mat_null = projection @ np.asarray(source_matrix, dtype=np.float64)[perm, :]
+            eigvals, eigvecs = _basis_from_cov_or_matrix(source_name, None, mat_null)
+        else:
+            continue
+        rank = _numerical_rank(np.maximum(eigvals, 0.0))
+        if int(k) <= max(rank, 0) and eigvecs.shape[1] >= int(k):
+            vals.append(_capture(target, eigvecs[:, : int(k)]))
+    arr = np.asarray(vals, dtype=np.float64)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return {
+            "rf_fixed_permutation_null_mean": float("nan"),
+            "rf_fixed_permutation_null_median": float("nan"),
+            "rf_fixed_permutation_null_ci_low": float("nan"),
+            "rf_fixed_permutation_null_ci_high": float("nan"),
+        }
+    return {
+        "rf_fixed_permutation_null_mean": float(np.mean(arr)),
+        "rf_fixed_permutation_null_median": float(np.median(arr)),
+        "rf_fixed_permutation_null_ci_low": float(np.percentile(arr, 2.5)),
+        "rf_fixed_permutation_null_ci_high": float(np.percentile(arr, 97.5)),
+    }
+
+
+def _rf_null_metadata_for_session(
+    *,
+    session: str,
+    subject: str,
+    common_units: np.ndarray,
+    sr: dict[str, Any],
+    samples: SessionSamples,
+    j: np.ndarray,
+    gains: np.ndarray,
+    args: argparse.Namespace,
+) -> RFNullMetadata:
+    if not bool(args.enable_rf_readout_null):
+        return RFNullMetadata("disabled", None, [], 0, float("nan"), "")
+
+    rf_x, rf_y, matched_cids, rf_status, rf_meta = _load_matched_recorded_rfs(
+        session=session,
+        common_units=common_units,
+        args=args,
+    )
+    tangent_norm = np.sqrt(np.nanmean(np.sum(np.asarray(j, dtype=np.float64) ** 2, axis=2), axis=0))
+    mean_rate = np.nanmean(np.asarray(samples.robs, dtype=np.float64), axis=0)
+    sr_pos = {int(u): i for i, u in enumerate(np.asarray(sr.get("neuron_mask", []), dtype=np.int64).tolist())}
+    idx3 = np.asarray([sr_pos.get(int(u), -1) for u in np.asarray(common_units, dtype=np.int64)], dtype=np.int64)
+    ccnorm = None
+    if "ccnorm" in sr and np.all(idx3 >= 0):
+        raw_ccnorm = np.asarray(sr["ccnorm"], dtype=np.float64).ravel()
+        if raw_ccnorm.size > int(np.max(idx3)):
+            ccnorm = raw_ccnorm[idx3]
+
+    bins, bin_status, used_features, largest = _make_adaptive_bins(
+        rf_x=rf_x,
+        rf_y=rf_y,
+        tangent_norm=tangent_norm,
+        mean_rate=mean_rate,
+        ccnorm=ccnorm,
+        min_bin_units=int(args.rf_null_min_bin_units),
+        requested_features=str(args.rf_null_bin_features),
+    )
+    status = bin_status if bins is not None else f"{rf_status};{bin_status}"
+    rows: list[dict[str, Any]] = []
+    n_units = int(common_units.size)
+    labels = bins if bins is not None else np.full(n_units, -1, dtype=np.int64)
+    for u in range(n_units):
+        rows.append(
+            {
+                "session": session,
+                "subject": subject,
+                "unit_position": int(u),
+                "matched_unit_index": int(common_units[u]),
+                "cluster_id": int(matched_cids[u]) if matched_cids is not None and u < matched_cids.size else -1,
+                "rf_null_bin": int(labels[u]),
+                "rf_x_pixel": float(rf_x[u]) if rf_x is not None and u < len(rf_x) else float("nan"),
+                "rf_y_pixel": float(rf_y[u]) if rf_y is not None and u < len(rf_y) else float("nan"),
+                "tangent_norm": float(tangent_norm[u]),
+                "mean_rate": float(mean_rate[u]),
+                "gain": float(gains[u]),
+                "ccnorm": float(ccnorm[u]) if ccnorm is not None and np.isfinite(ccnorm[u]) else float("nan"),
+                "rf_status": str(rf_status),
+                "bin_status": str(status),
+                "bin_features": str(used_features),
+                "rf_cid_status": str(rf_meta.get("rf_cid_status", "")),
+                "rf_cid_source": str(rf_meta.get("rf_cid_source", "")),
+                "rf_coordinate_source": str(rf_meta.get("rf_coordinate_source", "")),
+            }
+        )
+    return RFNullMetadata(
+        status=status,
+        bins=bins,
+        unit_rows=rows,
+        n_bins=int(np.unique(bins).size) if bins is not None else 0,
+        largest_bin_fraction=largest,
+        bin_features=used_features,
+    )
+
+
 def _target_for_session(f2: dict[str, Any], sr: dict[str, Any], args: argparse.Namespace) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
     common, idx2, _ = _unit_mask_intersection(f2["neuron_mask"], sr["neuron_mask"])
     target_full = _sym(np.asarray(f2["mats"][int(args.window_idx)]["FEM"], dtype=np.float64)[np.ix_(idx2, idx2)])
@@ -446,9 +817,11 @@ def run_analysis(args: argparse.Namespace) -> None:
     projection_controls = [x.strip() for x in str(args.projection_controls).split(",") if x.strip()]
     target_variants = [x.strip() for x in str(args.target_variants).split(",") if x.strip()]
     rng = np.random.default_rng(int(args.seed))
+    n_rf_nulls = int(args.rf_null_n_nulls) if int(args.rf_null_n_nulls) > 0 else int(args.n_nulls)
 
     metric_rows: list[dict[str, Any]] = []
     session_rows: list[dict[str, Any]] = []
+    rf_unit_bin_rows: list[dict[str, Any]] = []
 
     for session in requested_sessions:
         if session not in fig3_by_session or session not in fig2:
@@ -490,6 +863,17 @@ def run_analysis(args: argparse.Namespace) -> None:
         )
         eye_px = samples.eyepos_deg * float(samples.pixels_per_degree)
         payloads = _source_payloads(j, eye_px)
+        rf_null_meta = _rf_null_metadata_for_session(
+            session=session,
+            subject=str(sr.get("subject", "")),
+            common_units=common_units,
+            sr=sr,
+            samples=samples,
+            j=j,
+            gains=gains,
+            args=args,
+        )
+        rf_unit_bin_rows.extend(rf_null_meta.unit_rows)
         compact_name, compact_payload, compact_stats = _compact_crossfit_payload(
             j=j,
             eye_px=eye_px,
@@ -522,6 +906,10 @@ def run_analysis(args: argparse.Namespace) -> None:
                 "jacobian_abs_median": float(np.median(np.abs(j))),
                 "eye_px_radius_p50": float(np.percentile(np.linalg.norm(eye_px - eye_px.mean(axis=0), axis=1), 50)),
                 "eye_px_radius_p90": float(np.percentile(np.linalg.norm(eye_px - eye_px.mean(axis=0), axis=1), 90)),
+                "rf_null_status": rf_null_meta.status,
+                "rf_null_n_bins": rf_null_meta.n_bins,
+                "rf_null_largest_bin_fraction": rf_null_meta.largest_bin_fraction,
+                "rf_null_bin_features": rf_null_meta.bin_features,
                 **compact_stats,
             }
         )
@@ -539,8 +927,10 @@ def run_analysis(args: argparse.Namespace) -> None:
                     payload = payloads.get(source)
                     if payload is None:
                         continue
-                    cov = payload["cov"]
-                    mat = payload["mat"]
+                    cov0 = payload["cov"]
+                    mat0 = payload["mat"]
+                    cov = cov0
+                    mat = mat0
                     if cov is not None:
                         cov = _apply_projection_to_cov(cov, p)
                     if mat is not None:
@@ -573,6 +963,10 @@ def run_analysis(args: argparse.Namespace) -> None:
                             "target_trace": float(np.trace(target)),
                             "target_trace_raw": float(np.trace(target_raw)),
                             "target_trace_psd": float(np.trace(target_psd)),
+                            "rf_null_status": rf_null_meta.status,
+                            "rf_null_n_bins": rf_null_meta.n_bins,
+                            "rf_null_largest_bin_fraction": rf_null_meta.largest_bin_fraction,
+                            "rf_null_bin_features": rf_null_meta.bin_features,
                         }
                         if status != "ok" or int(k) > max(rank, 0):
                             row.update(
@@ -580,6 +974,11 @@ def run_analysis(args: argparse.Namespace) -> None:
                                     "capture": float("nan"),
                                     "effect_minus_unit_shuffle_median": float("nan"),
                                     "effect_minus_random_subspace_median": float("nan"),
+                                    "rf_fixed_permutation_null_mean": float("nan"),
+                                    "rf_fixed_permutation_null_median": float("nan"),
+                                    "rf_fixed_permutation_null_ci_low": float("nan"),
+                                    "rf_fixed_permutation_null_ci_high": float("nan"),
+                                    "effect_minus_rf_fixed_permutation_median": float("nan"),
                                     "row_status": "not_evaluable",
                                 }
                             )
@@ -595,6 +994,23 @@ def run_analysis(args: argparse.Namespace) -> None:
                             n_nulls=int(args.n_nulls),
                         )
                         row.update(nulls)
+                        if bool(args.enable_rf_readout_null):
+                            rf_nulls = _rf_null_captures(
+                                rng=rng,
+                                target=target,
+                                source_name=source,
+                                source_cov=cov0,
+                                source_matrix=mat0,
+                                projection=p,
+                                bins=rf_null_meta.bins,
+                                k=int(k),
+                                n_nulls=n_rf_nulls,
+                            )
+                            row.update(rf_nulls)
+                            rf_med = row.get("rf_fixed_permutation_null_median", float("nan"))
+                            row["effect_minus_rf_fixed_permutation_median"] = (
+                                cap - float(rf_med) if np.isfinite(float(rf_med)) else float("nan")
+                            )
                         row.update(
                             {
                                 "capture": cap,
@@ -607,6 +1023,8 @@ def run_analysis(args: argparse.Namespace) -> None:
 
     _write_csv(out_dir / "finite_difference_session_summary.csv", session_rows)
     _write_csv(out_dir / "finite_difference_capture_metrics.csv", metric_rows)
+    if bool(args.enable_rf_readout_null):
+        _write_csv(out_dir / "rf_null_unit_bins.csv", rf_unit_bin_rows)
     _write_csv(out_dir / "finite_difference_metric_summary.csv", summarize_metrics(metric_rows))
     _write_json(
         out_dir / "run_manifest.json",
@@ -617,6 +1035,9 @@ def run_analysis(args: argparse.Namespace) -> None:
             "checkpoint": str(Path(args.checkpoint).resolve()),
             "model_config": str(Path(args.model_config).resolve()),
             "dataset_config": str(Path(args.dataset_config).resolve()),
+            "jacobian_provenance": "live_finite_difference_forward_pass_from_checkpoint",
+            "jacobian_uses_tangent_maps_cache": False,
+            "jacobian_uses_converted_feature_cache": False,
             "model_info": {k: str(v) for k, v in dict(model_info).items()},
             "sessions_requested": requested_sessions,
             "n_sessions_ok": int(sum(1 for row in session_rows if row.get("status") == "ok")),
@@ -625,6 +1046,11 @@ def run_analysis(args: argparse.Namespace) -> None:
             "step_px": float(args.step_px),
             "max_samples": int(args.max_samples),
             "n_nulls": int(args.n_nulls),
+            "enable_rf_readout_null": bool(args.enable_rf_readout_null),
+            "rf_null_n_nulls": n_rf_nulls,
+            "rf_null_min_bin_units": int(args.rf_null_min_bin_units),
+            "rf_null_bin_features": str(args.rf_null_bin_features),
+            "rf_null_session_yaml_dir": str(Path(args.rf_null_session_yaml_dir).resolve()),
             "rescale_mode": str(args.rescale_mode),
             "basis_sources": basis_sources,
             "projection_controls": projection_controls,
@@ -662,6 +1088,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--compact-basis-k", type=int, default=10)
     p.add_argument("--compact-n-folds", type=int, default=5)
     p.add_argument("--n-nulls", type=int, default=100)
+    p.add_argument("--enable-rf-readout-null", action="store_true")
+    p.add_argument("--rf-null-n-nulls", type=int, default=0, help="Constrained null draws; 0 reuses --n-nulls.")
+    p.add_argument("--rf-null-min-bin-units", type=int, default=6)
+    p.add_argument("--rf-null-bin-features", type=str, default="rf_xy,tangent_norm,mean_rate,ccnorm")
+    p.add_argument("--rf-null-session-yaml-dir", type=Path, default=Path("experiments") / "dataset_configs" / "sessions")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--verbose-model-load", action="store_true")
     return p

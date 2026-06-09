@@ -8,12 +8,12 @@ image-generalizing reafferent geometry.
 Data-forward version: schematics replaced with real data panels.
 
 Panels:
-  A - Recorded V1 anchor (NC reduction + FEM eigenspectrum)
-  B - Image-specific local translation charts (bx/by paired glyphs in tangent PCA)
-  C - Compact tangent spectrum (cumulative variance vs unit-shuffle PR reference)
-  D - Cross-image generalization (held-out translation tangent variance vs k)
-  E - Tangent-subspace Fisher gain (placeholder → run_tangent_subspace_information.py)
-  F - Matched finite-difference closure to recorded FEM covariance
+  A - Recorded FEM covariance is low-dimensional
+  B - Local translation directions are image-specific
+  C - Pooled translation tangents occupy a compact subspace
+  D - Compactness generalizes across image identity
+  E - Compact tangents capture FEM-related displacement sensitivity
+  F - Model-derived translation covariance predicts recorded FEM covariance
 
   Supplement (not in main compose): compactness across scales → plot_supp_scales()
 
@@ -77,7 +77,8 @@ def clean_axes(ax, grid=False):
 def panel_label(ax, letter: str, title: str):
     ax.set_title(letter, loc="left", fontweight="bold", fontsize=11, pad=4)
     ax.text(0.13, 1.015, title, transform=ax.transAxes,
-            ha="left", va="bottom", fontsize=8.7, fontweight="bold", color=TEXT)
+            ha="left", va="bottom", fontsize=8.25, fontweight="bold", color=TEXT,
+            linespacing=0.92)
 
 
 # -----------------------------------------------------------------------------
@@ -516,6 +517,31 @@ def _farthest_point_subset(points: np.ndarray, n_show: int, seed: int = 0) -> np
     return np.asarray(chosen, dtype=int)
 
 
+def _sampled_pairwise_cosines(vectors: np.ndarray, *, max_pairs: int = 50_000,
+                              seed: int = 11) -> np.ndarray:
+    """Sample cross-object pairwise cosines without materializing huge matrices."""
+    v = np.asarray(vectors, dtype=np.float64)
+    if v.ndim != 2 or v.shape[0] < 2:
+        return np.array([], dtype=np.float64)
+    norms = np.linalg.norm(v, axis=1)
+    ok = np.isfinite(v).all(axis=1) & np.isfinite(norms) & (norms > 1e-12)
+    v = v[ok] / norms[ok, None]
+    n = int(v.shape[0])
+    if n < 2:
+        return np.array([], dtype=np.float64)
+
+    total_pairs = n * (n - 1) // 2
+    if total_pairs <= int(max_pairs):
+        cos = v @ v.T
+        return cos[np.triu_indices(n, k=1)]
+
+    rng = np.random.default_rng(seed)
+    i = rng.integers(0, n, size=int(max_pairs))
+    j = rng.integers(0, n - 1, size=int(max_pairs))
+    j = j + (j >= i)
+    return np.sum(v[i] * v[j], axis=1)
+
+
 def plot_panel_b(ax: plt.Axes, tangent_data: dict, n_show: int = 24):
     """Panel B: image-specific local translation charts.
 
@@ -523,7 +549,7 @@ def plot_panel_b(ax: plt.Axes, tangent_data: dict, n_show: int = 24):
     and draws bx/by tangent arrows from each anchor point — a true response-
     manifold chart.  Falls back to the tangent-PCA paired-glyph view otherwise.
     """
-    panel_label(ax, "B", "Image-specific local translation charts")
+    panel_label(ax, "B", "Local translation directions\nare image-specific")
 
     bx = np.asarray(tangent_data["bx"], dtype=np.float64)
     by = np.asarray(tangent_data["by"], dtype=np.float64)
@@ -623,22 +649,33 @@ def plot_panel_b(ax: plt.Axes, tangent_data: dict, n_show: int = 24):
                 ha="left", va="bottom", style="italic")
 
     clean_axes(ax, grid=True)
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    ax.set_xlim(x0 - 0.12 * (x1 - x0), x1 + 0.12 * (x1 - x0))
+    ax.set_ylim(y0 - 0.12 * (y1 - y0), y1 + 0.12 * (y1 - y0))
     ax.legend(handles=[bx_handle, by_handle],
               frameon=False, loc="upper right", handlelength=1.1,
               borderpad=0.15, labelspacing=0.45)
 
-    # Inset: distribution of cos(bx, by) angles across objects
-    cos_xy = np.sum(bx * by, axis=1) / (np.linalg.norm(bx, axis=1) * np.linalg.norm(by, axis=1) + 1e-12)
-    cos_xy = cos_xy[np.isfinite(cos_xy)]
-    if cos_xy.size:
+    # Inset: cross-object same-axis cosines; tests for a universal signed axis.
+    cos_xx = _sampled_pairwise_cosines(bx, seed=13)
+    cos_yy = _sampled_pairwise_cosines(by, seed=17)
+    if cos_xx.size or cos_yy.size:
         inset = ax.inset_axes([0.055, 0.66, 0.25, 0.25])
-        bins = np.linspace(-1.0, 1.0, 13)
-        inset.hist(cos_xy, bins=bins, color="0.78", edgecolor="white", lw=0.45)
-        inset.axvline(float(np.median(cos_xy)), color=TEXT, lw=1.0)
+        bins = np.linspace(-1.0, 1.0, 17)
+        if cos_xx.size:
+            inset.hist(cos_xx, bins=bins, histtype="step", density=True,
+                       color=MODEL, lw=1.1, label=r"$b_x(I),b_x(J)$")
+            inset.axvline(float(np.median(cos_xx)), color=MODEL, lw=0.9, alpha=0.8)
+        if cos_yy.size:
+            inset.hist(cos_yy, bins=bins, histtype="step", density=True,
+                       color=BRIDGE, lw=1.1, label=r"$b_y(I),b_y(J)$")
+            inset.axvline(float(np.median(cos_yy)), color=BRIDGE, lw=0.9, alpha=0.8)
+        inset.axvline(0.0, color="0.55", lw=0.6, ls=":")
         inset.set_xlim(-1.0, 1.0)
         inset.set_xticks([-1, 0, 1])
         inset.set_yticks([])
-        inset.set_xlabel(r"cos$(b_x,b_y)$", fontsize=5.8, labelpad=0.5)
+        inset.set_xlabel("cross-image cosine", fontsize=5.6, labelpad=0.5)
         inset.tick_params(axis="x", labelsize=5.5, pad=1.0, length=2)
         inset.spines["top"].set_visible(False)
         inset.spines["right"].set_visible(False)
@@ -650,7 +687,7 @@ def plot_panel_b(ax: plt.Axes, tangent_data: dict, n_show: int = 24):
 def plot_panel_c(ax: plt.Axes, spec_df: pd.DataFrame, union_df: pd.DataFrame,
                  null_spec_df: Optional[pd.DataFrame] = None):
     """Panel C: cumulative tangent variance spectrum vs unit-shuffle null band."""
-    panel_label(ax, "C", "Compact tangent spectrum")
+    panel_label(ax, "C", "Pooled translation tangents\noccupy a compact subspace")
 
     if spec_df is None or len(spec_df) == 0:
         ax.text(0.5, 0.5, "spectrum data not found", transform=ax.transAxes,
@@ -750,7 +787,7 @@ def plot_panel_d(ax: plt.Axes, union_df: pd.DataFrame):
 
 
 def plot_panel_e(ax: plt.Axes, basis_df: pd.DataFrame, basis_source_label: str):
-    panel_label(ax, "D", "Cross-image generalization")
+    panel_label(ax, "D", "Compactness generalizes\nacross image identity")
     df = basis_df.copy()
     if "basis_rank_k" not in df.columns and "k" in df.columns:
         df = df.rename(columns={"k": "basis_rank_k"})
@@ -1075,7 +1112,7 @@ def plot_panel_f_closure(
     compact_summary: Optional[pd.DataFrame] = None,
 ):
     """Panel F: matched finite-difference retinal-translation covariance closure."""
-    panel_label(ax, "F", "Translation tangents capture\nrecorded FEM covariance")
+    panel_label(ax, "F", "Model-derived translation\ncovariance predicts recorded\nFEM covariance")
 
     if closure_summary is None or closure_metrics is None or len(closure_summary) == 0:
         ax.text(0.5, 0.52, "finite-difference closure\nnot found",
@@ -1183,9 +1220,10 @@ def plot_panel_f_closure(
         if len(inset_rows) == 2:
             iax = ax.inset_axes([0.57, 0.54, 0.36, 0.33])
             inset_vals = []
+            inset_x = np.array([-0.25, 0.25], dtype=float)
             for i, (label, color, mean, lo, hi) in enumerate(inset_rows):
                 iax.errorbar(
-                    i, mean,
+                    inset_x[i], mean,
                     yerr=[[max(mean - lo, 0.0)], [max(hi - mean, 0.0)]],
                     fmt="o", color=color, ecolor=color, elinewidth=1.15,
                     capsize=2.4, markersize=4.4, markeredgecolor="white",
@@ -1194,11 +1232,12 @@ def plot_panel_f_closure(
                 inset_vals.extend([mean, lo, hi])
             ratio = inset_rows[1][2] / inset_rows[0][2] if inset_rows[0][2] else float("nan")
             iax.axhline(0, color="0.55", lw=0.55, ls=":", zorder=1)
-            iax.set_xticks([0, 1])
+            iax.set_xticks(inset_x)
             iax.set_xticklabels([r[0] for r in inset_rows], fontsize=5.6)
             iax.tick_params(axis="y", labelsize=5.6, length=2)
             iax.set_title("controlled", fontsize=5.9, pad=1.5)
             top = max(0.23, max(inset_vals) + 0.025)
+            iax.set_xlim(-0.48, 0.48)
             iax.set_ylim(-0.02, top)
             iax.text(0.50, 0.94, f"{ratio:.2f}x", transform=iax.transAxes,
                      ha="center", va="top", fontsize=5.9, color=TEXT,
@@ -1295,7 +1334,7 @@ def plot_panel_e_information(
     capture_df: Optional[pd.DataFrame],
 ):
     """Panel E: tangent-subspace Fisher gain fraction, bar chart."""
-    panel_label(ax, "E", "FEM-related local displacement sensitivity")
+    panel_label(ax, "E", "Compact tangents capture\nFEM-related displacement\nsensitivity")
 
     # Prefer pre-aggregated null summary; fall back to per-window capture CSV
     bar_df = None
@@ -1420,6 +1459,27 @@ def build_methods_text(
         ("Panel F finite-difference metrics", paths.panel_f_closure_metrics_file),
         ("Panel F finite-difference audit", paths.panel_f_closure_audit_file),
         ("Panel F compact-k10 headline", paths.panel_f_compact_closure_summary_file),
+        (
+            "Panel F RF/readout-preserving control headline",
+            VISIONCORE_ROOT
+            / "outputs"
+            / "matched_twin_covariance_closure_rf_null_step025_rfbacked_v2"
+            / "finite_difference_headline_raw_psd_bootstrap.csv",
+        ),
+        (
+            "Panel F RF/readout-preserving control audit",
+            VISIONCORE_ROOT
+            / "outputs"
+            / "matched_twin_covariance_closure_rf_null_step025_rfbacked_v2"
+            / "finite_difference_provenance_audit.json",
+        ),
+        (
+            "Panel F RF/readout-preserving unit-bin audit",
+            VISIONCORE_ROOT
+            / "outputs"
+            / "matched_twin_covariance_closure_rf_null_step025_rfbacked_v2"
+            / "rf_null_unit_bins.csv",
+        ),
     ]
     for label, path in source_rows:
         lines.append(f"- {label}: `{path}`")
@@ -1433,7 +1493,7 @@ def build_methods_text(
     lines.append("- Projection controls remove nuisance modes with `P = I - Q Q.T`; target and source covariances are replaced by `P @ Sigma @ P` before capture is computed.")
 
     lines.append("")
-    lines.append("## Panel A. Recorded V1 Anchor")
+    lines.append("## Panel A. Recorded FEM Covariance Is Low-Dimensional")
     lines.append("Source: `fig2_decomposition.pkl`, window index 2.")
     lines.append("For each recorded session, the left subpanel computes the mean off-diagonal noise correlation before and after conditioning on measured eye position:")
     lines.append("")
@@ -1457,9 +1517,10 @@ def build_methods_text(
         lines.append(f"- mean uncorrected noise correlation: `{_fmt(np.nanmean(nc_u), 4)}`")
         lines.append(f"- mean eye-position-corrected noise correlation: `{_fmt(np.nanmean(nc_c), 4)}`")
         lines.append(f"- mean corrected-minus-uncorrected change: `{_fmt(np.nanmean(nc_c - nc_u), 4)}`")
+        lines.append("- inventory note: Panel A uses the recorded-decomposition cache available for this anchor panel (`n=8` sessions), whereas Panel F uses the larger matched recorded/twin finite-difference closure inventory (`n=24` Allen/Logan sessions). The session counts therefore intentionally differ.")
 
     lines.append("")
-    lines.append("## Panel B. Image-Specific Local Translation Charts")
+    lines.append("## Panel B. Local Translation Directions Are Image-Specific")
     lines.append("Source: `tangent_maps/twin_tangent_maps.pkl`, using the delta closest to 0.25 arcmin.")
     lines.append("For each image/history object, the fitted twin is evaluated under small horizontal and vertical retinal translations. Central finite differences define local tangent vectors:")
     lines.append("")
@@ -1468,20 +1529,25 @@ def build_methods_text(
     lines.append("b_y(I) = [r(I + dy) - r(I - dy)] / (2 dy)")
     lines.append("```")
     lines.append("")
-    lines.append("The panel projects full stimulus-history response objects into response PCA space and overlays the paired tangent arrows. The inset summarizes signed local chart geometry with `cos(b_x, b_y)`.")
+    lines.append("The panel projects full stimulus-history response objects into response PCA space and overlays the paired tangent arrows. The inset summarizes cross-object same-axis cosine distributions, `cos(b_x(I), b_x(J))` and `cos(b_y(I), b_y(J))`, to test whether the same physical translation maps onto one universal signed population axis across images.")
     if tangent_data is not None:
         bx = np.asarray(tangent_data["bx"], dtype=float)
         by = np.asarray(tangent_data["by"], dtype=float)
-        cos_xy = np.sum(bx * by, axis=1) / (np.linalg.norm(bx, axis=1) * np.linalg.norm(by, axis=1) + 1e-12)
+        cos_xx = _sampled_pairwise_cosines(bx, seed=13)
+        cos_yy = _sampled_pairwise_cosines(by, seed=17)
         lines.append("")
         lines.append("Audit:")
         lines.append(f"- valid objects: `{int(tangent_data['n_objects'])}`")
         lines.append(f"- plotted delta: `{_fmt(tangent_data['delta'], 3)} arcmin`")
-        lines.append(f"- median `cos(b_x,b_y)`: `{_fmt(np.nanmedian(cos_xy), 3)}`")
-        lines.append(f"- IQR `cos(b_x,b_y)`: `[{_fmt(np.nanpercentile(cos_xy, 25), 3)}, {_fmt(np.nanpercentile(cos_xy, 75), 3)}]`")
+        if cos_xx.size:
+            lines.append(f"- median cross-object `cos(b_x(I),b_x(J))`: `{_fmt(np.nanmedian(cos_xx), 3)}`")
+            lines.append(f"- IQR cross-object `cos(b_x(I),b_x(J))`: `[{_fmt(np.nanpercentile(cos_xx, 25), 3)}, {_fmt(np.nanpercentile(cos_xx, 75), 3)}]`")
+        if cos_yy.size:
+            lines.append(f"- median cross-object `cos(b_y(I),b_y(J))`: `{_fmt(np.nanmedian(cos_yy), 3)}`")
+            lines.append(f"- IQR cross-object `cos(b_y(I),b_y(J))`: `[{_fmt(np.nanpercentile(cos_yy, 25), 3)}, {_fmt(np.nanpercentile(cos_yy, 75), 3)}]`")
 
     lines.append("")
-    lines.append("## Panel C. Compact Tangent Spectrum")
+    lines.append("## Panel C. Pooled Translation Tangents Occupy a Compact Subspace")
     lines.append("Source: `union_spectrum/twin_tangent_union_spectrum.csv` and image-disjoint union summary.")
     lines.append("The pooled tangent family stacks horizontal and vertical local tangents across valid objects:")
     lines.append("")
@@ -1502,7 +1568,7 @@ def build_methods_text(
         lines.append(f"- unit-shuffle PR 95% interval: `[{_fmt(row_c.get('null_pr_ci_low'), 3)}, {_fmt(row_c.get('null_pr_ci_high'), 3)}]`")
 
     lines.append("")
-    lines.append("## Panel D. Cross-Image Generalization")
+    lines.append("## Panel D. Compactness Generalizes Across Image Identity")
     lines.append("Source: image-disjoint train/test basis summary.")
     lines.append("For each split, a compact tangent basis is learned from one set of image identities and tested on held-out image identities:")
     lines.append("")
@@ -1524,7 +1590,7 @@ def build_methods_text(
                 lines.append(f"| {int(rr['basis_rank_k'])} | {_fmt(rr['capture'], 3)} | {_fmt(rr['null'], 3)} |")
 
     lines.append("")
-    lines.append("## Panel E. Tangent Subspace Captures FEM-Related Displacement Sensitivity")
+    lines.append("## Panel E. Compact Tangents Capture FEM-Related Displacement Sensitivity")
     lines.append("Source: `tangent_subspace_information` production Fisher summaries.")
     lines.append("For each held-out image/window, a derivative-projection Poisson Fisher analysis compares local displacement sensitivity along real-FEM and stabilized histories. With predicted rate `mu` and displacement derivative `dmu/dalpha`, the local Poisson Fisher form is:")
     lines.append("")
@@ -1533,6 +1599,7 @@ def build_methods_text(
     lines.append("```")
     lines.append("")
     lines.append("For a basis `U`, derivatives are projected into the basis before computing the gain. The plotted quantity is the fraction of the full real-versus-stabilized FEM Fisher gain captured by each basis family.")
+    lines.append("Guardrail: Panel E uses a diagonal Poisson local Fisher metric to quantify displacement sensitivity in model response space; it is not a full measured-noise information calculation and does not use the recorded residual covariance.")
     bar_df = None
     if info_null_sum_df is not None and len(info_null_sum_df):
         bar_df = _panel_e_bars_from_null_summary(info_null_sum_df)
@@ -1551,8 +1618,9 @@ def build_methods_text(
             )
 
     lines.append("")
-    lines.append("## Panel F. Translation Tangents Capture Recorded FEM Covariance")
+    lines.append("## Panel F. Model-Derived Translation Covariance Predicts Recorded FEM Covariance")
     lines.append("Source: finite-difference matched twin/recorded closure outputs.")
+    lines.append("Provenance check: the finite-difference Jacobians for Panel F were recomputed live from `fig3_digitaltwin_best.ckpt` with `fig3_digitaltwin_model_config.yaml` and `fig3_digitaltwin_multi_basic_120_long.yaml`; they were not loaded from `twin_tangent_maps.pkl` and did not use a separately converted feature cache. `twin_tangent_maps.pkl` is used for Panels B-D, not for the matched recorded/twin closure.")
     lines.append("The recorded target is the matched-unit FEM covariance from `fig2_decomposition_ryan.pkl`, window index 1. PSD target rows use eigenvalue clipping:")
     lines.append("")
     lines.append("```text")
@@ -1607,6 +1675,24 @@ def build_methods_text(
                     f"[{_fmt(rr['effect_unit_boot_ci_low'], 3)}, {_fmt(rr['effect_unit_boot_ci_high'], 3)}] | "
                     f"{int(rr['n_effect_positive'])}/{int(rr['n_effect_nonzero'])} |"
                 )
+        raw_controlled = _first_summary_row(
+            closure_summary_df,
+            target_variant="raw",
+            basis_source="fd_sample_eye_trace_cov",
+            projection_control="global_rate+target_pc1",
+            k=2,
+        )
+        if raw_controlled is not None:
+            lines.append("")
+            lines.append("Raw-target check for the same full finite-difference source and most conservative projection control:")
+            lines.append("")
+            lines.append("| target | capture | effect over unit-shuffle | 95% bootstrap interval | sign |")
+            lines.append("|---|---:|---:|---:|---:|")
+            lines.append(
+                f"| raw | {_fmt(raw_controlled['capture_mean'], 3)} | {_fmt(raw_controlled['effect_unit_mean'], 3)} | "
+                f"[{_fmt(raw_controlled['effect_unit_boot_ci_low'], 3)}, {_fmt(raw_controlled['effect_unit_boot_ci_high'], 3)}] | "
+                f"{int(raw_controlled['n_effect_positive'])}/{int(raw_controlled['n_effect_nonzero'])} |"
+            )
     if compact_closure_summary_df is not None and len(compact_closure_summary_df):
         full = _first_summary_row(
             compact_closure_summary_df,
@@ -1618,6 +1704,13 @@ def build_methods_text(
         comp = _first_summary_row(
             compact_closure_summary_df,
             target_variant="psd",
+            basis_source="fd_sample_eye_trace_xfit_compact_k10_cov",
+            projection_control="global_rate+target_pc1",
+            k=2,
+        )
+        comp_raw = _first_summary_row(
+            compact_closure_summary_df,
+            target_variant="raw",
             basis_source="fd_sample_eye_trace_xfit_compact_k10_cov",
             projection_control="global_rate+target_pc1",
             k=2,
@@ -1636,6 +1729,30 @@ def build_methods_text(
                     f"{int(rr['n_effect_positive'])}/{int(rr['n_effect_nonzero'])} |"
                 )
             lines.append(f"- compact/full effect ratio: `{_fmt(ratio, 3)}`")
+            if comp_raw is not None:
+                lines.append(f"- raw target compact-k10 controlled effect: `{_fmt(comp_raw['effect_unit_mean'], 3)}` "
+                             f"`[{_fmt(comp_raw['effect_unit_boot_ci_low'], 3)}, {_fmt(comp_raw['effect_unit_boot_ci_high'], 3)}]`, "
+                             f"{int(comp_raw['n_effect_positive'])}/{int(comp_raw['n_effect_nonzero'])} sessions.")
+    lines.append("")
+    lines.append("Additional RF/readout-preserving control audit:")
+    lines.append("- Control output root: `/home/declan/VisionCore/outputs/matched_twin_covariance_closure_rf_null_step025_rfbacked_v2`.")
+    lines.append("- This run repeats the finite-difference closure with fixed within-bin source-unit permutations, where bins preserve recorded RF location when available plus tangent norm, mean rate, and `ccnorm` subject to a minimum bin size of 6 units.")
+    lines.append("- STA/STE RF caches were available for all 24 matched sessions; the final bin audit reports `ok_rf_bins` for 24/24 sessions. Large sessions use 2D RF quantile bins, and small sessions use a 1D RF split when a 2D split would violate the minimum-bin constraint.")
+    lines.append("- The main Panel F plotted y-axis remains excess capture over the unit-shuffle null; the RF/readout null is a stricter reviewer-facing control rather than the plotted reference.")
+    lines.append("")
+    lines.append("RF/readout-preserving control, PSD target, global-rate + target-PC1 removed, source eigenspace k=2:")
+    lines.append("")
+    lines.append("| source | capture | effect over unit-shuffle | effect over RF/readout null | 95% bootstrap interval | sign |")
+    lines.append("|---|---:|---:|---:|---:|---:|")
+    lines.append("| full finite difference | 0.216 | 0.172 | 0.158 | [0.125, 0.193] | 24/24 |")
+    lines.append("| cross-fit compact k=10 | 0.217 | 0.174 | 0.161 | [0.128, 0.196] | 24/24 |")
+    lines.append("")
+    lines.append("RF/readout-preserving control, PSD target, global-rate + target-PC1 removed, source eigenspace k=10:")
+    lines.append("")
+    lines.append("| source | capture | effect over RF/readout null | 95% bootstrap interval | sign |")
+    lines.append("|---|---:|---:|---:|---:|")
+    lines.append("| full finite difference | 0.535 | 0.226 | [0.199, 0.251] | 24/24 |")
+    lines.append("| cross-fit compact k=10 | 0.536 | 0.226 | [0.200, 0.249] | 24/24 |")
     if closure_audit:
         lines.append("")
         lines.append("Provenance audit:")
@@ -1651,7 +1768,7 @@ def build_methods_text(
     lines.append("## Interpretation Guardrails")
     lines.append("- Panel F supports a robust first-order retinal-translation component of recorded FEM shared variability; it does not claim that all recorded FEM covariance is explained.")
     lines.append("- The compact-k10 inset tests whether the covariance bridge survives restriction to the compact tangent geometry. In the current run, the controlled compact effect is essentially the same size as the controlled full finite-difference effect.")
-    lines.append("- PSD-clipped targets are shown in the main panel; raw target rows are retained in the finite-difference CSVs and were also positive.")
+    lines.append("- PSD-clipped targets are shown in the main panel; raw target rows are retained in the finite-difference CSVs and the controlled raw effects are reported above to disclose the impact of clipping.")
     lines.append("")
     return "\n".join(lines)
 
@@ -1724,7 +1841,7 @@ def compose(paths: DataPaths, out_dir: Path, *, dpi: int = 300):
     bbox = gs[0, 0].get_position(fig)
     ax_a_lbl = fig.add_axes([bbox.x0, bbox.y0, bbox.width, bbox.height])
     ax_a_lbl.set_axis_off()
-    panel_label(ax_a_lbl, "A", "Recorded V1 anchor")
+    panel_label(ax_a_lbl, "A", "Recorded FEM covariance\nis low-dimensional")
 
     # --- Panel B ---
     ax_b = fig.add_subplot(gs[0, 1])
@@ -1733,7 +1850,7 @@ def compose(paths: DataPaths, out_dir: Path, *, dpi: int = 300):
     else:
         ax_b.text(0.5, 0.5, "tangent maps\nnot found", transform=ax_b.transAxes,
                   ha="center", va="center", color=ACCENT, fontsize=8)
-        panel_label(ax_b, "B", "Tangent family structure")
+        panel_label(ax_b, "B", "Local translation directions\nare image-specific")
         clean_axes(ax_b)
 
     # --- Panel C ---
@@ -1783,12 +1900,12 @@ def compose(paths: DataPaths, out_dir: Path, *, dpi: int = 300):
 
     caption = """Figure 4. Image-specific retinal translations form a compact, image-generalizing reafferent geometry.
 
-(A) Recorded V1 anchor. Conditioning on measured eye position reduced mean noise correlations, and the FEM-linked covariance component removed by this conditioning was low-dimensional.
-(B) Image-specific local translation charts in the digital twin. Each point is a full stimulus-history object projected into response PCA space. Arrows show local response tangents produced by small horizontal and vertical retinal translations, \\(b_x(I)\\) and \\(b_y(I)\\). Tangent directions were content-dependent and did not define a universal signed x/y population axis.
-(C) Compact tangent spectrum. The cumulative variance spectrum of the pooled tangent family was substantially more compact than unit-shuffled controls. At 0.25 arcmin, the observed participation ratio was approximately 9, compared with approximately 31 for the unit-shuffled null.
-(D) Cross-image generalization. A tangent basis learned from one set of image identities captured held-out translation tangent variance above unit-shuffled nulls. A 10-dimensional image-disjoint basis captured approximately 0.50 of held-out tangent variance versus approximately 0.11 under the null, with no image-ID leakage.
-(E) Tangent subspace captures FEM-related displacement sensitivity. A derivative-projection Poisson Fisher analysis measured local sensitivity to small counterfactual retinal translations along real-FEM and stabilized stimulus histories. The image-disjoint k=10 tangent basis captured approximately 0.53 of the real-versus-stabilized local spatial-displacement Fisher gain on held-out images, far above unit-shuffled and random null bases. The orthogonal complement contains the remaining partition of the full Fisher gain.
-(F) Finite-difference translation covariances computed in matched twin/recorded unit space captured recorded FEM covariance above a unit-shuffle null. The effect persisted after removing global-rate and target-PC1 modes, indicating a reliable first-order retinal-translation component of recorded FEM shared variability. Points show sessions; purple markers show means and confidence intervals. The y-axis is excess covariance capture over a unit-shuffled source-basis null. Capture remained positive across 24/24 sessions for all projection controls, including after removing both global-rate and target-PC1 components (mean +0.177 [0.144, 0.212]; sign p = 1.2e-07). Inset compares the controlled full finite-difference result with finite-difference responses cross-fit through the compact k=10 tangent subspace. PSD-clipped targets are shown; raw targets were also positive.
+(A) Recorded FEM covariance is low-dimensional. Conditioning on measured eye position reduced mean noise correlations, and the FEM-linked covariance component removed by this conditioning was low-dimensional.
+(B) Local translation directions are image-specific. Each point is a full stimulus-history object projected into response PCA space. Arrows show local response tangents produced by small horizontal and vertical retinal translations, \\(b_x(I)\\) and \\(b_y(I)\\). The inset shows cross-image same-axis cosine distributions, indicating that tangent directions were content-dependent and did not define a universal signed x/y population axis.
+(C) Pooled translation tangents occupy a compact subspace. The cumulative variance spectrum of the pooled tangent family was substantially more compact than unit-shuffled controls. At 0.25 arcmin, the observed participation ratio was approximately 9, compared with approximately 31 for the unit-shuffled null.
+(D) Compactness generalizes across image identity. A tangent basis learned from one set of image identities captured held-out translation tangent variance above unit-shuffled nulls. A 10-dimensional image-disjoint basis captured approximately 0.50 of held-out tangent variance versus approximately 0.11 under the null, with no image-ID leakage.
+(E) Compact tangents capture FEM-related displacement sensitivity. A derivative-projection Poisson Fisher analysis measured local sensitivity to small counterfactual retinal translations along real-FEM and stabilized stimulus histories. The image-disjoint k=10 tangent basis captured approximately 0.53 of the real-versus-stabilized local spatial-displacement Fisher gain on held-out images, far above unit-shuffled and random null bases. The orthogonal complement contains the remaining partition of the full Fisher gain. Panel E uses a diagonal Poisson local Fisher metric to quantify displacement sensitivity in model response space; it is not a full measured-noise information calculation and does not use the recorded residual covariance.
+(F) Model-derived translation covariance predicts recorded FEM covariance. Finite-difference translation covariances computed in matched twin/recorded unit space captured recorded FEM covariance above a unit-shuffle null. The effect persisted after removing global-rate and target-PC1 modes, indicating a reliable first-order retinal-translation component of recorded FEM shared variability. Points show sessions; purple markers show means and confidence intervals. The y-axis is excess covariance capture over a unit-shuffled source-basis null. Capture remained positive across 24/24 sessions for all projection controls, including after removing both global-rate and target-PC1 components (PSD target mean +0.177 [0.144, 0.212]; sign p = 1.2e-07). Inset compares the controlled full finite-difference result with finite-difference responses cross-fit through the compact k=10 tangent subspace. PSD-clipped targets are shown; the corresponding raw-target controlled effect was also positive (mean +0.278 [0.108, 0.412], 22/24 sessions).
 """
     (out_dir / "caption.md").write_text(caption, encoding="utf-8")
     (out_dir / "caption.txt").write_text(caption, encoding="utf-8")
@@ -1874,6 +1991,12 @@ Panel methods sidecars: `methods.md`, `methods.txt`.
 - Panel F finite-difference closure summary: `{paths.panel_f_closure_summary_file}`
 - Panel F finite-difference closure metrics: `{paths.panel_f_closure_metrics_file}`
 - Panel F compact-k10 closure summary: `{paths.panel_f_compact_closure_summary_file}`
+- Panel F RF/readout-preserving control summary: `{VISIONCORE_ROOT / "outputs" / "matched_twin_covariance_closure_rf_null_step025_rfbacked_v2" / "finite_difference_headline_raw_psd_bootstrap.csv"}`
+- Panel F RF/readout-preserving control audit: `{VISIONCORE_ROOT / "outputs" / "matched_twin_covariance_closure_rf_null_step025_rfbacked_v2" / "finite_difference_provenance_audit.json"}`
+- Panel F RF/readout-preserving unit-bin audit: `{VISIONCORE_ROOT / "outputs" / "matched_twin_covariance_closure_rf_null_step025_rfbacked_v2" / "rf_null_unit_bins.csv"}`
+
+## Panel F control note
+The stricter RF/readout-preserving control is not the plotted reference null, but it is the key reviewer-facing follow-up for Panel F. It repeats the finite-difference closure with fixed within-bin source-unit permutations. Bins preserve recorded RF location, tangent norm, mean rate, and `ccnorm` where possible, with `ok_rf_bins` in 24/24 sessions. In the PSD, global-rate + target-PC1 removed, k=2 condition, excess capture over this RF/readout null remains positive for 24/24 sessions: full FD `+0.158 [0.125, 0.193]`; cross-fit compact k=10 `+0.161 [0.128, 0.196]`.
 
 ## Basis source: `{paths.basis_source_label}`
 Final figure requires `image_disjoint`.
@@ -1882,22 +2005,26 @@ Final figure requires `image_disjoint`.
 {chr(10).join("- " + w for w in paths.warnings) or "- none"}
 
 ## Panels
-A. Two sub-panels: (left) mean noise correlation per session, uncorrected vs
+A. Recorded FEM covariance is low-dimensional. Two sub-panels: (left) mean noise correlation per session, uncorrected vs
    eye-position corrected; (right) median cumulative FEM eigenspectrum across
    sessions. Data from fig2_decomposition.pkl.
-B. Image-specific local translation charts: selected paired bx(I)/by(I)
-   tangent directions projected into 2D tangent PCA space. Each local chart
-   shows the horizontal- and vertical-translation directions for one object;
-   faint points show the full tangent family.
-C. Cumulative variance spectrum of the tangent family at 0.25 arcmin (32
+B. Local translation directions are image-specific: selected paired bx(I)/by(I)
+   tangent directions projected into response PCA space when base responses are
+   available. Each local chart shows the horizontal- and vertical-translation
+   directions for one object; the inset shows cross-image same-axis cosine
+   distributions.
+C. Pooled translation tangents occupy a compact subspace. Cumulative variance
+   spectrum of the tangent family at 0.25 arcmin (32
    components). Unit-shuffle PR reference as dashed gray ramp. Annotated with
    observed PR vs null PR.
-D. Cross-image generalization: held-out translation tangent variance captured
+D. Compactness generalizes across image identity: held-out translation tangent variance captured
    vs basis dimension k (image-disjoint split, delta=0.25 arcmin).
-E. Tangent subspace captures FEM-related local displacement sensitivity from
-   the production Panel E derivative-projection Fisher output when available;
-   otherwise a neutral pending-production placeholder.
-F. Finite-difference translation covariances computed in matched twin/recorded
+E. Compact tangents capture FEM-related displacement sensitivity from the
+   production Panel E derivative-projection Fisher output when available. This
+   uses a diagonal Poisson local Fisher metric in model response space, not a
+   full measured-noise information calculation.
+F. Model-derived translation covariance predicts recorded FEM covariance.
+   Finite-difference translation covariances computed in matched twin/recorded
    unit space captured recorded FEM covariance above a unit-shuffle null. The
    effect persisted after removing global-rate and target-PC1 modes, indicating
    a reliable first-order retinal-translation component of recorded FEM shared

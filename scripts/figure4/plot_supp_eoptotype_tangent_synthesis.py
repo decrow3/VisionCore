@@ -84,9 +84,17 @@ def write_caption_and_methods(
         (closure["source_label"] == "Samplewise FD")
         & (closure["control_label"] == "global")
     ].iloc[0]
+    sample_fd_strict = closure[
+        (closure["source_label"] == "Samplewise FD")
+        & (closure["control_label"] == "global+PC1")
+    ].iloc[0]
     compact = closure[
         (closure["source_label"] == "Compact k=10")
         & (closure["control_label"] == "global")
+    ].iloc[0]
+    compact_strict = closure[
+        (closure["source_label"] == "Compact k=10")
+        & (closure["control_label"] == "global+PC1")
     ].iloc[0]
     c60 = contrasts[contrasts["window"].astype(int) == 60].sort_values("logmar")
     interpretable_c60 = c60
@@ -113,10 +121,12 @@ def write_caption_and_methods(
         "",
         (
             "**C. Finite-cloud covariance closure.** Matched recorded/twin finite-difference analyses show that samplewise translation-tangent covariance captures a reliable component of recorded FEM covariance over unit-shuffle controls "
-            f"(global-rate controlled effect = {float(sample_fd['effect_unit_mean']):.2f}, bootstrap CI "
+            f"after removing both global-rate and target-PC1 modes (effect = {float(sample_fd_strict['effect_unit_mean']):.2f}, bootstrap CI "
+            f"[{float(sample_fd_strict['effect_unit_boot_ci_low']):.2f}, {float(sample_fd_strict['effect_unit_boot_ci_high']):.2f}]; "
+            f"global-rate-only effect = {float(sample_fd['effect_unit_mean']):.2f}, CI "
             f"[{float(sample_fd['effect_unit_boot_ci_low']):.2f}, {float(sample_fd['effect_unit_boot_ci_high']):.2f}]). "
             f"Projecting the samplewise finite-difference predictions into the compact k=10 tangent subspace preserves the effect "
-            f"(global-rate controlled effect = {float(compact['effect_unit_mean']):.2f}). "
+            f"(global+PC1 effect = {float(compact_strict['effect_unit_mean']):.2f}; global-rate-only effect = {float(compact['effect_unit_mean']):.2f}). "
             "Inset: Allen-session finite-difference step sensitivity for 0.25, 0.5, and 1.0 model px."
         ),
         "",
@@ -201,6 +211,7 @@ def write_caption_and_methods(
         "### Panel C: Finite-difference covariance closure",
         "",
         "The main bars use rows with `target_variant == psd` and `k == 2` from the matched recorded/twin finite-difference closure summaries. The plotted basis sources are `fd_mean_tangent_matrix`, `fd_sample_eye_trace_cov`, and `fd_sample_eye_trace_xfit_compact_k10_cov`. Bars show the mean effect over unit-shuffled controls, with bootstrap confidence intervals from the summary tables. The three projection controls are no projection control, global-rate control, and global-rate plus target-PC1 control.",
+        "Caption text leads with the most conservative global-rate plus target-PC1 control; the larger global-rate-only number is labeled separately to avoid conflating the two closure controls.",
         "",
         "The inset uses Allen-session finite-difference metric summaries for step sizes 0.25, 0.5, and 1.0 model px. It plots `capture_mean` for `basis_source == fd_sample_eye_trace_cov`, `projection_control == global_rate`, `target_variant == psd`, and `k == 2`.",
         "",

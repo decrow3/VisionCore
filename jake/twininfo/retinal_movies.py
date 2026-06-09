@@ -19,11 +19,21 @@ from .retinal_examples import TraceExample, pyramid_local_image_controls, retina
 CONDITION_LABELS = {
     "real": "real",
     "stabilized": "stabilized",
-    "pyramid_phase_scrambled": "phase shuffled",
+    "random_amp": "random amp",
+    "random_amp_cloud_matched": "random amp cloud matched",
+    "random_cov": "random cov",
+    "trajectory_order_shuffle": "trajectory order shuffle",
+    "phase_order_shuffle": "trajectory order shuffle",
+    "pyramid_phase_scrambled": "visual phase scramble",
     "sf_low": "low SF",
     "sf_mid_low": "mid-low SF",
     "sf_mid_high": "mid-high SF",
     "sf_high": "high SF",
+    "stabilized_pyramid_phase_scrambled": "visual phase scramble stabilized",
+    "stabilized_sf_low": "low SF stabilized",
+    "stabilized_sf_mid_low": "mid-low SF stabilized",
+    "stabilized_sf_mid_high": "mid-high SF stabilized",
+    "stabilized_sf_high": "high SF stabilized",
 }
 
 

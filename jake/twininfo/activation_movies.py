@@ -88,7 +88,7 @@ def plot_activation_movie_audit(movie_paths: list[Path], path: Path) -> None:
         reader = imageio.get_reader(movie_path)
         n_frames = reader.count_frames()
         label = movie_path.stem.replace("activation_maps_", "")
-        label = label.replace("_pyramid_phase_scrambled", "\nphase shuffled")
+        label = label.replace("_pyramid_phase_scrambled", "\nvisual phase scramble")
         label = label.replace("_stabilized", "\nstabilized")
         label = label.replace("_real", "\nreal")
         label = label.replace("_image", "\nimage")
