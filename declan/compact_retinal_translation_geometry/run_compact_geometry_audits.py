@@ -1224,23 +1224,103 @@ def _audit_metric_structure(paths: AuditPaths, args: argparse.Namespace, accept_
 
 
 def _audit_decoding_and_direct(paths: AuditPaths, accept_rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    decoding_rows = [
-        {
-            "status": "not_run",
-            "required_objects": "recorded repeat-pair responses, same-condition eye differences, condition-disjoint folds",
-            "blocking_reason": "No panelF displacement-decoding metrics exist in compact geometry output.",
-        }
-    ]
-    _accept(
-        accept_rows,
-        analysis="Panel F decoding",
-        check="recorded displacement decoding promoted",
-        status="not_run",
-        metric="panelF_displacement_decoding_metrics.csv",
-        value="missing",
-        threshold="present and passes all nulls",
-        claim_to_avoid="Do not claim readable image-generalizing displacement coordinate.",
-    )
+    decoding_root = paths.compact_root / "relative_displacement_decoding"
+    decoding_audit = _read_json(decoding_root / "audit.json")
+    feature_cmp = _read_csv(decoding_root / "feature_space_comparison.csv")
+    bootstrap = _read_csv(decoding_root / "decoder_bootstrap_summary.csv")
+    leakage = _read_csv(decoding_root / "split_leakage_audit.csv")
+    decoding_rows: list[dict[str, Any]] = []
+    if decoding_audit.get("status") == "ok" and not feature_cmp.empty:
+        row0 = feature_cmp.iloc[0].to_dict()
+        full_r2 = _finite(row0.get("full_population_R2_mean"))
+        compact_r2 = _finite(row0.get("compact_R2_mean"))
+        compact_fraction = _finite(row0.get("compact_fraction_of_full"))
+        compact_minus_orth = _finite(row0.get("compact_minus_orthogonal"))
+        compact_minus_random = _finite(row0.get("compact_minus_random"))
+        compact_minus_rf = _finite(row0.get("compact_minus_rf_readout"))
+        leakage_failures = int((leakage.get("status", pd.Series(dtype=str)).astype(str) == "fail").sum()) if not leakage.empty else 0
+        if not leakage.empty and "n_shared_trials" in leakage:
+            trial_overlap_folds = int((pd.to_numeric(leakage["n_shared_trials"], errors="coerce").fillna(0) > 0).sum())
+            trial_overlap_status = "pass" if trial_overlap_folds == 0 else "warn"
+        else:
+            trial_overlap_folds = -1
+            trial_overlap_status = "missing"
+        primary_projection = str(row0.get("projection_control", decoding_audit.get("primary_projection_control", "")))
+        primary_k = int(_finite(row0.get("primary_k", decoding_audit.get("primary_k", 10))))
+        compact_summary = bootstrap[
+            (bootstrap.get("feature_space", pd.Series(dtype=str)).astype(str) == "compact")
+            & (bootstrap.get("projection_control", pd.Series(dtype=str)).astype(str) == primary_projection)
+            & (bootstrap.get("k", pd.Series(dtype=float)).astype(float) == float(primary_k))
+        ] if not bootstrap.empty else pd.DataFrame()
+        eye_ci_low = float("nan")
+        if not compact_summary.empty and "effect_minus_eye_label_shuffle_boot_ci_low" in compact_summary:
+            eye_ci_low = _finite(compact_summary.iloc[0].get("effect_minus_eye_label_shuffle_boot_ci_low"))
+        primary_pass = (
+            np.isfinite(compact_r2)
+            and compact_r2 > 0.0
+            and np.isfinite(compact_fraction)
+            and compact_fraction >= 0.5
+            and np.isfinite(compact_minus_orth)
+            and compact_minus_orth > 0.0
+            and np.isfinite(compact_minus_random)
+            and compact_minus_random > 0.0
+            and (not np.isfinite(compact_minus_rf) or compact_minus_rf > 0.0)
+            and leakage_failures == 0
+            and trial_overlap_status == "pass"
+            and (not np.isfinite(eye_ci_low) or eye_ci_low > 0.0)
+        )
+        status = "pass" if primary_pass else "warn"
+        decoding_rows.append(
+            {
+                "status": status,
+                "decision": decoding_audit.get("decision", ""),
+                "primary_projection_control": primary_projection,
+                "primary_k": int(primary_k),
+                "full_population_R2_mean": full_r2,
+                "compact_R2_mean": compact_r2,
+                "compact_fraction_of_full": compact_fraction,
+                "compact_minus_orthogonal": compact_minus_orth,
+                "compact_minus_random": compact_minus_random,
+                "compact_minus_rf_readout": compact_minus_rf,
+                "compact_effect_eye_label_shuffle_ci_low": eye_ci_low,
+                "n_sessions_ok": decoding_audit.get("n_sessions_ok", ""),
+                "n_leakage_failures": leakage_failures,
+                "trial_overlap_status": trial_overlap_status,
+                "n_trial_overlap_folds": trial_overlap_folds,
+                "source": str(decoding_root),
+            }
+        )
+        _accept(
+            accept_rows,
+            analysis="Panel F decoding",
+            check="recorded displacement decoding promoted",
+            status=status,
+            metric="compact_R2;fraction_full;minus_orth;minus_random;minus_rf",
+            value=f"{compact_r2:.4g};{compact_fraction:.4g};{compact_minus_orth:.4g};{compact_minus_random:.4g};{compact_minus_rf:.4g}",
+            threshold="compact>0, fraction>=0.5, compact beats orthogonal/random/RF controls, no condition or trial leakage",
+            details=f"full_R2={full_r2:.4g}; eye_shuffle_CI_low={eye_ci_low:.4g}; leakage_failures={leakage_failures}; trial_overlap_status={trial_overlap_status}; n_trial_overlap_folds={trial_overlap_folds}",
+            claim_allowed="Recorded V1 contains a compact, image-conditioned relative-displacement signal." if primary_pass else "",
+            claim_to_avoid="" if primary_pass else "Do not promote readable compact displacement decoding; treat as diagnostic/mixed, especially if trial-overlap audit is missing or nonzero.",
+            source=str(decoding_root),
+        )
+    else:
+        decoding_rows = [
+            {
+                "status": "not_run",
+                "required_objects": "recorded repeat-pair responses, same-condition eye differences, condition-disjoint folds",
+                "blocking_reason": "No relative-displacement decoding metrics exist in compact geometry output.",
+            }
+        ]
+        _accept(
+            accept_rows,
+            analysis="Panel F decoding",
+            check="recorded displacement decoding promoted",
+            status="not_run",
+            metric="relative_displacement_decoding/feature_space_comparison.csv",
+            value="missing",
+            threshold="present and passes all nulls",
+            claim_to_avoid="Do not claim readable image-generalizing displacement coordinate.",
+        )
 
     direct_rows: list[dict[str, Any]] = []
     if paths.direct_root is not None and paths.direct_root.exists():

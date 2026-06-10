@@ -60,6 +60,7 @@ WINDOW_BINS = 2              # counting window (~16.7 ms at 120 Hz)
 T_HIST_BINS = 1              # history window for eye trajectory similarity
 N_DIST_BINS = 15
 SUBJECTS = ("Allen", "Logan")
+FIG2_DATA_TYPES = ["fixrsvp"]
 
 N_SPLITS = 100               # random halvings for split-half PSTH R^2
 SEED = 42
@@ -82,8 +83,8 @@ def compute_session_payload(cfg):
     session_name = cfg["session"]
     subject = session_name.split("_")[0]
 
-    if "fixrsvp" not in cfg["types"]:
-        cfg["types"] = cfg["types"] + ["fixrsvp"]
+    cfg = dict(cfg)
+    cfg["types"] = list(FIG2_DATA_TYPES)
 
     from models.data import prepare_data
     try:

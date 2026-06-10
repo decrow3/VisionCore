@@ -21,8 +21,11 @@ from generate_fig2d import plot_panel_d
 from generate_fig2e import plot_panel_e
 
 
-def compose(refresh=False):
-    data = load_fig2_data(refresh=refresh)
+def compose(refresh=False, refresh_decomposition=False):
+    data = load_fig2_data(
+        refresh=refresh,
+        refresh_decomposition=refresh_decomposition,
+    )
 
     fig = plt.figure(figsize=(14, 10))
     gs = GridSpec(2, 3, height_ratios=[1.15, 0.85], hspace=0.22, wspace=0.32,
@@ -53,10 +56,15 @@ def _parse_args():
     p = argparse.ArgumentParser(description="Compose figure 2.")
     p.add_argument("-r", "--refresh", action="store_true",
                    help="Force recompute of derived fig2 data.")
+    p.add_argument("--refresh-decomposition", action="store_true",
+                   help="Force recompute of per-session decompositions too.")
     args, _ = p.parse_known_args()
     return args
 
 
 if __name__ == "__main__":
     args = _parse_args()
-    compose(refresh=args.refresh)
+    compose(
+        refresh=args.refresh or args.refresh_decomposition,
+        refresh_decomposition=args.refresh_decomposition,
+    )

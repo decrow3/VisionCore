@@ -496,9 +496,9 @@ session_data_root = _resolve_session_data_root(dataset_dir)
 
 dots_binned_path = session_data_root / 'dpi_calibration' / 'dots_binned_data.dset'
 dots_primary_eye_dir = session_data_root / 'dpi_calibration' / f'{primary_eye}_eye'
+dots_primary_results_path = session_data_root / 'dots_calibration' / f'{primary_eye}_eye' / 'calibration_results.npz'
 dots_primary_csv = dots_primary_eye_dir / 'calibrated_dpi.csv'
 dots_primary_params = dots_primary_eye_dir / 'calibration_params.npz'
-dots_primary_snr_cache = dots_primary_eye_dir / 'dots_rf_snr.npz'
 
 yaml_bino_path  = (VISIONCORE_ROOT / 'experiments' / 'dataset_configs' / 'sessions'
                    / f'{subject}_{date}_binocular_V1.yaml')
@@ -506,7 +506,7 @@ yaml_right_path = (VISIONCORE_ROOT / 'experiments' / 'dataset_configs' / 'sessio
                    / f'{subject}_{date}_right_V1.yaml')
 
 # ── FixRSVP reliability [Criterion 2]
-min_reliability      = 0.025 # leaving out, too strict. 0.05 #previously 0.1,
+min_reliability      = float(os.environ.get('ROWLEY_MIN_RELIABILITY', '0.025'))
 n_reliability_splits = 20
 
 # ── Runtime truncation datafilter
@@ -525,6 +525,7 @@ n_shuff_2d   = 1
 import datetime as _dt
 SESSION_OUTPUT_DIR = OUTPUT_ROOT_DIR / f'{subject}_{date}_v12'
 BASE_FIGURES_DIR = SESSION_OUTPUT_DIR
+dots_primary_snr_cache = BASE_FIGURES_DIR / f'dots_rf_snr_{primary_eye}_eye.npz'
 
 #%% ---------------------------------------------------------------------------
 # Helpers
@@ -1374,12 +1375,38 @@ def _compute_snr_if_available(npy_path, dset_path, n_units, label):
 
 def _compute_dots_snr_if_available(
     dots_dset_path,
+    calibration_results_path,
     calibrated_dpi_csv,
     calibration_params_path,
     cache_path,
     target_cids,
     label,
 ):
+    target_cids = np.asarray(target_cids)
+
+    if calibration_results_path.exists():
+        results = np.load(calibration_results_path, allow_pickle=True)
+        if 'calibration_cluster_ids' in results and 'optimized_max_snr' in results:
+            result_cids = np.asarray(results['calibration_cluster_ids'])
+            result_snr = np.asarray(results['optimized_max_snr'], dtype=np.float32)
+            snr_by_cid = {int(cid): float(snr) for cid, snr in zip(result_cids, result_snr)}
+            max_snr_target = np.array(
+                [snr_by_cid.get(int(cid), np.nan) for cid in target_cids],
+                dtype=np.float32,
+            )
+            if np.isfinite(max_snr_target).any():
+                return max_snr_target, True, 'calibration_results'
+            print(f"  [WARN] {label} dots calibration results had no matching cluster IDs: {calibration_results_path}")
+        else:
+            print(f"  [WARN] {label} dots calibration results missing expected keys: {calibration_results_path}")
+
+    if cache_path.exists():
+        cached = np.load(cache_path, allow_pickle=True)
+        cached_cids = np.asarray(cached['cids'])
+        cached_max_snr = np.asarray(cached['max_snr'], dtype=np.float32)
+        if cached_cids.shape == target_cids.shape and np.array_equal(cached_cids, target_cids):
+            return cached_max_snr, True, 'cache'
+
     if not dots_dset_path.exists():
         print(f"  [WARN] {label} dots cache not found: {dots_dset_path}")
         print("         Falling back to no visual prefilter for this session.")
@@ -1392,15 +1419,6 @@ def _compute_dots_snr_if_available(
         print(f"  [WARN] {label} calibration params not found: {calibration_params_path}")
         print("         Falling back to no visual prefilter for this session.")
         return np.full(len(target_cids), np.nan, dtype=np.float32), False, 'skipped'
-
-    target_cids = np.asarray(target_cids)
-
-    if cache_path.exists():
-        cached = np.load(cache_path, allow_pickle=True)
-        cached_cids = np.asarray(cached['cids'])
-        cached_max_snr = np.asarray(cached['max_snr'], dtype=np.float32)
-        if cached_cids.shape == target_cids.shape and np.array_equal(cached_cids, target_cids):
-            return cached_max_snr, True, 'cache'
 
     dots_dset = DictDataset.load(dots_dset_path)
     dots_cids = np.asarray(dots_dset.metadata.get('cids', np.arange(_to_numpy(dots_dset['robs']).shape[1])))
@@ -1459,6 +1477,7 @@ def _compute_dots_snr_if_available(
 
     max_snr_target = np.full(len(target_cids), np.nan, dtype=np.float32)
     max_snr_target[found_mask] = max_snr_all[matched[found_mask]].astype(np.float32, copy=False)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(cache_path, cids=target_cids, max_snr=max_snr_target)
     return max_snr_target, True, 'recomputed'
 
@@ -1596,6 +1615,7 @@ print(f"\nCriterion 1 — Dots RF SNR (pipeline/01-style ForageDots STA)")
 
 max_snr_visual, visual_snr_available, visual_snr_source = _compute_dots_snr_if_available(
     dots_binned_path,
+    dots_primary_results_path,
     dots_primary_csv,
     dots_primary_params,
     dots_primary_snr_cache,
@@ -1605,6 +1625,7 @@ max_snr_visual, visual_snr_available, visual_snr_source = _compute_dots_snr_if_a
 
 _snr_source_label_map = {
     'cache': 'existing dots RF SNR cache',
+    'calibration_results': 'exported dots calibration results',
     'recomputed': 'recomputed from dots_binned_data.dset',
     'skipped': 'criterion skipped',
 }
@@ -1891,6 +1912,10 @@ if yaml_bino is not None:
 
 print(f"\nPool A cluster IDs: {sorted(cids_pool_a.tolist())}")
 print(f"Pool B cluster IDs: {sorted(cids_pool_b.tolist())}")
+
+if _env_flag('ROWLEY_GATE_ONLY', False):
+    print("\nROWLEY_GATE_ONLY=1: stopping after unit-selection waterfall.")
+    sys.exit(0)
 
 
 #%% ---------------------------------------------------------------------------

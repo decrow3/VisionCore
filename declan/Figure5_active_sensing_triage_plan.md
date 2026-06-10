@@ -16,6 +16,17 @@ This does **not** require proving that real FEM trajectories are globally optima
 
 Figures 1-4 mostly address item 1. Figure 5 must address items 2-3.
 
+Companion prep note:
+
+```text
+declan/active_sensing_movie_information/figure5_additional_checks_prep.md
+```
+
+Use that note for the next analysis pass. It separates the current
+movie-information Figure 5 endpoint from a higher-risk recorded-V1
+population-coding fork that asks whether FEM-linked variability is benign,
+information-limiting, or recoverable by a pose-aware readout.
+
 ## Central Reframe
 
 The question is not:
@@ -31,6 +42,23 @@ This lets us incorporate three active-sensing mechanisms:
 1. **Spectral-temporal conversion:** FEMs convert spatial frequencies into temporal modulations.
 2. **Scale/channel matching:** drift and microsaccades occupy different displacement/speed regimes that may recruit parvo-like and magno-like channels differently.
 3. **Image-contingent sampling:** local eye-movement statistics may depend on image structure where the animal is looking.
+
+Additional population-coding reframe:
+
+> Is FEM-linked variability merely extra rate variance, or is it structured
+> reafference whose relationship to coding axes makes it benign, limiting, or
+> recoverable?
+
+This should not replace the main Figure 5 movie endpoint. It is a bridge from
+the Figure 4 recorded reafference result to the Figure 5 active-sensing claim.
+Every outcome is interpretable:
+
+- reafference mostly orthogonal to signal directions means structured but benign
+  retinal-pose variability;
+- reafference aligned with signal directions means potentially
+  information-limiting variability for a pose-blind reader;
+- pose-aware/tangent-aware recovery means the same variability can be treated as
+  reafferent state rather than irreducible internal noise.
 
 ## Tier 0: Required Audits Before Interpreting Figure 5
 
@@ -396,6 +424,100 @@ Success:
 
 This would be a strong general sensing result even without real trajectory optimality.
 
+### 2.4 Recorded reafference-signal alignment fork
+
+Status: prepared as an additional-check fork, not yet implemented as a unified
+Figure 5 analysis.
+
+Goal:
+
+> Determine whether the recorded FEM-linked covariance subspace is organized
+> relative to recorded stimulus-coding axes in a way that is benign,
+> information-limiting, or recoverable.
+
+Inputs:
+
+- best controlled recorded FEM-linked covariance estimate from Figure 4;
+- residualized variants after global-rate and PC1 controls;
+- trial-averaged recorded V1 stimulus response means;
+- cross-validation split definitions, so subspaces and readouts are estimated
+  on training data and evaluated on held-out trials.
+
+Primary metrics:
+
+```text
+S_reaff  = top-k FEM-linked / reafferent covariance subspace
+S_signal = top-k stimulus-driven signal subspace
+
+alpha = tr(P_reaff C_signal) / tr(C_signal)
+L_ij  = dmu_ij.T C_reaff dmu_ij / ||dmu_ij||^2
+principal_angles(S_reaff, S_signal)
+```
+
+Nulls:
+
+- unit shuffle;
+- random k-dimensional subspaces;
+- eigenvalue-matched random covariance;
+- stimulus-label shuffle;
+- global-rate/PC1 residualized controls;
+- train/test subspace split-half controls.
+
+Decision:
+
+- high alignment after controls suggests pose-blind information-limiting
+  reafference;
+- low alignment suggests compact but coding-orthogonal reafference;
+- null-like alignment means the reafferent covariance is real but not specially
+  organized relative to the tested stimulus axes.
+
+### 2.5 Pose-aware recoverability fork
+
+Status: design only.
+
+Compare three held-out readouts:
+
+```text
+pose-blind:      stimulus/readout from responses alone
+pose-aware:      stimulus/readout with measured eye position or retinal pose
+tangent-aware:   stimulus/readout after explicit compact reafferent conditioning
+```
+
+Safe claim if it works:
+
+> A pose-aware or tangent-aware readout recovers information that appears as
+> shared variability to a pose-blind analysis.
+
+Avoid:
+
+> The brain uses this exact readout.
+
+### 2.6 Compact add-back / remove-out fork
+
+Status: high-reward mechanistic bridge, after the constrained coding metric is
+defined.
+
+For twin movies:
+
+```text
+delta_r(t)      = r_real(t) - r_stabilized(t)
+delta_compact   = P_U10 delta_r
+delta_orth      = (I - P_U10) delta_r
+
+r_compact_addback = r_stabilized + delta_compact
+r_orth_addback    = r_stabilized + delta_orth
+```
+
+Ask:
+
+- does compact addback recover FEM covariance closure?
+- does compact addback recover constrained information or pose-aware
+  recoverability?
+- does orthogonal addback fail?
+
+This tests whether the compact Figure 4 geometry is mechanistic for Figure 5,
+or merely descriptive of covariance structure.
+
 ## Tier 3: Conditional / Supplemental Analyses
 
 These are useful but should not drive the main paper unless they land cleanly.
@@ -596,7 +718,13 @@ Claim:
 7. **Event-context expansion** around microsaccades.
 8. **Image-contingent FEM statistics**.
 9. **Channel stratification** into parvo/magno-like proxies.
-10. Phase/pyramid residual controls only after the spectral story is stable.
+10. **Recorded reafference-signal alignment fork** using the best Figure 4
+    covariance estimate and residualized controls.
+11. **Pose-aware recoverability fork** if alignment implies pose-blind
+    confusability.
+12. **Compact add-back/remove-out fork** only after the constrained coding metric
+    is defined.
+13. Phase/pyramid residual controls only after the spectral story is stable.
 
 ## Bottom Line
 

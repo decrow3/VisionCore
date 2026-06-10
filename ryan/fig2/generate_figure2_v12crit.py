@@ -7,13 +7,16 @@ two additional per-neuron inclusion criteria borrowed from test_rowley12.py:
   2. NaN-fraction gate: neurons with > MAX_NAN_FRAC (20%) missing fixrsvp
      time-bins are excluded (mirrors test_rowley12 Pool B gate)
 
-Visual-responsiveness filtering is already applied upstream via the `cids`
-field in each session YAML (written by the 07_build pipeline using dots RF SNR).
+For Rowley sessions, the script expands the YAML `cids` to refractory-QC
+V1 units when available and applies the DataRowley step02
+dots RF gate (optimized SNR + dots spike-count) from the Rowley dots
+calibration outputs. This avoids relying on Gaborium STA quality for Luke.
 
 Outputs go to fig2_v12crit/ (figures) and a separate cache pkl, so existing
 fig2/ outputs are never overwritten.  Compare side-by-side with generate_figure2.py.
 """
 import sys
+import os
 import warnings
 from pathlib import Path
 
@@ -93,7 +96,7 @@ mpl.rcParams["font.sans-serif"] = ["Arial", "Helvetica", "DejaVu Sans"]
 # ---------------------------------------------------------------------------
 # Analysis parameters
 # ---------------------------------------------------------------------------
-RECOMPUTE = False # set True to rerun decomposition from raw data
+RECOMPUTE = os.environ.get("FIG2_RECOMPUTE", "").strip().lower() in {"1", "true", "yes", "on"}
 DT = 1 / 120                # seconds per bin (native 120 Hz sampling)
 WINDOW_BINS = [1, 2, 4, 8] # counting windows in bins (powers of two)
 N_SHUFFLES = 100             # shuffle null iterations
@@ -105,8 +108,10 @@ SUBJECTS = ["Allen", "Logan", "Luke"]
 MIN_RELIABILITY   = 0.05   # split-half PSTH r² threshold (test_rowley12 min_reliability)
 N_REL_SPLITS      = 20      # number of random split-half draws
 MAX_NAN_FRAC      = 0.20    # max fraction of NaN fixrsvp bins per neuron (Pool B gate)
-DOTS_SNR_THRESH   = 5.0     # dots RF SNR threshold for visual criterion (test_rowley12 default)
+DOTS_SNR_THRESH   = 10.0    # DataRowley step02 dots RF mask extraction SNR
+DOTS_MIN_SPIKES   = 2000    # DataRowley step02 dots RF mask extraction spikes
 SUBJECT_COLORS = {"Allen": "tab:blue", "Logan": "tab:green", "Luke": "tab:orange"}
+FIG2_DATA_TYPES = ["fixrsvp"]
 DEVICE = get_free_device()
 
 # Data config (uses the same configs as model training, no weights needed)
@@ -139,6 +144,15 @@ def show_or_close(fig):
         plt.close(fig)
 
 
+def _rowley_initial_cid_pool(cfg):
+    """Return the Rowley pre-decomposition CID pool and its source field."""
+    for key in ("qccontam", "sortercontam", "cids"):
+        values = np.asarray(cfg.get(key, []), dtype=int)
+        if values.size > 0:
+            return values, key
+    return np.asarray([], dtype=int), "none"
+
+
 
 # %% v12crit helpers
 
@@ -151,16 +165,50 @@ def _resolve_session_data_root(dataset_directory):
     return p.parent
 
 
-def _load_dots_snr_cache(session_data_root, eye):
-    """Load dots RF SNR from the dpi_calibration npz cache written by 07_build.
+def _load_dots_quality_cache(session_data_root, eye):
+    """Load primary-eye dots RF SNR and spike counts for Rowley units.
 
-    Returns (cids, max_snr) arrays, or (None, None) if cache is absent.
+    The Rowley pipeline writes the canonical dots calibration result to
+    dots_calibration/{eye}_eye/calibration_results.npz. Older test scripts also
+    created a lighter dpi_calibration/{eye}_eye/dots_rf_snr.npz cache; keep that
+    as a compatibility fallback.
+
+    Returns (cids, max_snr, n_spikes), or (None, None, None) if no source exists.
     """
-    cache = Path(session_data_root) / 'dpi_calibration' / f'{eye}_eye' / 'dots_rf_snr.npz'
-    if not cache.exists():
-        return None, None
-    data = np.load(cache)
-    return np.asarray(data['cids']), np.asarray(data['max_snr'])
+    session_data_root = Path(session_data_root)
+
+    cal_results = (
+        session_data_root
+        / 'dots_calibration'
+        / f'{eye}_eye'
+        / 'calibration_results.npz'
+    )
+    if cal_results.exists():
+        data = np.load(cal_results, allow_pickle=True)
+        if 'calibration_cluster_ids' in data and 'optimized_max_snr' in data:
+            n_spikes = (
+                np.asarray(data['n_spikes'])
+                if 'n_spikes' in data
+                else np.full(len(data['optimized_max_snr']), np.nan)
+            )
+            return (
+                np.asarray(data['calibration_cluster_ids']),
+                np.asarray(data['optimized_max_snr']),
+                n_spikes,
+            )
+        print(f"  Warning: dots calibration result missing SNR keys: {cal_results}")
+
+    cache = session_data_root / 'dpi_calibration' / f'{eye}_eye' / 'dots_rf_snr.npz'
+    if cache.exists():
+        data = np.load(cache, allow_pickle=True)
+        n_spikes = (
+            np.asarray(data['n_spikes'])
+            if 'n_spikes' in data
+            else np.full(len(data['max_snr']), np.nan)
+        )
+        return np.asarray(data['cids']), np.asarray(data['max_snr']), n_spikes
+
+    return None, None, None
 
 
 def _split_half_reliability(robs_trials, n_splits, seed=42,
@@ -227,20 +275,25 @@ else:
         if subject not in SUBJECTS:
             continue
 
-        # Ensure fixrsvp is in the types list
-        if "fixrsvp" not in cfg["types"]:
-            cfg["types"] = cfg["types"] + ["fixrsvp"]
+        cfg = dict(cfg)  # don't mutate the original; fig2 only uses fixrsvp
+        cfg["types"] = list(FIG2_DATA_TYPES)
 
         is_rowley = cfg.get('lab', '').lower() == 'rowley'
 
-        # v12crit: for Rowley sessions expand cids → qccontam so all V1 units are
-        # loaded; dots RF SNR is then applied in-code as Criterion 1 (matching
-        # test_rowley12 dots_rf mode) rather than relying on the YAML visual list.
+        # v12crit: for Rowley sessions expand cids to the broad refractory-QC
+        # V1 pool when present; the DataRowley step02 dots RF quality gate is
+        # then applied in-code rather than relying on the YAML visual list.
         if is_rowley:
-            all_v1_cids = np.asarray(cfg.get('qccontam', cfg.get('cids', [])), dtype=int)
+            all_v1_cids, rowley_pool_source = _rowley_initial_cid_pool(cfg)
+            if all_v1_cids.size == 0:
+                print("  Skipping: Rowley config has no qccontam/sortercontam/cids")
+                continue
+            print(
+                f"  Rowley initial unit pool: {rowley_pool_source} "
+                f"({all_v1_cids.size} CIDs)"
+            )
             session_directory = cfg.get('directory', '')
             session_eye = cfg.get('eye', 'right')
-            cfg = dict(cfg)  # don't mutate the original
             cfg['cids'] = all_v1_cids.tolist()
 
         print(f"\n--- {session_name} ({subject}) ---")
@@ -259,11 +312,20 @@ else:
         fixrsvp_dset = train_data.dsets[dset_idx]
 
         # Trial-align (spike-count gate applied here across all loaded units)
-        robs, eyepos, valid_mask, neuron_mask, meta = align_fixrsvp_trials(
-            fixrsvp_dset,
+        align_kwargs = dict(
             valid_time_bins=120,
             min_fix_dur=20,
             min_total_spikes=MIN_TOTAL_SPIKES,
+        )
+        if is_rowley:
+            align_kwargs.update(
+                fixation_radius=1.5,
+                fixation_center="median_valid",
+                require_dpi_valid=True,
+            )
+        robs, eyepos, valid_mask, neuron_mask, meta = align_fixrsvp_trials(
+            fixrsvp_dset,
+            **align_kwargs,
         )
         if robs is None or robs.shape[0] < 10:
             print(f"  Skipping: insufficient data ({meta})")
@@ -271,25 +333,44 @@ else:
         print(f"  Trials: {meta['n_trials_good']}/{meta['n_trials_total']}, "
               f"Neurons (post spike-count): {meta['n_neurons_used']}/{meta['n_neurons_total']}")
 
-        # v12crit Criterion 1 — dots RF SNR visual gate (Rowley sessions only)
+        # v12crit Criterion 1 — dots RF quality gate (Rowley sessions only)
         # neuron_mask is boolean over all_v1_cids; visual_post restricts to visual units
         # among those that already passed the spike-count gate.
         if is_rowley:
             data_root = _resolve_session_data_root(session_directory)
-            snr_cids, max_snr = _load_dots_snr_cache(data_root, session_eye)
+            snr_cids, max_snr, dots_spikes = _load_dots_quality_cache(data_root, session_eye)
             if snr_cids is not None:
                 snr_by_cid = {int(c): float(s) for c, s in zip(snr_cids, max_snr)}
+                spikes_by_cid = {
+                    int(c): float(n) for c, n in zip(snr_cids, dots_spikes)
+                }
                 unit_snr = np.array([snr_by_cid.get(int(c), np.nan) for c in all_v1_cids])
-                visual_all = np.isfinite(unit_snr) & (unit_snr >= DOTS_SNR_THRESH)
+                unit_dots_spikes = np.array([
+                    spikes_by_cid.get(int(c), np.nan) for c in all_v1_cids
+                ])
+                visual_all = (
+                    np.isfinite(unit_snr)
+                    & (unit_snr >= DOTS_SNR_THRESH)
+                    & np.isfinite(unit_dots_spikes)
+                    & (unit_dots_spikes >= DOTS_MIN_SPIKES)
+                )
             else:
-                print(f"  Skipping: dots RF SNR cache not found at {data_root / 'dpi_calibration'}")
+                print(
+                    "  Skipping: dots RF quality not found at "
+                    f"{data_root / 'dots_calibration' / f'{session_eye}_eye' / 'calibration_results.npz'} "
+                    "or "
+                    f"{data_root / 'dpi_calibration' / f'{session_eye}_eye' / 'dots_rf_snr.npz'}"
+                )
                 continue
             visual_post = visual_all[neuron_mask]
             n_pre_vis = robs.shape[2]
             robs = robs[:, :, visual_post]
-            print(f"  Dots RF SNR (>= {DOTS_SNR_THRESH}): {robs.shape[2]}/{n_pre_vis} neurons pass")
+            print(
+                f"  Dots RF gate (SNR >= {DOTS_SNR_THRESH}, "
+                f"spikes >= {DOTS_MIN_SPIKES}): {robs.shape[2]}/{n_pre_vis} neurons pass"
+            )
             if robs.shape[2] < 3:
-                print(f"  Skipping: too few neurons after dots RF SNR")
+                print(f"  Skipping: too few neurons after dots RF gate")
                 continue
 
         # v12crit Criteria 2 & 3 — NaN fraction + split-half reliability

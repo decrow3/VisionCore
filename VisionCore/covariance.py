@@ -1646,7 +1646,9 @@ def pipeline_one_minus_alpha(rate, eyepos, valid=None, threshold=0.05,
 # ---------------------------------------------------------------------------
 
 def align_fixrsvp_trials(dset, valid_time_bins=120, min_fix_dur=20,
-                         min_total_spikes=200, fixation_radius=1.0):
+                         min_total_spikes=200, fixation_radius=1.0,
+                         fixation_center=None, require_dpi_valid=False,
+                         min_neurons=3):
     """
     Extract trial-aligned robs, eyepos, valid_mask from a fixRSVP DictDataset.
 
@@ -1668,6 +1670,14 @@ def align_fixrsvp_trials(dset, valid_time_bins=120, min_fix_dur=20,
         Minimum total spike count for a neuron to be included.
     fixation_radius : float
         Maximum eye distance from center (degrees) to count as fixation.
+    fixation_center : None, "median_valid", or array-like
+        Center for the fixation gate. None uses (0, 0), preserving historical
+        behavior. "median_valid" subtracts the median finite eye position,
+        optionally restricted to dpi_valid bins when present.
+    require_dpi_valid : bool
+        If True and dpi_valid is present, require dpi_valid for fixation bins.
+    min_neurons : int
+        Minimum number of neurons required after spike-count filtering.
 
     Returns
     -------
@@ -1686,14 +1696,47 @@ def align_fixrsvp_trials(dset, valid_time_bins=120, min_fix_dur=20,
     psth_inds = np.asarray(covs['psth_inds']).ravel()
     robs_flat = np.asarray(covs['robs'])       # (T, NC)
     eyepos_flat = np.asarray(covs['eyepos'])   # (T, 2)
+    dpi_valid = (
+        np.asarray(covs['dpi_valid']).ravel()
+        if 'dpi_valid' in covs
+        else np.ones(len(trial_inds), dtype=bool)
+    )
+    if dpi_valid.shape[0] != eyepos_flat.shape[0]:
+        dpi_valid = np.ones(eyepos_flat.shape[0], dtype=bool)
+    dpi_valid = dpi_valid.astype(bool)
 
     trials = np.unique(trial_inds)
     NT = len(trials)
     NC = robs_flat.shape[1]
     T = int(psth_inds.max()) + 1
 
-    # Fixation mask: eye within fixation_radius degrees of center
-    fixation = np.hypot(eyepos_flat[:, 0], eyepos_flat[:, 1]) < fixation_radius
+    # Fixation mask: eye within fixation_radius degrees of center.
+    finite_eye = np.all(np.isfinite(eyepos_flat), axis=1)
+    if fixation_center is None:
+        center = np.zeros(2, dtype=float)
+    elif isinstance(fixation_center, str):
+        if fixation_center != "median_valid":
+            raise ValueError(
+                "fixation_center must be None, 'median_valid', or array-like"
+            )
+        center_mask = finite_eye & dpi_valid
+        if center_mask.sum() == 0:
+            center_mask = finite_eye
+        center = (
+            np.nanmedian(eyepos_flat[center_mask], axis=0)
+            if center_mask.sum() > 0
+            else np.zeros(2, dtype=float)
+        )
+    else:
+        center = np.asarray(fixation_center, dtype=float).reshape(2)
+
+    fixation = (
+        finite_eye
+        & (np.hypot(eyepos_flat[:, 0] - center[0],
+                    eyepos_flat[:, 1] - center[1]) < fixation_radius)
+    )
+    if require_dpi_valid:
+        fixation &= dpi_valid
 
     # Pre-allocate trial-aligned arrays (NaN-padded)
     robs_aligned = np.full((NT, T, NC), np.nan)
@@ -1726,7 +1769,7 @@ def align_fixrsvp_trials(dset, valid_time_bins=120, min_fix_dur=20,
 
     # Neuron inclusion: total spikes across all good trials
     neuron_mask = np.where(np.nansum(robs_trunc, axis=(0, 1)) > min_total_spikes)[0]
-    if len(neuron_mask) < 3:
+    if len(neuron_mask) < min_neurons:
         return None, None, None, None, {"n_trials_total": NT,
                                          "n_trials_good": int(good_trials.sum()),
                                          "n_neurons_total": NC, "n_neurons_used": 0}
@@ -1742,6 +1785,8 @@ def align_fixrsvp_trials(dset, valid_time_bins=120, min_fix_dur=20,
         "n_trials_good": int(good_trials.sum()),
         "n_neurons_total": NC,
         "n_neurons_used": len(neuron_mask),
+        "fixation_radius": float(fixation_radius),
+        "fixation_center": center.tolist(),
     }
 
     return robs_out, eyepos_trunc, valid_mask, neuron_mask, metadata
@@ -1757,7 +1802,7 @@ def run_covariance_decomposition(robs, eyepos, valid_mask,
                                  n_bins=15, n_shuffles=0,
                                  seed=42, dt=1 / 240, min_seg_len=36,
                                  intercept_mode='linear', intercept_kwargs=None,
-                                 device="cuda"):
+                                 device="cuda", eyepos_vergence=None):
     """
     Full LOTC decomposition sweep across counting windows.
 

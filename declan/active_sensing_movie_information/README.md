@@ -41,6 +41,171 @@ information available from the model rate movie under the assumed spatial-SSI
 readout, normalized by expected spike count. It is not a direct measurement of
 biological information in noisy V1 spike trains.
 
+## Interpretation Guardrail
+
+The Twininfo pipeline is valuable as a model-side retinal-motion diagnostic,
+but it should not be used by itself as the backbone for the strong claim that
+active sensing explains cortical variability. Its clean positive result is more
+bounded: FEM-like retinal motion can increase a deterministic V1-model spatial
+information-efficiency proxy relative to stabilization, especially for higher
+spatial-frequency content.
+
+Three claims must stay separate:
+
+1. measured FEMs explain a component of recorded V1 shared variability;
+2. retinal motion increases a V1-model information proxy relative to
+   stabilization;
+3. the animal's measured FEM statistics are uniquely or specially useful.
+
+The current matched-motion controls weaken claim 3: random motion controls can
+match or exceed real FEMs under the spatial-SSI bits/expected-spike endpoint.
+So the safe wording is not "real FEM trajectories are optimal active-sensing
+trajectories." The safer framing is:
+
+> retinal image motion exposes structured, information-bearing response
+> variation, and the recorded FEM-linked covariance is a reafferent component of
+> V1 variability.
+
+Stronger computational language requires additional constraints: validated
+matched-motion controls, spike-count/frame-count audits, retinal movie
+transform QC, and ideally a pose-aware versus pose-blind or
+population-covariance metric where reafferent variability can help or hurt.
+
+For the current implementation checklist and generated audit summaries, use:
+
+```text
+figure5_additional_checks_prep.md
+summarize_figure5_additional_checks.py
+```
+
+For the current scientific priority order after the Checks 5-9 audit, use:
+
+```text
+figure5_reafferent_covariance_plan.md
+```
+
+First-pass variance-accounting implementation:
+
+```text
+summarize_reafferent_variance_accounting.py
+figure5_reafferent_covariance_implementation_notes.md
+outputs/active_sensing_movie_information/reafferent_variance_accounting/
+```
+
+This dashboard now includes a finite-difference trace-closure layer:
+
+```text
+variance_accounting_trace_closure.csv
+variance_accounting_trace_closure_summary.csv
+```
+
+These tables put the saved finite-difference capture fractions into matched
+target-covariance trace units. They are numerator accounting artifacts, not
+yet the final `tr(C_reaff_explained) / tr(C_reliable_shared)` denominator.
+
+First-pass constrained population-coding implementation:
+
+```text
+summarize_constrained_population_coding.py
+outputs/active_sensing_movie_information/constrained_population_coding/
+```
+
+This summarizes the saved natural-image Check 6 pairwise rows into condition
+means and paired real-minus-control contrasts for `dprime2_pop`,
+`dprime2_indep`, and `eta = dprime2_pop / dprime2_indep`.
+
+Pose-aware recoverability prep:
+
+```text
+run_figure5_natural_image_population_checks_5_to_9.py --export-pose-covariates
+```
+
+This optional runner mode exports `natural_image_condition_pose_summary.csv`
+and `natural_image_condition_pose_frames.csv`, aligned to the cached
+natural-image response records. Those files are the design-matrix bridge for a
+future pose-aware decoder; they are not themselves a recoverability result.
+
+Natural-image-only population Checks 5-9 now live here:
+
+```text
+declan/active_sensing_movie_information/run_figure5_natural_image_population_checks_5_to_9.py
+```
+
+This runner recomputes center-location biological-twin responses for the
+natural-image movies described by the production `jake.twininfo` run, then
+uses natural-image identity as the stimulus axis. It supersedes the earlier
+e-optotype cached-rate scaffold for Figure 5 interpretation.
+
+Default production invocation:
+
+```bash
+MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python declan/active_sensing_movie_information/run_figure5_natural_image_population_checks_5_to_9.py \
+  --run-dir outputs/twininfo/active-sensing-all-images-1crop-2fix2ms-16units-gpu \
+  --out-dir outputs/active_sensing_movie_information/figure5_natural_image_population_checks_5_to_9
+```
+
+Completed natural-image run, 2026-06-09:
+
+```text
+outputs/active_sensing_movie_information/figure5_natural_image_population_checks_5_to_9/
+```
+
+Run scope:
+
+```text
+source: twininfo_natural_image_center_rates
+stimulus axis: natural_image_identity
+response space: 16 biological twin channels at the center readout location
+inventory: 27 images x 4 selected trace windows x 16 conditions
+```
+
+Result summary:
+
+- Check 5: real and stabilized have essentially identical reafference-signal
+  alignment at k=2 (`alpha` 0.88549 versus 0.88550), so this run does not show
+  a real-specific alignment advantage.
+- Code audit note: the response cache and center-channel extraction were
+  checked after the run. The cache has 1728 blocks with 27 images, 4 trace
+  windows, 16 conditions, and no duplicate condition/image/example keys. The
+  runner now also writes
+  `check5_natural_image_covariance_spectrum_diagnostics.csv`, which shows why
+  Check 5 saturates: in the 16-channel natural-image response space, the top 2
+  signal PCs already explain about 91 percent of real signal variance and top
+  10 explains about 99.9 percent.
+- Check 6: real has lower full-covariance image-identity dprime than
+  stabilized (`dprime2_pop` 9.60 versus 11.14), but higher covariance
+  efficiency (`eta` 1.499 versus 1.117). Random controls are comparable to or
+  above real on `eta`, so this is not trajectory-optimality evidence.
+- Check 7: train-fold residual-PCA remove-out does not improve real
+  image-identity decoding (`delta` -0.009 at k=2, 0.000 at k=10).
+- Check 8: skipped because the old 756-unit Figure 4/TFTS basis is not
+  compatible with this 16-channel natural-image response space.
+
+Interpretation: the natural-image center-channel population run supports a
+bounded covariance-efficiency claim for real retinal motion relative to
+stabilization, but not the stronger e-optotype scaffold claim of
+real-specific alignment or recoverability.
+
+The natural-image and e-optotype runs are not yet matched analyses: this run
+uses 16 center-channel responses, 27 image classes, and 4 trace-window repeats,
+whereas the e-optotype scaffold used 756 response channels, 4 orientation
+classes, and up to 128 trials per orientation. Treat differences between them
+as a prompt for a matched response-space/repeat-count control, not as direct
+stimulus-domain evidence. Also note that twininfo `stabilized` is
+trial-mean-stabilized for each selected trace, not the e-optotype
+`fixed_center` condition.
+
+Historical e-optotype scaffold outputs are kept only as development artifacts:
+
+```text
+outputs/active_sensing_movie_information/figure5_cached_rate_checks_5_to_9_fixed_lm-020/
+outputs/active_sensing_movie_information/figure5_cached_rate_checks_5_to_9_check8_tfts_delta025_lm-020/
+```
+
+Do not use those e-optotype outputs as Figure 5 evidence. They were useful for
+debugging the population-coding machinery, but the active-sensing claim is
+natural-image-only.
+
 ## Working Interpretation
 
 The active-sensing hypothesis should not be forced to prove itself through tangent-subspace recruitment. Magnitude is not only a confound here: image power, edge energy, and motion-induced response gain may be part of the mechanism. A useful figure should therefore report both absolute information gain and control-normalized gains.

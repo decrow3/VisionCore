@@ -8,12 +8,12 @@ image-generalizing reafferent geometry.
 Data-forward version: schematics replaced with real data panels.
 
 Panels:
-  A - Recorded FEM covariance is low-dimensional
-  B - Local translation directions are image-specific
-  C - Pooled translation tangents occupy a compact subspace
-  D - Compactness generalizes across image identity
-  E - Compact tangents capture FEM-related displacement sensitivity
-  F - Model-derived translation covariance predicts recorded FEM covariance
+  A - Local translation directions are image-specific
+  B - Pooled translation tangents occupy a compact subspace
+  C - Compactness generalizes across image identity
+  D - Compact tangents capture FEM-related displacement sensitivity
+  E - Model-derived translation covariance predicts recorded FEM covariance
+  F - Local tangent prediction is drift-scale
 
   Supplement (not in main compose): compactness across scales → plot_supp_scales()
 
@@ -97,17 +97,19 @@ class DataPaths:
     spec_file:        Optional[Path]
     tangent_maps:     Optional[Path]
     v1_cache:         Optional[Path]
-    information_file:            Optional[Path]  # capture summary (Panel E)
-    information_null_file:       Optional[Path]  # basis_null_summary (Panel E preferred)
-    null_spectrum_summary_file:  Optional[Path]  # per-component null band (Panel C)
-    panel_f_file:                Optional[Path]  # covariance overlap summary (Panel F)
-    panel_f_natural_file:        Optional[Path]  # natural-structure Panel F diagnostic
+    information_file:            Optional[Path]  # capture summary (Panel D)
+    information_null_file:       Optional[Path]  # basis_null_summary (Panel D preferred)
+    null_spectrum_summary_file:  Optional[Path]  # per-component null band (Panel B)
+    panel_f_file:                Optional[Path]  # covariance overlap summary (Panel E fallback)
+    panel_f_natural_file:        Optional[Path]  # natural-structure Panel E fallback
     panel_f_closure_summary_file: Optional[Path] # finite-difference closure headline rows
     panel_f_closure_metrics_file: Optional[Path] # finite-difference per-session metric rows
     panel_f_closure_audit_file:   Optional[Path] # finite-difference provenance audit
     panel_f_compact_closure_summary_file: Optional[Path] # compact-k10 closure companion
     panel_f_metric:              str             # which metric is in panel_f_file
     panel_f_fem_ranges:          Optional[dict]  # empirical drift/microsaccade bands
+    curvature_plot_data_file:    Optional[Path]  # v11 curvature/amplitude-law plotted summary
+    curvature_metrics_file:      Optional[Path]  # v11 per-session pointwise prediction rows
     basis_source_label: str
     warnings: list[str] = field(default_factory=list)
 
@@ -147,13 +149,13 @@ def resolve_paths(tfts_root: Path) -> DataPaths:
             panel_f_metric = _m
             break
     if panel_f_file is None:
-        w.append("Panel F information file not found; Panel F will show placeholder. "
+        w.append("Panel E fallback information file not found; Panel E may show placeholder. "
                  "Run declan/fig4_cov_TFTS/run_panelF_covariance_overlap.py to generate it.")
     panel_f_natural_file = _first([
         VISIONCORE_ROOT / "outputs" / "panelF_natural_structure" / "panelF_natural_structure_scale_sweep.csv",
     ])
     if panel_f_natural_file is None:
-        w.append("Natural-structure Panel F file not found; using diagnostic Panel F if available. "
+        w.append("Natural-structure Panel E fallback file not found; using diagnostic Panel E if available. "
                  "Run declan/fig4_cov_TFTS/run_panelF_natural_structure.py to generate it.")
     _closure_root = VISIONCORE_ROOT / "outputs" / "matched_twin_covariance_closure_finite_difference"
     panel_f_closure_summary_file = _first([
@@ -170,13 +172,13 @@ def resolve_paths(tfts_root: Path) -> DataPaths:
         _compact_closure_root / "finite_difference_headline_raw_psd_bootstrap.csv",
     ])
     if panel_f_closure_summary_file is None or panel_f_closure_metrics_file is None:
-        w.append("Finite-difference closure Panel F files not found; Panel F will fall back to older diagnostic data. "
+        w.append("Finite-difference closure Panel E files not found; Panel E will fall back to older diagnostic data. "
                  "Run declan.matched_twin_covariance_closure.run_finite_difference_closure and summarize_finite_difference_results.")
     else:
         w[:] = [
             msg for msg in w
-            if "Panel F information file not found" not in msg
-            and "Natural-structure Panel F file not found" not in msg
+            if "Panel E fallback information file not found" not in msg
+            and "Natural-structure Panel E fallback file not found" not in msg
             and "panelF_fem_ranges.json not found" not in msg
         ]
     _fem_ranges_json = _panelf_root / "panelF_fem_ranges.json"
@@ -186,7 +188,7 @@ def resolve_paths(tfts_root: Path) -> DataPaths:
         with open(_fem_ranges_json, encoding="utf-8") as _fh:
             panel_f_fem_ranges = _json.load(_fh)
     else:
-        w.append("panelF_fem_ranges.json not found; Panel F will use placeholder regime bands. "
+        w.append("panelF_fem_ranges.json not found; Panel E fallback will use placeholder regime bands. "
                  "Run run_panelF_covariance_overlap.py --metric fem_ranges to compute them.")
     report_file  = _first([tfts_root / "MANUSCRIPT_REPORT.md"])
     summary_file = _first([tfts_root / "twin_feature_tangent_summary.json"])
@@ -197,7 +199,7 @@ def resolve_paths(tfts_root: Path) -> DataPaths:
     ])
     v1_cache     = _first([CACHE_DIR / "fig2_decomposition.pkl",
                             VISIONCORE_ROOT / "outputs" / "cache" / "fig2_decomposition.pkl"])
-    # Tangent-subspace information result (Panel E) — written by run_tangent_subspace_information.py
+    # Tangent-subspace information result (Panel D) — written by run_tangent_subspace_information.py
     information_file = _first([
         VISIONCORE_ROOT / "outputs" / "tangent_subspace_information"
         / "panelE_production_fisher" / "results"
@@ -220,10 +222,26 @@ def resolve_paths(tfts_root: Path) -> DataPaths:
         if p is None:
             w.append(f"Missing {name}; panel may use fallback values.")
 
-    if v1_cache is None:
-        w.append("fig2_decomposition.pkl not found; Panel A will be skipped.")
     if information_file is None:
-        w.append("Panel E information file not found; Panel E will show placeholder.")
+        w.append("Panel D information file not found; Panel D will show placeholder.")
+    _curvature_root = (
+        VISIONCORE_ROOT
+        / "outputs"
+        / "covTFTS_v11_remaining_analysis"
+        / "curvature_amplitude_law_all_sessions_ms128"
+    )
+    curvature_plot_data_file = _first([
+        _curvature_root
+        / "figures"
+        / "curvature_amplitude_law_main_and_session_audit"
+        / "curvature_amplitude_law_main_plot_data.csv",
+    ])
+    curvature_metrics_file = _first([
+        _curvature_root / "curvature_amplitude_law_metrics.csv",
+    ])
+    if curvature_plot_data_file is None or curvature_metrics_file is None:
+        w.append("Curvature/amplitude-law data not found; final curvature panel will show placeholder. "
+                 "Run declan/fig4_cov_TFTS/plot_curvature_amplitude_law_publication.py.")
 
     return DataPaths(
         tfts_root=tfts_root,
@@ -240,6 +258,8 @@ def resolve_paths(tfts_root: Path) -> DataPaths:
         panel_f_compact_closure_summary_file=panel_f_compact_closure_summary_file,
         panel_f_metric=panel_f_metric,
         panel_f_fem_ranges=panel_f_fem_ranges,
+        curvature_plot_data_file=curvature_plot_data_file,
+        curvature_metrics_file=curvature_metrics_file,
         information_null_file=information_null_file,
         basis_source_label=basis_label, warnings=w,
     )
@@ -420,6 +440,73 @@ def load_panel_f_compact_closure(paths: DataPaths) -> Optional[pd.DataFrame]:
     return df if len(df) else None
 
 
+def load_curvature_panel(paths: DataPaths) -> Optional[pd.DataFrame]:
+    """Load the v11 curvature/amplitude-law summary for the final panel."""
+    if paths.curvature_plot_data_file is None or not paths.curvature_plot_data_file.exists():
+        return None
+    df = pd.read_csv(paths.curvature_plot_data_file)
+    return df if len(df) else None
+
+
+def load_curvature_metrics(paths: DataPaths) -> Optional[pd.DataFrame]:
+    """Load per-session pointwise finite-displacement prediction metrics."""
+    if paths.curvature_metrics_file is None or not paths.curvature_metrics_file.exists():
+        return None
+    df = pd.read_csv(paths.curvature_metrics_file)
+    return df if len(df) else None
+
+
+def describe_curvature_bins(metrics_df: Optional[pd.DataFrame]) -> str:
+    """Return a caption-ready mapping from descriptive curvature bins to arcmin values."""
+    if metrics_df is None or len(metrics_df) == 0:
+        return (
+            "The plotted displacement bins correspond to controlled offsets of "
+            "0.5, 1.5, 3.5, and 8.0 arcmin."
+        )
+    d = metrics_df[
+        (metrics_df["row_status"].astype(str) == "ok")
+        & (metrics_df["prediction_variant"].astype(str) == "compact_k10_tangent")
+    ].copy()
+    if len(d) == 0:
+        d = metrics_df[metrics_df["row_status"].astype(str) == "ok"].copy()
+    if len(d) == 0:
+        return (
+            "The plotted displacement bins correspond to controlled offsets of "
+            "0.5, 1.5, 3.5, and 8.0 arcmin."
+        )
+    label_map = {
+        "drift_scale": "drift",
+        "intermediate": "intermediate",
+        "microsaccade_scale": "micro",
+        "larger_offsets": "large",
+    }
+    rows = []
+    for amp_bin, g in d.groupby("amplitude_bin", sort=False):
+        low = pd.to_numeric(g["bin_low_arcmin"], errors="coerce").dropna()
+        high_raw = g["bin_high_arcmin"].astype(str).iloc[0]
+        median = pd.to_numeric(g["amplitude_arcmin_median"], errors="coerce").dropna()
+        if len(low) == 0 or len(median) == 0:
+            continue
+        low_v = float(low.iloc[0])
+        med_v = float(np.nanmedian(median))
+        if high_raw.lower() == "inf":
+            range_txt = f">{low_v:g}"
+        else:
+            try:
+                high_v = float(high_raw)
+                range_txt = f"{low_v:g}-{high_v:g}"
+            except Exception:
+                range_txt = f"{low_v:g}-{high_raw}"
+        label = label_map.get(str(amp_bin), str(amp_bin))
+        rows.append((low_v, f"{label}={med_v:g} arcmin ({range_txt} arcmin bin)"))
+    if not rows:
+        return (
+            "The plotted displacement bins correspond to controlled offsets of "
+            "0.5, 1.5, 3.5, and 8.0 arcmin."
+        )
+    return "The plotted displacement bins are " + "; ".join(txt for _, txt in sorted(rows)) + "."
+
+
 def load_union_spectrum(paths: DataPaths, delta: float = 0.25, n_show: int = 40) -> pd.DataFrame:
     if paths.spec_file is None:
         return pd.DataFrame()
@@ -542,14 +629,14 @@ def _sampled_pairwise_cosines(vectors: np.ndarray, *, max_pairs: int = 50_000,
     return np.sum(v[i] * v[j], axis=1)
 
 
-def plot_panel_b(ax: plt.Axes, tangent_data: dict, n_show: int = 24):
+def plot_panel_b(ax: plt.Axes, tangent_data: dict, n_show: int = 24, *, letter: str = "B"):
     """Panel B: image-specific local translation charts.
 
     When r0 is available (new pickle): projects base responses into response PCA
     and draws bx/by tangent arrows from each anchor point — a true response-
     manifold chart.  Falls back to the tangent-PCA paired-glyph view otherwise.
     """
-    panel_label(ax, "B", "Local translation directions\nare image-specific")
+    panel_label(ax, letter, "Local translation directions\nare image-specific")
 
     bx = np.asarray(tangent_data["bx"], dtype=np.float64)
     by = np.asarray(tangent_data["by"], dtype=np.float64)
@@ -685,9 +772,9 @@ def plot_panel_b(ax: plt.Axes, tangent_data: dict, n_show: int = 24):
 
 
 def plot_panel_c(ax: plt.Axes, spec_df: pd.DataFrame, union_df: pd.DataFrame,
-                 null_spec_df: Optional[pd.DataFrame] = None):
+                 null_spec_df: Optional[pd.DataFrame] = None, *, letter: str = "C"):
     """Panel C: cumulative tangent variance spectrum vs unit-shuffle null band."""
-    panel_label(ax, "C", "Pooled translation tangents\noccupy a compact subspace")
+    panel_label(ax, letter, "Pooled translation tangents\noccupy a compact subspace")
 
     if spec_df is None or len(spec_df) == 0:
         ax.text(0.5, 0.5, "spectrum data not found", transform=ax.transAxes,
@@ -786,8 +873,14 @@ def plot_panel_d(ax: plt.Axes, union_df: pd.DataFrame):
         bbox=dict(boxstyle="round,pad=0.22", fc="white", ec="0.85", lw=0.6, alpha=0.95))
 
 
-def plot_panel_e(ax: plt.Axes, basis_df: pd.DataFrame, basis_source_label: str):
-    panel_label(ax, "D", "Compactness generalizes\nacross image identity")
+def plot_panel_e(
+    ax: plt.Axes,
+    basis_df: pd.DataFrame,
+    basis_source_label: str,
+    *,
+    letter: str = "D",
+):
+    panel_label(ax, letter, "Compactness generalizes\nacross image identity")
     df = basis_df.copy()
     if "basis_rank_k" not in df.columns and "k" in df.columns:
         df = df.rename(columns={"k": "basis_rank_k"})
@@ -840,9 +933,10 @@ def plot_panel_f_natural(
     *,
     drift_band: tuple[float, float] = (1.0, 3.0),
     microsaccade_band: tuple[float, float] = (10.0, 50.0),
+    letter: str = "F",
 ):
     """Panel F: natural-image spatial-content diagnostic."""
-    panel_label(ax, "F", "Spatial content recruits compact geometry")
+    panel_label(ax, letter, "Spatial content recruits compact geometry")
 
     obj = panel_df[
         (panel_df["metric_name"].astype(str) == "tangent_subspace_fraction") &
@@ -979,6 +1073,7 @@ def plot_panel_f(
     drift_band: tuple[float, float] = (1.0, 3.0),
     microsaccade_band: tuple[float, float] = (10.0, 50.0),
     arcmin_per_cloud_scale: Optional[float] = None,
+    letter: str = "F",
 ):
     """Panel F: drift and microsaccades as operating regimes.
 
@@ -994,7 +1089,7 @@ def plot_panel_f(
         if metric == "fisher_r2"
         else "Tangent / FEM overlap across scales"
     )
-    panel_label(ax, "F", title)
+    panel_label(ax, letter, title)
 
     if panel_f_df is None or len(panel_f_df) == 0:
         ax.text(0.5, 0.52, "Panel F data not yet computed.",
@@ -1110,9 +1205,10 @@ def plot_panel_f_closure(
     closure_metrics: Optional[pd.DataFrame],
     closure_audit: Optional[dict],
     compact_summary: Optional[pd.DataFrame] = None,
+    letter: str = "F",
 ):
     """Panel F: matched finite-difference retinal-translation covariance closure."""
-    panel_label(ax, "F", "Model-derived translation\ncovariance predicts recorded\nFEM covariance")
+    panel_label(ax, letter, "Model-derived translation\ncovariance predicts recorded\nFEM covariance")
 
     if closure_summary is None or closure_metrics is None or len(closure_summary) == 0:
         ax.text(0.5, 0.52, "finite-difference closure\nnot found",
@@ -1332,9 +1428,11 @@ def plot_panel_e_information(
     ax: plt.Axes,
     null_summary_df: Optional[pd.DataFrame],
     capture_df: Optional[pd.DataFrame],
+    *,
+    letter: str = "E",
 ):
     """Panel E: tangent-subspace Fisher gain fraction, bar chart."""
-    panel_label(ax, "E", "Compact tangents capture\nFEM-related displacement\nsensitivity")
+    panel_label(ax, letter, "Compact tangents capture\nFEM-related displacement\nsensitivity")
 
     # Prefer pre-aggregated null summary; fall back to per-window capture CSV
     bar_df = None
@@ -1399,6 +1497,169 @@ def plot_panel_e_information(
                 ha="center", va="bottom", fontsize=7.0, color=MODEL, fontweight="bold")
 
 
+def plot_panel_curvature(
+    ax: plt.Axes,
+    metrics_df: Optional[pd.DataFrame],
+    summary_df: Optional[pd.DataFrame],
+    *,
+    letter: str = "F",
+):
+    """Final panel: local tangent prediction quality versus displacement scale."""
+    panel_label(ax, letter, "Local tangent prediction\nis drift-scale")
+
+    if metrics_df is None or len(metrics_df) == 0:
+        ax.text(0.5, 0.52, "curvature/amplitude-law\ndata not found",
+                transform=ax.transAxes, ha="center", va="center",
+                color=ACCENT, fontsize=8)
+        ax.text(0.5, 0.36,
+                "Run run_curvature_amplitude_law.py",
+                transform=ax.transAxes, ha="center", va="center",
+                color="0.50", fontsize=6.4, family="monospace")
+        clean_axes(ax, grid=True)
+        return
+
+    full = "full_linear_tangent"
+    compact = "compact_k10_tangent"
+    colors = {full: MODEL, compact: BRIDGE}
+    labels = {full: "Full tangent", compact: "Compact k=10"}
+    offsets = {full: 0.96, compact: 1.04}
+
+    m = metrics_df[
+        (metrics_df["row_status"].astype(str) == "ok")
+        & metrics_df["prediction_variant"].astype(str).isin([full, compact])
+    ].copy()
+    m["amplitude_arcmin_median"] = pd.to_numeric(m["amplitude_arcmin_median"], errors="coerce")
+    m["pointwise_r2"] = pd.to_numeric(m["pointwise_r2"], errors="coerce")
+    m = m[np.isfinite(m["amplitude_arcmin_median"]) & np.isfinite(m["pointwise_r2"])]
+    if len(m) == 0:
+        ax.text(0.5, 0.5, "curvature metrics malformed",
+                transform=ax.transAxes, ha="center", va="center",
+                color=ACCENT, fontsize=8)
+        clean_axes(ax, grid=True)
+        return
+
+    bin_x = (
+        m.groupby("amplitude_bin", as_index=True)["amplitude_arcmin_median"]
+        .median()
+        .to_dict()
+    )
+    x_base = np.array(sorted(float(v) for v in bin_x.values()))
+
+    for source in [full, compact]:
+        d_source = m[m["prediction_variant"].astype(str) == source]
+        for _session, g in d_source.groupby("session"):
+            g = g.sort_values("amplitude_arcmin_median")
+            ax.plot(
+                g["amplitude_arcmin_median"].to_numpy(float) * offsets[source],
+                g["pointwise_r2"].to_numpy(float),
+                color=colors[source],
+                alpha=0.16,
+                linewidth=0.75,
+                zorder=1,
+            )
+            ax.scatter(
+                g["amplitude_arcmin_median"].to_numpy(float) * offsets[source],
+                g["pointwise_r2"].to_numpy(float),
+                color=colors[source],
+                alpha=0.20,
+                s=9,
+                edgecolor="none",
+                zorder=2,
+            )
+
+    summary = summary_df if summary_df is not None else pd.DataFrame()
+    handles: list[Line2D] = []
+    for source in [full, compact]:
+        d = summary[
+            (summary["panel_metric"].astype(str) == "pointwise_r2")
+            & (summary["source_variant"].astype(str) == source)
+        ].copy() if len(summary) else pd.DataFrame()
+        if len(d):
+            d["x"] = d["amplitude_bin"].astype(str).map(bin_x)
+            d = d[np.isfinite(pd.to_numeric(d["x"], errors="coerce"))].sort_values("x")
+            x = d["x"].to_numpy(dtype=float) * offsets[source]
+            mean = d["mean"].to_numpy(dtype=float)
+            lo = d["ci_low"].to_numpy(dtype=float)
+            hi = d["ci_high"].to_numpy(dtype=float)
+        else:
+            g = (
+                m[m["prediction_variant"].astype(str) == source]
+                .groupby("amplitude_arcmin_median", as_index=False)
+                .agg(
+                    mean=("pointwise_r2", "mean"),
+                    ci_low=("pointwise_r2", lambda x: np.nanpercentile(x, 2.5)),
+                    ci_high=("pointwise_r2", lambda x: np.nanpercentile(x, 97.5)),
+                )
+                .sort_values("amplitude_arcmin_median")
+            )
+            x = g["amplitude_arcmin_median"].to_numpy(dtype=float) * offsets[source]
+            mean = g["mean"].to_numpy(dtype=float)
+            lo = g["ci_low"].to_numpy(dtype=float)
+            hi = g["ci_high"].to_numpy(dtype=float)
+
+        ax.fill_between(x, lo, hi, color=colors[source], alpha=0.13, linewidth=0, zorder=3)
+        line, = ax.plot(
+            x,
+            mean,
+            "o-",
+            color=colors[source],
+            lw=2.0,
+            markersize=4.6,
+            markeredgecolor="white",
+            markeredgewidth=0.5,
+            zorder=4,
+            label=labels[source],
+        )
+        handles.append(line)
+
+    anchors = {}
+    if len(summary):
+        for key in ["empirical_eye_step_arcmin_p50", "empirical_eye_step_arcmin_p90"]:
+            row = summary[
+                (summary["panel_metric"].astype(str) == "empirical_eye_anchor_arcmin")
+                & (summary["source_variant"].astype(str) == key)
+            ]
+            if len(row):
+                anchors[key] = float(row["mean"].iloc[0])
+    anchors.setdefault("empirical_eye_step_arcmin_p50", 2.06)
+    anchors.setdefault("empirical_eye_step_arcmin_p90", 23.23)
+
+    for key, linestyle, label, y_text in [
+        ("empirical_eye_step_arcmin_p50", "-", "eye step p50", 0.96),
+        ("empirical_eye_step_arcmin_p90", "--", "eye step p90", 0.89),
+    ]:
+        x_anchor = anchors[key]
+        ax.axvline(x_anchor, color=ACCENT, linestyle=linestyle, linewidth=1.1, alpha=0.85, zorder=0)
+        ax.text(
+            x_anchor,
+            y_text,
+            f"{label}\n{x_anchor:.2f}'",
+            transform=ax.get_xaxis_transform(),
+            ha="center",
+            va="top",
+            fontsize=6.2,
+            color=ACCENT,
+            bbox=dict(boxstyle="round,pad=0.16", fc="white", ec="none", alpha=0.78),
+        )
+
+    ax.axhline(0, color="0.35", lw=0.8, ls=":", zorder=0)
+    ax.set_xscale("log")
+    xmax = max(float(np.nanmax(x_base)) * 1.35, anchors["empirical_eye_step_arcmin_p90"] * 1.20)
+    xmin = max(0.18, float(np.nanmin(x_base)) * 0.72)
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(-2.25, 0.55)
+    ticks = [0.5, 1.5, 3.5, 8.0, anchors["empirical_eye_step_arcmin_p90"]]
+    ticks = [t for t in ticks if xmin <= t <= xmax]
+    ax.set_xticks(ticks)
+    ax.set_xticklabels([f"{t:g}" if t < 10 else f"{t:.0f}" for t in ticks])
+    ax.xaxis.set_minor_locator(mpl.ticker.NullLocator())
+    ax.set_xlabel("Retinal displacement scale (arcmin)")
+    ax.set_ylabel("Pointwise prediction $R^2$")
+    clean_axes(ax, grid=True)
+    ax.legend(handles=handles, frameon=False, loc="lower left",
+              handlelength=1.4, labelspacing=0.35)
+
+
 def _fmt(x: object, digits: int = 3) -> str:
     try:
         xf = float(x)
@@ -1439,6 +1700,8 @@ def build_methods_text(
     closure_summary_df: Optional[pd.DataFrame],
     closure_audit: Optional[dict],
     compact_closure_summary_df: Optional[pd.DataFrame],
+    curvature_df: Optional[pd.DataFrame],
+    curvature_metrics_df: Optional[pd.DataFrame],
 ) -> str:
     """Build a panel-by-panel methods sidecar for the rendered figure."""
     lines: list[str] = []
@@ -1448,33 +1711,34 @@ def build_methods_text(
     lines.append("")
     lines.append("## Source Files")
     source_rows = [
-        ("Recorded V1 cache", paths.v1_cache),
         ("Tangent maps", paths.tangent_maps),
         ("Union spectrum", paths.spec_file),
         ("Union summary", paths.union_file),
         ("Image-disjoint basis summary", paths.basis_file),
-        ("Panel E Fisher summary", paths.information_file),
-        ("Panel E basis/null summary", paths.information_null_file),
-        ("Panel F finite-difference headline", paths.panel_f_closure_summary_file),
-        ("Panel F finite-difference metrics", paths.panel_f_closure_metrics_file),
-        ("Panel F finite-difference audit", paths.panel_f_closure_audit_file),
-        ("Panel F compact-k10 headline", paths.panel_f_compact_closure_summary_file),
+        ("Panel D Fisher summary", paths.information_file),
+        ("Panel D basis/null summary", paths.information_null_file),
+        ("Panel E finite-difference headline", paths.panel_f_closure_summary_file),
+        ("Panel E finite-difference metrics", paths.panel_f_closure_metrics_file),
+        ("Panel E finite-difference audit", paths.panel_f_closure_audit_file),
+        ("Panel E compact-k10 headline", paths.panel_f_compact_closure_summary_file),
+        ("Panel F curvature/amplitude-law summary", paths.curvature_plot_data_file),
+        ("Panel F curvature/amplitude-law metrics", paths.curvature_metrics_file),
         (
-            "Panel F RF/readout-preserving control headline",
+            "Panel E RF/readout-preserving control headline",
             VISIONCORE_ROOT
             / "outputs"
             / "matched_twin_covariance_closure_rf_null_step025_rfbacked_v2"
             / "finite_difference_headline_raw_psd_bootstrap.csv",
         ),
         (
-            "Panel F RF/readout-preserving control audit",
+            "Panel E RF/readout-preserving control audit",
             VISIONCORE_ROOT
             / "outputs"
             / "matched_twin_covariance_closure_rf_null_step025_rfbacked_v2"
             / "finite_difference_provenance_audit.json",
         ),
         (
-            "Panel F RF/readout-preserving unit-bin audit",
+            "Panel E RF/readout-preserving unit-bin audit",
             VISIONCORE_ROOT
             / "outputs"
             / "matched_twin_covariance_closure_rf_null_step025_rfbacked_v2"
@@ -1493,34 +1757,7 @@ def build_methods_text(
     lines.append("- Projection controls remove nuisance modes with `P = I - Q Q.T`; target and source covariances are replaced by `P @ Sigma @ P` before capture is computed.")
 
     lines.append("")
-    lines.append("## Panel A. Recorded FEM Covariance Is Low-Dimensional")
-    lines.append("Source: `fig2_decomposition.pkl`, window index 2.")
-    lines.append("For each recorded session, the left subpanel computes the mean off-diagonal noise correlation before and after conditioning on measured eye position:")
-    lines.append("")
-    lines.append("```text")
-    lines.append("mean_noise_corr = mean_{i<j} NoiseCorr[i,j]")
-    lines.append("```")
-    lines.append("")
-    lines.append("The right subpanel plots the cumulative FEM-linked covariance spectrum:")
-    lines.append("")
-    lines.append("```text")
-    lines.append("lambda = positive_eigenvalues(Sigma_FEM)")
-    lines.append("cumulative_fraction(k) = sum_{r<=k} lambda_r / sum_r lambda_r")
-    lines.append("```")
-    if v1_data is not None:
-        nc_u = np.asarray(v1_data.get("nc_u", []), dtype=float)
-        nc_c = np.asarray(v1_data.get("nc_c", []), dtype=float)
-        lines.append("")
-        lines.append("Audit:")
-        lines.append(f"- sessions: `{len(nc_u)}`")
-        lines.append(f"- window: `{_fmt(v1_data.get('window_ms'), 3)} ms`")
-        lines.append(f"- mean uncorrected noise correlation: `{_fmt(np.nanmean(nc_u), 4)}`")
-        lines.append(f"- mean eye-position-corrected noise correlation: `{_fmt(np.nanmean(nc_c), 4)}`")
-        lines.append(f"- mean corrected-minus-uncorrected change: `{_fmt(np.nanmean(nc_c - nc_u), 4)}`")
-        lines.append("- inventory note: Panel A uses the recorded-decomposition cache available for this anchor panel (`n=8` sessions), whereas Panel F uses the larger matched recorded/twin finite-difference closure inventory (`n=24` Allen/Logan sessions). The session counts therefore intentionally differ.")
-
-    lines.append("")
-    lines.append("## Panel B. Local Translation Directions Are Image-Specific")
+    lines.append("## Panel A. Local Translation Directions Are Image-Specific")
     lines.append("Source: `tangent_maps/twin_tangent_maps.pkl`, using the delta closest to 0.25 arcmin.")
     lines.append("For each image/history object, the fitted twin is evaluated under small horizontal and vertical retinal translations. Central finite differences define local tangent vectors:")
     lines.append("")
@@ -1547,7 +1784,7 @@ def build_methods_text(
             lines.append(f"- IQR cross-object `cos(b_y(I),b_y(J))`: `[{_fmt(np.nanpercentile(cos_yy, 25), 3)}, {_fmt(np.nanpercentile(cos_yy, 75), 3)}]`")
 
     lines.append("")
-    lines.append("## Panel C. Pooled Translation Tangents Occupy a Compact Subspace")
+    lines.append("## Panel B. Pooled Translation Tangents Occupy a Compact Subspace")
     lines.append("Source: `union_spectrum/twin_tangent_union_spectrum.csv` and image-disjoint union summary.")
     lines.append("The pooled tangent family stacks horizontal and vertical local tangents across valid objects:")
     lines.append("")
@@ -1568,7 +1805,7 @@ def build_methods_text(
         lines.append(f"- unit-shuffle PR 95% interval: `[{_fmt(row_c.get('null_pr_ci_low'), 3)}, {_fmt(row_c.get('null_pr_ci_high'), 3)}]`")
 
     lines.append("")
-    lines.append("## Panel D. Compactness Generalizes Across Image Identity")
+    lines.append("## Panel C. Compactness Generalizes Across Image Identity")
     lines.append("Source: image-disjoint train/test basis summary.")
     lines.append("For each split, a compact tangent basis is learned from one set of image identities and tested on held-out image identities:")
     lines.append("")
@@ -1590,7 +1827,7 @@ def build_methods_text(
                 lines.append(f"| {int(rr['basis_rank_k'])} | {_fmt(rr['capture'], 3)} | {_fmt(rr['null'], 3)} |")
 
     lines.append("")
-    lines.append("## Panel E. Compact Tangents Capture FEM-Related Displacement Sensitivity")
+    lines.append("## Panel D. Compact Tangents Capture FEM-Related Displacement Sensitivity")
     lines.append("Source: `tangent_subspace_information` production Fisher summaries.")
     lines.append("For each held-out image/window, a derivative-projection Poisson Fisher analysis compares local displacement sensitivity along real-FEM and stabilized histories. With predicted rate `mu` and displacement derivative `dmu/dalpha`, the local Poisson Fisher form is:")
     lines.append("")
@@ -1599,7 +1836,7 @@ def build_methods_text(
     lines.append("```")
     lines.append("")
     lines.append("For a basis `U`, derivatives are projected into the basis before computing the gain. The plotted quantity is the fraction of the full real-versus-stabilized FEM Fisher gain captured by each basis family.")
-    lines.append("Guardrail: Panel E uses a diagonal Poisson local Fisher metric to quantify displacement sensitivity in model response space; it is not a full measured-noise information calculation and does not use the recorded residual covariance.")
+    lines.append("Guardrail: Panel D uses a diagonal Poisson local Fisher metric to quantify displacement sensitivity in model response space; it is not a full measured-noise information calculation and does not use the recorded residual covariance.")
     bar_df = None
     if info_null_sum_df is not None and len(info_null_sum_df):
         bar_df = _panel_e_bars_from_null_summary(info_null_sum_df)
@@ -1618,9 +1855,9 @@ def build_methods_text(
             )
 
     lines.append("")
-    lines.append("## Panel F. Model-Derived Translation Covariance Predicts Recorded FEM Covariance")
+    lines.append("## Panel E. Model-Derived Translation Covariance Predicts Recorded FEM Covariance")
     lines.append("Source: finite-difference matched twin/recorded closure outputs.")
-    lines.append("Provenance check: the finite-difference Jacobians for Panel F were recomputed live from `fig3_digitaltwin_best.ckpt` with `fig3_digitaltwin_model_config.yaml` and `fig3_digitaltwin_multi_basic_120_long.yaml`; they were not loaded from `twin_tangent_maps.pkl` and did not use a separately converted feature cache. `twin_tangent_maps.pkl` is used for Panels B-D, not for the matched recorded/twin closure.")
+    lines.append("Provenance check: the finite-difference Jacobians for Panel E were recomputed live from `fig3_digitaltwin_best.ckpt` with `fig3_digitaltwin_model_config.yaml` and `fig3_digitaltwin_multi_basic_120_long.yaml`; they were not loaded from `twin_tangent_maps.pkl` and did not use a separately converted feature cache. `twin_tangent_maps.pkl` is used for Panels A-C, not for the matched recorded/twin closure.")
     lines.append("The recorded target is the matched-unit FEM covariance from `fig2_decomposition_ryan.pkl`, window index 1. PSD target rows use eigenvalue clipping:")
     lines.append("")
     lines.append("```text")
@@ -1657,7 +1894,7 @@ def build_methods_text(
     lines.append("Thus the inset asks whether the recorded-covariance prediction survives after the FD source is forced to live in the compact tangent geometry, rather than merely in the full FD translation covariance.")
     if closure_summary_df is not None and len(closure_summary_df):
         lines.append("")
-        lines.append("Main Panel F audit, PSD target, full finite-difference source, source eigenspace k=2:")
+        lines.append("Main Panel E audit, PSD target, full finite-difference source, source eigenspace k=2:")
         lines.append("")
         lines.append("| projection control | capture | effect over unit-shuffle | 95% bootstrap interval | sign |")
         lines.append("|---|---:|---:|---:|---:|")
@@ -1738,7 +1975,7 @@ def build_methods_text(
     lines.append("- Control output root: `/home/declan/VisionCore/outputs/matched_twin_covariance_closure_rf_null_step025_rfbacked_v2`.")
     lines.append("- This run repeats the finite-difference closure with fixed within-bin source-unit permutations, where bins preserve recorded RF location when available plus tangent norm, mean rate, and `ccnorm` subject to a minimum bin size of 6 units.")
     lines.append("- STA/STE RF caches were available for all 24 matched sessions; the final bin audit reports `ok_rf_bins` for 24/24 sessions. Large sessions use 2D RF quantile bins, and small sessions use a 1D RF split when a 2D split would violate the minimum-bin constraint.")
-    lines.append("- The main Panel F plotted y-axis remains excess capture over the unit-shuffle null; the RF/readout null is a stricter reviewer-facing control rather than the plotted reference.")
+    lines.append("- The main Panel E plotted y-axis remains excess capture over the unit-shuffle null; the RF/readout null is a stricter reviewer-facing control rather than the plotted reference.")
     lines.append("")
     lines.append("RF/readout-preserving control, PSD target, global-rate + target-PC1 removed, source eigenspace k=2:")
     lines.append("")
@@ -1765,10 +2002,58 @@ def build_methods_text(
         lines.append(f"- clipped negative eigenspectrum mass: `{_fmt(closure_audit.get('target_negative_eigenvalue_mass_total_raw'), 3)}`")
 
     lines.append("")
+    lines.append("## Panel F. Local Tangent Prediction Is Drift-Scale")
+    lines.append("Source: v11 curvature/amplitude-law metrics, `curvature_amplitude_law_metrics.csv`, plus mean/CI and empirical eye-step anchors from `curvature_amplitude_law_main_plot_data.csv`.")
+    lines.append("The final panel plots pointwise prediction quality for finite translated responses from local tangents:")
+    lines.append("")
+    lines.append("```text")
+    lines.append("pointwise_R2 = 1 - ||actual finite response - tangent prediction||^2 / ||actual finite response||^2")
+    lines.append("```")
+    lines.append("")
+    lines.append("Full tangent and compact k=10 predictions are shown separately. Faint lines/points are individual sessions; heavy curves show cross-session means with 95% intervals. Vertical red anchors show empirical within-trial eye-step amplitudes.")
+    if curvature_df is not None and len(curvature_df):
+        c = curvature_df[curvature_df["panel_metric"].astype(str) == "pointwise_r2"].copy()
+        if len(c):
+            lines.append("")
+            lines.append("Audit:")
+            lines.append("")
+            lines.append("| bin | full tangent R2 | compact k=10 R2 |")
+            lines.append("|---|---:|---:|")
+            bins = (
+                c[["amplitude_bin", "x_index", "x_label"]]
+                .drop_duplicates()
+                .sort_values("x_index")
+            )
+            for _, b in bins.iterrows():
+                label = str(b["x_label"])
+                amp = str(b["amplitude_bin"])
+                r2_full = c[(c["amplitude_bin"].astype(str) == amp) & (c["source_variant"].astype(str) == "full_linear_tangent")]
+                r2_comp = c[(c["amplitude_bin"].astype(str) == amp) & (c["source_variant"].astype(str) == "compact_k10_tangent")]
+                lines.append(
+                    f"| {label} | {_fmt(r2_full['mean'].iloc[0] if len(r2_full) else None, 3)} | "
+                    f"{_fmt(r2_comp['mean'].iloc[0] if len(r2_comp) else None, 3)} |"
+                )
+            for key, label in [
+                ("empirical_eye_step_arcmin_p50", "empirical eye-step p50"),
+                ("empirical_eye_step_arcmin_p90", "empirical eye-step p90"),
+            ]:
+                row = curvature_df[
+                    (curvature_df["panel_metric"].astype(str) == "empirical_eye_anchor_arcmin")
+                    & (curvature_df["source_variant"].astype(str) == key)
+                ]
+                if len(row):
+                    lines.append(f"- {label}: `{_fmt(row['mean'].iloc[0], 2)} arcmin`")
+    if curvature_metrics_df is not None and len(curvature_metrics_df):
+        ok = curvature_metrics_df[curvature_metrics_df["row_status"].astype(str) == "ok"]
+        lines.append(f"- session traces plotted from `{int(ok['session'].nunique())}` sessions.")
+
+    lines.append("")
     lines.append("## Interpretation Guardrails")
-    lines.append("- Panel F supports a robust first-order retinal-translation component of recorded FEM shared variability; it does not claim that all recorded FEM covariance is explained.")
-    lines.append("- The compact-k10 inset tests whether the covariance bridge survives restriction to the compact tangent geometry. In the current run, the controlled compact effect is essentially the same size as the controlled full finite-difference effect.")
-    lines.append("- PSD-clipped targets are shown in the main panel; raw target rows are retained in the finite-difference CSVs and the controlled raw effects are reported above to disclose the impact of clipping.")
+    lines.append("- Panel E supports a robust first-order retinal-translation component of recorded FEM shared variability; it does not claim that all recorded FEM covariance is explained.")
+    lines.append("- The Panel E compact-k10 inset tests whether the covariance bridge survives restriction to the compact tangent geometry. In the current run, the controlled compact effect is essentially the same size as the controlled full finite-difference effect.")
+    lines.append("- Panel F should not be read as evidence for exact finite-step pointwise linearity beyond drift scale; it emphasizes local first-order prediction rather than a global translation code.")
+    lines.append("- Although not plotted in the main panel, the v11 curvature/amplitude-law output also shows stable compact covariance capture across the same displacement bins; that result can be carried in text, supplement, or a small companion inset.")
+    lines.append("- PSD-clipped targets are shown in Panel E; raw target rows are retained in the finite-difference CSVs and the controlled raw effects are reported above to disclose the impact of clipping.")
     lines.append("")
     return "\n".join(lines)
 
@@ -1815,56 +2100,43 @@ def compose(paths: DataPaths, out_dir: Path, *, dpi: int = 300):
     panel_f_compact_closure_summary_df = load_panel_f_compact_closure(paths)
     spec_df     = load_union_spectrum(paths, delta=0.25, n_show=32)
 
-    v1_data       = load_recorded_v1(paths.v1_cache)        if paths.v1_cache     else None
     tangent_data  = load_tangent_family(paths.tangent_maps) if paths.tangent_maps else None
     null_spec_df      = load_null_spectrum_summary(paths, delta=0.25, n_show=32)
     info_df           = load_information(paths)
     info_null_sum_df  = load_information_null_summary(paths)
+    curvature_df      = load_curvature_panel(paths)
+    curvature_metrics_df = load_curvature_metrics(paths)
+    curvature_bin_text = describe_curvature_bins(curvature_metrics_df)
 
     fig = plt.figure(figsize=(10.0, 7.5), constrained_layout=False)
     gs = GridSpec(2, 3, figure=fig,
                   left=0.07, right=0.97, bottom=0.085, top=0.89,
                   wspace=0.44, hspace=0.28)
 
-    # --- Panel A: two sub-panels inside gs[0, 0] ---
-    gs_a  = gs[0, 0].subgridspec(1, 2, wspace=0.60)
-    ax_nc   = fig.add_subplot(gs_a[0])
-    ax_spec = fig.add_subplot(gs_a[1])
-    if v1_data is not None:
-        plot_panel_a(ax_nc, ax_spec, v1_data)
+    # --- Panel A ---
+    ax_a = fig.add_subplot(gs[0, 0])
+    if tangent_data is not None:
+        plot_panel_b(ax_a, tangent_data, letter="A")
     else:
-        ax_nc.text(0.5, 0.5, "V1 data\nnot found", transform=ax_nc.transAxes,
-                   ha="center", va="center", color=ACCENT, fontsize=8)
-        clean_axes(ax_nc)
-
-    # Panel A label on a full-width invisible overlay so it aligns with B–F.
-    bbox = gs[0, 0].get_position(fig)
-    ax_a_lbl = fig.add_axes([bbox.x0, bbox.y0, bbox.width, bbox.height])
-    ax_a_lbl.set_axis_off()
-    panel_label(ax_a_lbl, "A", "Recorded FEM covariance\nis low-dimensional")
+        ax_a.text(0.5, 0.5, "tangent maps\nnot found", transform=ax_a.transAxes,
+                  ha="center", va="center", color=ACCENT, fontsize=8)
+        panel_label(ax_a, "A", "Local translation directions\nare image-specific")
+        clean_axes(ax_a)
 
     # --- Panel B ---
     ax_b = fig.add_subplot(gs[0, 1])
-    if tangent_data is not None:
-        plot_panel_b(ax_b, tangent_data)
-    else:
-        ax_b.text(0.5, 0.5, "tangent maps\nnot found", transform=ax_b.transAxes,
-                  ha="center", va="center", color=ACCENT, fontsize=8)
-        panel_label(ax_b, "B", "Local translation directions\nare image-specific")
-        clean_axes(ax_b)
+    plot_panel_c(ax_b, spec_df, union_df, null_spec_df=null_spec_df, letter="B")
 
     # --- Panel C ---
     ax_c = fig.add_subplot(gs[0, 2])
-    plot_panel_c(ax_c, spec_df, union_df, null_spec_df=null_spec_df)
+    plot_panel_e(ax_c, basis_df, paths.basis_source_label, letter="C")
 
-    # --- Panels D (generalization), E (information), F (bridge) ---
+    # --- Panel D ---
     ax_d = fig.add_subplot(gs[1, 0])
-    plot_panel_e(ax_d, basis_df, paths.basis_source_label)   # labeled "D" inside
+    plot_panel_e_information(ax_d, info_null_sum_df, info_df, letter="D")
 
+    # --- Panel E ---
     ax_e = fig.add_subplot(gs[1, 1])
-    plot_panel_e_information(ax_e, info_null_sum_df, info_df)
-
-    ax_f = fig.add_subplot(gs[1, 2])
     _fem = paths.panel_f_fem_ranges or {}
     _metric = paths.panel_f_metric
     # Bands always in arcmin; pass local_eye_sd so cloud_scale x-axes are converted
@@ -1872,23 +2144,30 @@ def compose(paths: DataPaths, out_dir: Path, *, dpi: int = 300):
     _msac_band  = tuple(_fem["msac_band_arcmin"])  if "msac_band_arcmin"  in _fem else (10.0, 50.0)
     if panel_f_closure_summary_df is not None and panel_f_closure_metrics_df is not None:
         plot_panel_f_closure(
-            ax_f,
+            ax_e,
             panel_f_closure_summary_df,
             panel_f_closure_metrics_df,
             panel_f_closure_audit,
             compact_summary=panel_f_compact_closure_summary_df,
+            letter="E",
         )
     elif panel_f_natural_df is not None and len(panel_f_natural_df):
-        plot_panel_f_natural(ax_f, panel_f_natural_df,
+        plot_panel_f_natural(ax_e, panel_f_natural_df,
                              drift_band=_drift_band,
-                             microsaccade_band=_msac_band)
+                             microsaccade_band=_msac_band,
+                             letter="E")
     else:
         # fisher_r2 cloud_scale is already an arcmin displacement sigma; covariance
         # style metrics use dimensionless cloud_scale multipliers.
         _arcmin_per_cs = None if _metric == "fisher_r2" else _fem.get("local_eye_sd_arcmin")
-        plot_panel_f(ax_f, panel_f_df, metric=_metric,
+        plot_panel_f(ax_e, panel_f_df, metric=_metric,
                      drift_band=_drift_band, microsaccade_band=_msac_band,
-                     arcmin_per_cloud_scale=_arcmin_per_cs)
+                     arcmin_per_cloud_scale=_arcmin_per_cs,
+                     letter="E")
+
+    # --- Panel F ---
+    ax_f = fig.add_subplot(gs[1, 2])
+    plot_panel_curvature(ax_f, curvature_metrics_df, curvature_df, letter="F")
 
     fig.suptitle(
         "Image-specific retinal translations form a compact, image-generalizing reafferent geometry",
@@ -1898,20 +2177,20 @@ def compose(paths: DataPaths, out_dir: Path, *, dpi: int = 300):
     for ext in ["png", "pdf", "svg"]:
         fig.savefig(out_dir / f"covTFTS_figure.{ext}", dpi=dpi, bbox_inches="tight")
 
-    caption = """Figure 4. Image-specific retinal translations form a compact, image-generalizing reafferent geometry.
+    caption = f"""Figure 4. Image-specific retinal translations form a compact, image-generalizing reafferent geometry.
 
-(A) Recorded FEM covariance is low-dimensional. Conditioning on measured eye position reduced mean noise correlations, and the FEM-linked covariance component removed by this conditioning was low-dimensional.
-(B) Local translation directions are image-specific. Each point is a full stimulus-history object projected into response PCA space. Arrows show local response tangents produced by small horizontal and vertical retinal translations, \\(b_x(I)\\) and \\(b_y(I)\\). The inset shows cross-image same-axis cosine distributions, indicating that tangent directions were content-dependent and did not define a universal signed x/y population axis.
-(C) Pooled translation tangents occupy a compact subspace. The cumulative variance spectrum of the pooled tangent family was substantially more compact than unit-shuffled controls. At 0.25 arcmin, the observed participation ratio was approximately 9, compared with approximately 31 for the unit-shuffled null.
-(D) Compactness generalizes across image identity. A tangent basis learned from one set of image identities captured held-out translation tangent variance above unit-shuffled nulls. A 10-dimensional image-disjoint basis captured approximately 0.50 of held-out tangent variance versus approximately 0.11 under the null, with no image-ID leakage.
-(E) Compact tangents capture FEM-related displacement sensitivity. A derivative-projection Poisson Fisher analysis measured local sensitivity to small counterfactual retinal translations along real-FEM and stabilized stimulus histories. The image-disjoint k=10 tangent basis captured approximately 0.53 of the real-versus-stabilized local spatial-displacement Fisher gain on held-out images, far above unit-shuffled and random null bases. The orthogonal complement contains the remaining partition of the full Fisher gain. Panel E uses a diagonal Poisson local Fisher metric to quantify displacement sensitivity in model response space; it is not a full measured-noise information calculation and does not use the recorded residual covariance.
-(F) Model-derived translation covariance predicts recorded FEM covariance. Finite-difference translation covariances computed in matched twin/recorded unit space captured recorded FEM covariance above a unit-shuffle null. The effect persisted after removing global-rate and target-PC1 modes, indicating a reliable first-order retinal-translation component of recorded FEM shared variability. Points show sessions; purple markers show means and confidence intervals. The y-axis is excess covariance capture over a unit-shuffled source-basis null. Capture remained positive across 24/24 sessions for all projection controls, including after removing both global-rate and target-PC1 components (PSD target mean +0.177 [0.144, 0.212]; sign p = 1.2e-07). Inset compares the controlled full finite-difference result with finite-difference responses cross-fit through the compact k=10 tangent subspace. PSD-clipped targets are shown; the corresponding raw-target controlled effect was also positive (mean +0.278 [0.108, 0.412], 22/24 sessions).
+(A) Local translation directions are image-specific. Each point is a full stimulus-history object projected into response PCA space. Arrows show local response tangents produced by small horizontal and vertical retinal translations, \\(b_x(I)\\) and \\(b_y(I)\\). The inset shows cross-image same-axis cosine distributions, indicating that tangent directions were content-dependent and did not define a universal signed x/y population axis.
+(B) Pooled translation tangents occupy a compact subspace. The cumulative variance spectrum of the pooled tangent family was substantially more compact than unit-shuffled controls. At 0.25 arcmin, the observed participation ratio was approximately 9, compared with approximately 31 for the unit-shuffled null.
+(C) Compactness generalizes across image identity. A tangent basis learned from one set of image identities captured held-out translation tangent variance above unit-shuffled nulls. A 10-dimensional image-disjoint basis captured approximately 0.50 of held-out tangent variance versus approximately 0.11 under the null, with no image-ID leakage.
+(D) Compact tangents capture FEM-related displacement sensitivity. A derivative-projection Poisson Fisher analysis measured local sensitivity to small counterfactual retinal translations along real-FEM and stabilized stimulus histories. The image-disjoint k=10 tangent basis captured approximately 0.53 of the real-versus-stabilized local spatial-displacement Fisher gain on held-out images, far above unit-shuffled and random null bases. The orthogonal complement contains the remaining partition of the full Fisher gain. Panel D uses a diagonal Poisson local Fisher metric to quantify displacement sensitivity in model response space; it is not a full measured-noise information calculation and does not use the recorded residual covariance.
+(E) Model-derived translation covariance predicts recorded FEM covariance. Finite-difference translation covariances computed in matched twin/recorded unit space captured recorded FEM covariance above a unit-shuffle null. The effect persisted after removing global-rate and target-PC1 modes, indicating a reliable first-order retinal-translation component of recorded FEM shared variability. Points show sessions; purple markers show means and confidence intervals. The y-axis is excess covariance capture over a unit-shuffled source-basis null. Capture remained positive across 24/24 sessions for all projection controls, including after removing both global-rate and target-PC1 components (PSD target mean +0.177 [0.144, 0.212]; sign p = 1.2e-07). Inset compares the controlled full finite-difference result with finite-difference responses cross-fit through the compact k=10 tangent subspace. PSD-clipped targets are shown; the corresponding raw-target controlled effect was also positive (mean +0.278 [0.108, 0.412], 22/24 sessions).
+(F) Local tangent prediction is drift-scale. Pointwise prediction of finite translated responses from local tangents was strongest at small drift-scale displacements and declined for larger offsets. {curvature_bin_text} Compact k=10 closely tracked the full tangent prediction, consistent with a local first-order approximation rather than a global translation code. Although pointwise tangent predictions degraded with finite displacement amplitude, the covariance footprint of the tangent family remained stable across the same scales, explaining how local image-conditioned generators can produce a robust FEM covariance signature.
 """
     (out_dir / "caption.md").write_text(caption, encoding="utf-8")
     (out_dir / "caption.txt").write_text(caption, encoding="utf-8")
     methods = build_methods_text(
         paths=paths,
-        v1_data=v1_data,
+        v1_data=None,
         tangent_data=tangent_data,
         union_df=union_df,
         basis_df=basis_df,
@@ -1920,6 +2199,8 @@ def compose(paths: DataPaths, out_dir: Path, *, dpi: int = 300):
         closure_summary_df=panel_f_closure_summary_df,
         closure_audit=panel_f_closure_audit,
         compact_closure_summary_df=panel_f_compact_closure_summary_df,
+        curvature_df=curvature_df,
+        curvature_metrics_df=curvature_metrics_df,
     )
     (out_dir / "methods.md").write_text(methods, encoding="utf-8")
     (out_dir / "methods.txt").write_text(methods, encoding="utf-8")
@@ -1929,7 +2210,6 @@ def compose(paths: DataPaths, out_dir: Path, *, dpi: int = 300):
         "caption_file": str(out_dir / "caption.md"),
         "methods_file": str(out_dir / "methods.md"),
         "source_files": {
-            "v1_cache": str(paths.v1_cache),
             "tangent_maps": str(paths.tangent_maps),
             "union_file": str(paths.union_file),
             "spec_file": str(paths.spec_file),
@@ -1942,12 +2222,21 @@ def compose(paths: DataPaths, out_dir: Path, *, dpi: int = 300):
             "panel_f_closure_metrics_file": str(paths.panel_f_closure_metrics_file),
             "panel_f_closure_audit_file": str(paths.panel_f_closure_audit_file),
             "panel_f_compact_closure_summary_file": str(paths.panel_f_compact_closure_summary_file),
+            "curvature_plot_data_file": str(paths.curvature_plot_data_file),
+            "curvature_metrics_file": str(paths.curvature_metrics_file),
         },
         "basis_source_label": paths.basis_source_label,
         "warnings": paths.warnings,
-        "panel_D_cross_image_generalization": basis_df.to_dict(orient="records"),
-        "panel_E_tangent_subspace_information": info_df.to_dict(orient="records") if info_df is not None else None,
+        "panel_C_cross_image_generalization": basis_df.to_dict(orient="records"),
+        "panel_D_tangent_subspace_information": info_df.to_dict(orient="records") if info_df is not None else None,
         "panel_F_operating_regimes": {
+            "metric": "curvature_pointwise_r2",
+            "summary_file": str(paths.curvature_plot_data_file) if paths.curvature_plot_data_file is not None else None,
+            "metrics_file": str(paths.curvature_metrics_file) if paths.curvature_metrics_file is not None else None,
+            "summary_rows": curvature_df.to_dict(orient="records") if curvature_df is not None else None,
+            "metric_rows": curvature_metrics_df.to_dict(orient="records") if curvature_metrics_df is not None else None,
+        },
+        "panel_E_covariance_bridge": {
             "metric": (
                 "finite_difference_closure"
                 if panel_f_closure_summary_df is not None and panel_f_closure_metrics_df is not None
@@ -1979,24 +2268,25 @@ Full caption sidecars: `caption.md`, `caption.txt`.
 Panel methods sidecars: `methods.md`, `methods.txt`.
 
 ## Source files
-- V1 recorded data: `{paths.v1_cache}`
 - Tangent maps:     `{paths.tangent_maps}`
 - Union spectrum:   `{paths.spec_file}`
 - Union summary:    `{paths.union_file}`
 - Basis (image-disjoint): `{paths.basis_file}`
 - Covariance bridge: `{paths.covariance_file}`
-- Panel E Fisher summary: `{paths.information_file}`
-- Panel E basis/null summary: `{paths.information_null_file}`
-- Panel F natural structure: `{paths.panel_f_natural_file}`
-- Panel F finite-difference closure summary: `{paths.panel_f_closure_summary_file}`
-- Panel F finite-difference closure metrics: `{paths.panel_f_closure_metrics_file}`
-- Panel F compact-k10 closure summary: `{paths.panel_f_compact_closure_summary_file}`
-- Panel F RF/readout-preserving control summary: `{VISIONCORE_ROOT / "outputs" / "matched_twin_covariance_closure_rf_null_step025_rfbacked_v2" / "finite_difference_headline_raw_psd_bootstrap.csv"}`
-- Panel F RF/readout-preserving control audit: `{VISIONCORE_ROOT / "outputs" / "matched_twin_covariance_closure_rf_null_step025_rfbacked_v2" / "finite_difference_provenance_audit.json"}`
-- Panel F RF/readout-preserving unit-bin audit: `{VISIONCORE_ROOT / "outputs" / "matched_twin_covariance_closure_rf_null_step025_rfbacked_v2" / "rf_null_unit_bins.csv"}`
+- Panel D Fisher summary: `{paths.information_file}`
+- Panel D basis/null summary: `{paths.information_null_file}`
+- Panel E natural structure fallback: `{paths.panel_f_natural_file}`
+- Panel E finite-difference closure summary: `{paths.panel_f_closure_summary_file}`
+- Panel E finite-difference closure metrics: `{paths.panel_f_closure_metrics_file}`
+- Panel E compact-k10 closure summary: `{paths.panel_f_compact_closure_summary_file}`
+- Panel E RF/readout-preserving control summary: `{VISIONCORE_ROOT / "outputs" / "matched_twin_covariance_closure_rf_null_step025_rfbacked_v2" / "finite_difference_headline_raw_psd_bootstrap.csv"}`
+- Panel E RF/readout-preserving control audit: `{VISIONCORE_ROOT / "outputs" / "matched_twin_covariance_closure_rf_null_step025_rfbacked_v2" / "finite_difference_provenance_audit.json"}`
+- Panel E RF/readout-preserving unit-bin audit: `{VISIONCORE_ROOT / "outputs" / "matched_twin_covariance_closure_rf_null_step025_rfbacked_v2" / "rf_null_unit_bins.csv"}`
+- Panel F curvature/amplitude-law summary: `{paths.curvature_plot_data_file}`
+- Panel F curvature/amplitude-law per-session metrics: `{paths.curvature_metrics_file}`
 
-## Panel F control note
-The stricter RF/readout-preserving control is not the plotted reference null, but it is the key reviewer-facing follow-up for Panel F. It repeats the finite-difference closure with fixed within-bin source-unit permutations. Bins preserve recorded RF location, tangent norm, mean rate, and `ccnorm` where possible, with `ok_rf_bins` in 24/24 sessions. In the PSD, global-rate + target-PC1 removed, k=2 condition, excess capture over this RF/readout null remains positive for 24/24 sessions: full FD `+0.158 [0.125, 0.193]`; cross-fit compact k=10 `+0.161 [0.128, 0.196]`.
+## Panel E control note
+The stricter RF/readout-preserving control is not the plotted reference null, but it is the key reviewer-facing follow-up for Panel E. It repeats the finite-difference closure with fixed within-bin source-unit permutations. Bins preserve recorded RF location, tangent norm, mean rate, and `ccnorm` where possible, with `ok_rf_bins` in 24/24 sessions. In the PSD, global-rate + target-PC1 removed, k=2 condition, excess capture over this RF/readout null remains positive for 24/24 sessions: full FD `+0.158 [0.125, 0.193]`; cross-fit compact k=10 `+0.161 [0.128, 0.196]`.
 
 ## Basis source: `{paths.basis_source_label}`
 Final figure requires `image_disjoint`.
@@ -2005,25 +2295,22 @@ Final figure requires `image_disjoint`.
 {chr(10).join("- " + w for w in paths.warnings) or "- none"}
 
 ## Panels
-A. Recorded FEM covariance is low-dimensional. Two sub-panels: (left) mean noise correlation per session, uncorrected vs
-   eye-position corrected; (right) median cumulative FEM eigenspectrum across
-   sessions. Data from fig2_decomposition.pkl.
-B. Local translation directions are image-specific: selected paired bx(I)/by(I)
+A. Local translation directions are image-specific: selected paired bx(I)/by(I)
    tangent directions projected into response PCA space when base responses are
    available. Each local chart shows the horizontal- and vertical-translation
    directions for one object; the inset shows cross-image same-axis cosine
    distributions.
-C. Pooled translation tangents occupy a compact subspace. Cumulative variance
+B. Pooled translation tangents occupy a compact subspace. Cumulative variance
    spectrum of the tangent family at 0.25 arcmin (32
    components). Unit-shuffle PR reference as dashed gray ramp. Annotated with
    observed PR vs null PR.
-D. Compactness generalizes across image identity: held-out translation tangent variance captured
+C. Compactness generalizes across image identity: held-out translation tangent variance captured
    vs basis dimension k (image-disjoint split, delta=0.25 arcmin).
-E. Compact tangents capture FEM-related displacement sensitivity from the
-   production Panel E derivative-projection Fisher output when available. This
+D. Compact tangents capture FEM-related displacement sensitivity from the
+   production Panel D derivative-projection Fisher output when available. This
    uses a diagonal Poisson local Fisher metric in model response space, not a
    full measured-noise information calculation.
-F. Model-derived translation covariance predicts recorded FEM covariance.
+E. Model-derived translation covariance predicts recorded FEM covariance.
    Finite-difference translation covariances computed in matched twin/recorded
    unit space captured recorded FEM covariance above a unit-shuffle null. The
    effect persisted after removing global-rate and target-PC1 modes, indicating
@@ -2031,8 +2318,13 @@ F. Model-derived translation covariance predicts recorded FEM covariance.
    variability. Shows session dots and session-bootstrap mean/CI across
    projection controls. Inset compares the controlled full finite-difference
    source with the cross-fit compact-k10 restricted source when available. Falls
-   back to older Panel F diagnostics only if the finite-difference closure CSVs
+   back to older Panel E diagnostics only if the finite-difference closure CSVs
    are absent.
+F. Local tangent prediction is drift-scale: pointwise prediction R² is plotted
+   against retinal displacement scale for the full tangent and compact k=10
+   tangent. Faint traces show sessions, heavy curves show mean ± CI, and red
+   vertical anchors mark empirical within-trial eye-step p50 and p90.
+   {curvature_bin_text}
 """
     (out_dir / "README.md").write_text(readme, encoding="utf-8")
     return fig, manifest

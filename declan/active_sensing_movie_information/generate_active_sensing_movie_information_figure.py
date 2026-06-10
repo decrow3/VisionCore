@@ -13,12 +13,14 @@ import argparse
 import csv
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Iterable
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-cache")
 
 import matplotlib
+import matplotlib as mpl
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -27,9 +29,16 @@ from matplotlib.gridspec import GridSpec
 
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+mpl.rcParams["pdf.fonttype"] = 42
+mpl.rcParams["ps.fonttype"] = 42
+mpl.rcParams["font.family"] = "sans-serif"
+mpl.rcParams["font.sans-serif"] = ["Arial", "Helvetica", "DejaVu Sans"]
 DEFAULT_RUN = ROOT / "outputs" / "twininfo" / "active-sensing-all-images-1crop-2fix2ms-16units-gpu"
 DEFAULT_OUT = ROOT / "outputs" / "active_sensing_movie_information" / "active_sensing_movie_information_figure"
 PRIMARY_METRIC = "final_cumulative_spatial_ssi_bits_per_spike"
+CAPTION_TITLE = "Figure 5. Self-generated retinal motion improves visual information in the V1 model."
 
 
 COND_LABELS = {
@@ -53,23 +62,23 @@ COND_LABELS = {
 }
 
 COND_COLORS = {
-    "real": "#1f77b4",
-    "stabilized": "#2ca02c",
-    "random_amp": "#7f7f7f",
-    "random_amp_cloud_matched": "#525252",
-    "random_cov": "#bcbd22",
-    "trajectory_order_shuffle": "#17becf",
-    "phase_order_shuffle": "#17becf",
-    "pyramid_phase_scrambled": "#d62728",
-    "sf_low": "#9467bd",
-    "sf_mid_low": "#8c564b",
-    "sf_mid_high": "#ff7f0e",
-    "sf_high": "#4c78a8",
-    "stabilized_pyramid_phase_scrambled": "#f2a4a4",
-    "stabilized_sf_low": "#c7a9dd",
-    "stabilized_sf_mid_low": "#d7b5d8",
-    "stabilized_sf_mid_high": "#ffbb78",
-    "stabilized_sf_high": "#9ecae1",
+    "real": "#2f6fa5",
+    "stabilized": "#8f9a91",
+    "random_amp": "#a9adb0",
+    "random_amp_cloud_matched": "#7d8388",
+    "random_cov": "#c2c3b3",
+    "trajectory_order_shuffle": "#9aa9b5",
+    "phase_order_shuffle": "#9aa9b5",
+    "pyramid_phase_scrambled": "#8e8e8e",
+    "sf_low": "#9a98a8",
+    "sf_mid_low": "#a98d77",
+    "sf_mid_high": "#d99a45",
+    "sf_high": "#6d8fad",
+    "stabilized_pyramid_phase_scrambled": "#c4c4c4",
+    "stabilized_sf_low": "#c4c2cc",
+    "stabilized_sf_mid_low": "#c7b6a8",
+    "stabilized_sf_mid_high": "#e7bd82",
+    "stabilized_sf_high": "#a9bbca",
 }
 
 
@@ -331,10 +340,14 @@ def paired_delta_entries(
     return entries
 
 
-def load_series(run_dir: Path) -> tuple[np.ndarray, np.ndarray, list[dict[str, str]]]:
+def load_series(
+    run_dir: Path,
+    *,
+    metric_key: str = "cumulative_spatial_ssi_bits_per_spike",
+) -> tuple[np.ndarray, np.ndarray, list[dict[str, str]]]:
     npz = np.load(run_dir / "cache" / "cumulative_information_series.npz")
     time_s = np.asarray(npz["time_s"], dtype=np.float64)
-    y = np.asarray(npz["cumulative_spatial_ssi_bits_per_spike"], dtype=np.float64)
+    y = np.asarray(npz[metric_key], dtype=np.float64)
     records = []
     for i in range(y.shape[0]):
         records.append(
@@ -627,88 +640,162 @@ def style_axis(ax: plt.Axes, *, grid_axis: str = "y") -> None:
     ax.spines["right"].set_visible(False)
 
 
-def plot_stabilization_schematic(ax: plt.Axes) -> dict[str, object]:
-    """Draw a compact same-image/same-trace schematic for the counterfactual."""
-    rng = np.random.default_rng(42)
-    x = np.linspace(-1.0, 1.0, 96)
-    y = np.linspace(-1.0, 1.0, 96)
-    xx, yy = np.meshgrid(x, y)
-    image = (
-        0.55
-        + 0.16 * np.sin(8.0 * xx + 2.0 * yy)
-        + 0.12 * np.cos(5.0 * yy - 3.0 * xx)
-        + 0.06 * rng.normal(size=xx.shape)
-    )
-    image = np.clip(image, 0.0, 1.0)
+def _normalize_display_image(image: np.ndarray) -> np.ndarray:
+    arr = np.asarray(image, dtype=np.float64)
+    lo, hi = np.nanpercentile(arr, [1.0, 99.0])
+    if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        lo, hi = float(np.nanmin(arr)), float(np.nanmax(arr))
+    return np.clip((arr - lo) / max(hi - lo, 1e-12), 0.0, 1.0)
 
-    trace_t = np.linspace(0.0, 1.0, 80)
-    trace_x = 0.15 * np.sin(2.0 * np.pi * trace_t) + 0.45 * (trace_t - 0.5)
-    trace_y = 0.18 * np.cos(3.0 * np.pi * trace_t) + 0.10 * np.sin(7.0 * np.pi * trace_t)
-    centers = [(-0.58, 0.0), (0.58, 0.0)]
-    labels = ["real FEM\nretinal motion", "stabilized\ncounterfactual"]
-    for i, (cx, cy) in enumerate(centers):
-        extent = (cx - 0.34, cx + 0.34, cy - 0.34, cy + 0.34)
-        ax.imshow(image, cmap="gray", extent=extent, vmin=0, vmax=1, zorder=0)
-        rect = plt.Rectangle((extent[0], extent[2]), 0.76, 0.76, fill=False, ec="0.15", lw=1.2)
-        ax.add_patch(rect)
-        if i == 0:
-            ax.plot(cx + 0.38 * trace_x, cy + 0.38 * trace_y, color=COND_COLORS["real"], lw=2.0)
-            ax.scatter(cx + 0.38 * trace_x[-1], cy + 0.38 * trace_y[-1], s=24, color=COND_COLORS["real"], zorder=3)
-        else:
-            ax.plot([cx - 0.18, cx + 0.18], [cy, cy], color=COND_COLORS["stabilized"], lw=2.0)
-            ax.plot([cx, cx], [cy - 0.18, cy + 0.18], color=COND_COLORS["stabilized"], lw=2.0)
-        ax.text(cx, -0.58, labels[i], ha="center", va="top", fontsize=9)
-    ax.annotate(
-        "",
-        xy=(0.16, 0.0),
-        xytext=(-0.16, 0.0),
-        arrowprops={"arrowstyle": "->", "lw": 1.4, "color": "0.25"},
+
+def _source_crop(image: np.ndarray, center_x: float, center_y: float, size: int) -> tuple[np.ndarray, tuple[int, int]]:
+    arr = np.asarray(image, dtype=np.float32)
+    h, w = arr.shape
+    half = int(size) // 2
+    x0 = int(round(float(center_x))) - half
+    y0 = int(round(float(center_y))) - half
+    x0 = max(0, min(w - int(size), x0))
+    y0 = max(0, min(h - int(size), y0))
+    return arr[y0 : y0 + int(size), x0 : x0 + int(size)], (x0, y0)
+
+
+def _load_panel_a_source(run_dir: Path) -> dict[str, object]:
+    from declan.active_sensing_movie_information.generate_retinal_movie_transform_qc import (
+        _image_by_index,
+        _load_run_config,
+        _selected_examples,
     )
-    ax.set_title("A  Stabilization counterfactual", loc="left", fontweight="bold")
-    ax.set_xlim(-1.08, 1.08)
-    ax.set_ylim(-0.78, 0.55)
-    ax.set_xticks([])
-    ax.set_yticks([])
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    return {"description": "schematic_same_image_trace_real_motion_vs_stabilized"}
+    from jake.twininfo.common import OUT_SIZE
+    from jake.twininfo.retinal_examples import model_crop_centers_px
+
+    config = _load_run_config(run_dir)
+    crop_rows = read_csv_rows(run_dir / "metadata" / "02_image_crop_hotspots.csv")
+    image_index = min(int(row["image_index"]) for row in crop_rows)
+    crop = next(row for row in crop_rows if int(row["image_index"]) == image_index and int(row["crop_rank"]) == 0)
+    examples = _selected_examples(run_dir, config)
+    example = next((ex for ex in examples if ex.kind == "microsaccade"), examples[0])
+    image = _image_by_index([crop])[image_index]
+
+    center_x = float(crop["center_x_px"])
+    center_y = float(crop["center_y_px"])
+    margin = max(float(crop["trace_margin_x_px"]), float(crop["trace_margin_y_px"]), 24.0)
+    size = int(np.ceil(max(176.0, float(OUT_SIZE[0]) + 2.0 * margin)))
+    size = min(size, min(image.shape))
+    crop_img, (x0, y0) = _source_crop(image, center_x, center_y, size)
+    centers = model_crop_centers_px(
+        example.trace,
+        image.shape,
+        crop_center_offset_px=(float(crop["offset_x_px"]), float(crop["offset_y_px"])),
+    )
+    local_centers = np.column_stack([centers[:, 0] - x0, centers[:, 1] - y0])
+    return {
+        "image": crop_img,
+        "trace_xy_px": local_centers,
+        "center_xy_px": (center_x - x0, center_y - y0),
+        "image_index": image_index,
+        "crop_rank": int(crop["crop_rank"]),
+        "example_id": example.example_id,
+        "kind": example.kind,
+        "source_crop_origin_xy_px": (int(x0), int(y0)),
+        "source_crop_size_px": int(size),
+    }
+
+
+def plot_active_fixation_counterfactual(ax: plt.Axes, run_dir: Path) -> dict[str, object]:
+    """Show the same real natural-image crop under real-FEM and stabilized counterfactuals."""
+    source = _load_panel_a_source(run_dir)
+    image = _normalize_display_image(np.asarray(source["image"]))
+    trace_xy = np.asarray(source["trace_xy_px"], dtype=np.float64)
+    center_x, center_y = (float(v) for v in source["center_xy_px"])
+
+    sub = ax.get_subplotspec().subgridspec(1, 2, wspace=0.10)
+    axes = [ax.figure.add_subplot(sub[0, 0]), ax.figure.add_subplot(sub[0, 1])]
+    ax.remove()
+    labels = ["real FEM", "stabilized"]
+    for i, sub_ax in enumerate(axes):
+        sub_ax.imshow(image, cmap="gray", origin="upper", interpolation="nearest")
+        sub_ax.set_title(labels[i], fontsize=9, pad=3)
+        sub_ax.set_xticks([])
+        sub_ax.set_yticks([])
+        for spine in sub_ax.spines.values():
+            spine.set_color("0.22")
+            spine.set_linewidth(0.8)
+        if i == 0:
+            sub_ax.plot(trace_xy[:, 0], trace_xy[:, 1], color=COND_COLORS["real"], lw=1.7)
+            sub_ax.scatter(trace_xy[0, 0], trace_xy[0, 1], s=12, color="white", edgecolor=COND_COLORS["real"], lw=0.8, zorder=4)
+            sub_ax.scatter(trace_xy[-1, 0], trace_xy[-1, 1], s=18, color=COND_COLORS["real"], zorder=4)
+        else:
+            span = max(11.0, image.shape[0] * 0.08)
+            sub_ax.plot([center_x - span, center_x + span], [center_y, center_y], color=COND_COLORS["stabilized"], lw=1.7)
+            sub_ax.plot([center_x, center_x], [center_y - span, center_y + span], color=COND_COLORS["stabilized"], lw=1.7)
+            sub_ax.scatter(center_x, center_y, s=18, color=COND_COLORS["stabilized"], zorder=4)
+        sub_ax.set_xlim(0, image.shape[1] - 1)
+        sub_ax.set_ylim(image.shape[0] - 1, 0)
+    axes[0].text(
+        -0.02,
+        1.18,
+        "A  Real versus stabilized retinal input",
+        transform=axes[0].transAxes,
+        ha="left",
+        va="bottom",
+        fontweight="bold",
+        fontsize=10,
+    )
+    return {
+        "description": "real_natural_image_crop_same_crop_real_fem_vs_stabilized",
+        "image_index": int(source["image_index"]),
+        "crop_rank": int(source["crop_rank"]),
+        "example_id": str(source["example_id"]),
+        "kind": str(source["kind"]),
+        "source_crop_origin_xy_px": tuple(int(v) for v in source["source_crop_origin_xy_px"]),
+        "source_crop_size_px": int(source["source_crop_size_px"]),
+    }
 
 
 def plot_real_stabilized_timecourse(
     ax: plt.Axes,
     *,
     time_s: np.ndarray,
-    series: np.ndarray,
+    raw_bits_series: np.ndarray,
+    efficiency_series: np.ndarray,
     records: list[dict[str, str]],
 ) -> dict[str, object]:
     for condition in ("real", "stabilized"):
-        plot_mean_trace(ax, time_s, series, records, condition)
-    ax.set_title("B  Time-resolved efficiency", loc="left", fontweight="bold")
+        plot_mean_trace(ax, time_s, raw_bits_series, records, condition)
+    ax.set_title("B  Retinal motion increases cumulative spatial information", loc="left", fontweight="bold")
     ax.set_xlabel("time in movie (s)")
-    ax.set_ylabel("cumulative bits / expected spike")
-    ax.legend(frameon=False, fontsize=8, loc="lower right")
+    ax.set_ylabel("cumulative spatial information (bits)")
+    ax.legend(frameon=False, fontsize=8, loc="upper right")
     style_axis(ax, grid_axis="both")
 
-    curves = paired_series_curves(series, records, "real", "stabilized")
-    if curves.size == 0:
+    raw_curves = paired_series_curves(raw_bits_series, records, "real", "stabilized")
+    efficiency_curves = paired_series_curves(efficiency_series, records, "real", "stabilized")
+    if efficiency_curves.size == 0:
         return {"n": 0}
-    mean = np.nanmean(curves, axis=0)
-    lo = np.nanpercentile(curves, 2.5, axis=0)
-    hi = np.nanpercentile(curves, 97.5, axis=0)
-    inset = ax.inset_axes([0.08, 0.58, 0.38, 0.34])
+    eff_mean = np.nanmean(efficiency_curves, axis=0)
+    eff_lo = np.nanpercentile(efficiency_curves, 2.5, axis=0)
+    eff_hi = np.nanpercentile(efficiency_curves, 97.5, axis=0)
+    raw_mean = np.nanmean(raw_curves, axis=0) if raw_curves.size else np.full_like(time_s, np.nan, dtype=np.float64)
+    inset = ax.inset_axes([0.06, 0.58, 0.36, 0.34])
+    inset.set_facecolor((1.0, 1.0, 1.0, 0.98))
+    inset.patch.set_edgecolor("0.82")
+    inset.patch.set_linewidth(0.8)
     inset.axhline(0.0, color="0.2", lw=0.7)
-    inset.plot(time_s, mean, color=COND_COLORS["real"], lw=1.6)
-    inset.fill_between(time_s, lo, hi, color=COND_COLORS["real"], alpha=0.065, linewidth=0)
+    inset.plot(time_s, eff_mean, color=COND_COLORS["real"], lw=1.6)
+    inset.fill_between(time_s, eff_lo, eff_hi, color=COND_COLORS["real"], alpha=0.10, linewidth=0)
     inset.set_title("real - stabilized", fontsize=8, loc="left")
     inset.set_xlabel("s", fontsize=7)
     inset.set_ylabel("delta bits/spike", fontsize=7)
     inset.tick_params(labelsize=7)
     style_axis(inset, grid_axis="both")
     return {
-        "n": int(curves.shape[0]),
-        "final_mean_delta": float(mean[-1]),
-        "min_mean_delta": float(np.nanmin(mean)),
-        "fraction_timepoints_mean_positive": float(np.mean(mean > 0.0)),
+        "n": int(efficiency_curves.shape[0]),
+        "main_metric": "cumulative_spatial_ssi_bits",
+        "inset_metric": "cumulative_spatial_ssi_bits_per_spike_real_minus_stabilized",
+        "final_mean_raw_bits_delta": float(raw_mean[-1]),
+        "final_mean_delta": float(eff_mean[-1]),
+        "min_mean_delta": float(np.nanmin(eff_mean)),
+        "fraction_timepoints_mean_positive": float(np.mean(eff_mean > 0.0)),
     }
 
 
@@ -775,34 +862,57 @@ def plot_primary_endpoint_with_spike_inset(
         "n_images": delta_n_images,
         "bootstrap": "image_then_trace",
     })
+
+    fig = ax.figure
+    sub = ax.get_subplotspec().subgridspec(1, 2, width_ratios=[1.05, 0.90], wspace=0.46)
+    endpoint_ax = fig.add_subplot(sub[0, 0])
+    audit_ax = fig.add_subplot(sub[0, 1])
+    ax.remove()
+    endpoint_ax.text(
+        -0.18,
+        1.08,
+        "C  Endpoint and spike-count audit",
+        transform=endpoint_ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=10,
+        fontweight="bold",
+    )
+
     x_main = np.arange(len(endpoint_specs), dtype=np.float64)
     yerr = np.vstack([np.asarray(means) - np.asarray(lows), np.asarray(highs) - np.asarray(means)])
-    ax.bar(x_main, means, yerr=yerr, capsize=3, color=[color for _label, _entries, color in endpoint_specs], alpha=0.88)
+    endpoint_ax.bar(
+        x_main,
+        means,
+        yerr=yerr,
+        capsize=3,
+        color=[color for _label, _entries, color in endpoint_specs],
+        alpha=0.88,
+    )
     y_top = max(highs) * 1.08
-    ax.text(
-        0.55,
-        0.88,
-        f"paired gain\n+{delta_mean:.3f} bits/spike",
-        transform=ax.transAxes,
-        ha="left",
+    endpoint_ax.text(
+        0.50,
+        0.96,
+        f"+{delta_mean:.3f} bits/spike",
+        transform=endpoint_ax.transAxes,
+        ha="center",
         va="top",
         fontsize=8,
         color="0.2",
-        bbox={"boxstyle": "round,pad=0.24", "facecolor": "white", "edgecolor": "0.8"},
     )
-    ax.set_ylim(0.0, y_top * 1.18)
-    ax.axhline(0.0, color="0.2", lw=0.8)
-    ax.set_xticks(x_main)
-    ax.set_xticklabels([label for label, _entries, _color in endpoint_specs], rotation=0, ha="center")
-    ax.set_ylabel("bits / expected spike")
-    ax.set_title("C  Primary endpoint and spike audit", loc="left", fontweight="bold")
-    style_axis(ax)
+    endpoint_ax.set_ylim(0.0, y_top * 1.18)
+    endpoint_ax.axhline(0.0, color="0.2", lw=0.8)
+    endpoint_ax.set_xticks(x_main)
+    endpoint_ax.set_xticklabels([label for label, _entries, _color in endpoint_specs], rotation=0, ha="center")
+    endpoint_ax.set_ylabel("bits / expected spike")
+    endpoint_ax.set_title("endpoint", loc="left", fontsize=9)
+    style_axis(endpoint_ax)
 
     audit_rows = _rows_with_derived_rates(rows, elapsed_s=1.0)
     raw_table = paired_table(audit_rows, "final_cumulative_spatial_ssi_bits")
     spikes_table = paired_table(audit_rows, "final_cumulative_expected_spikes")
     inset_specs = [
-        ("raw bits", paired_relative_delta_entries(raw_table, "real", "stabilized")),
+        ("raw\ninformation", paired_relative_delta_entries(raw_table, "real", "stabilized")),
         ("expected\nspikes", paired_relative_delta_entries(spikes_table, "real", "stabilized")),
     ]
     inset_stats = []
@@ -821,20 +931,16 @@ def plot_primary_endpoint_with_spike_inset(
             "n_images": n_images,
             "bootstrap": "image_then_trace",
         })
-    inset = ax.inset_axes([0.08, 0.54, 0.38, 0.36])
-    inset.set_facecolor((1.0, 1.0, 1.0, 0.96))
-    inset.patch.set_edgecolor("0.82")
-    inset.patch.set_linewidth(0.8)
     x = np.arange(len(inset_specs), dtype=np.float64)
     yerr = np.vstack([np.asarray(means) - np.asarray(lows), np.asarray(highs) - np.asarray(means)])
-    inset.bar(x, means, yerr=yerr, capsize=2, color=["#9ecae1", "#bdbdbd"], alpha=0.9)
-    inset.axhline(0.0, color="0.2", lw=0.7)
-    inset.set_xticks(x)
-    inset.set_xticklabels([label for label, _entries in inset_specs], fontsize=7)
-    inset.set_ylabel("")
-    inset.set_title("real - stabilized\npaired change (%)", fontsize=8, loc="left")
-    inset.tick_params(axis="y", labelsize=7)
-    style_axis(inset)
+    audit_ax.bar(x, means, yerr=yerr, capsize=2, color=[COND_COLORS["real"], "#b8babd"], alpha=0.9)
+    audit_ax.axhline(0.0, color="0.2", lw=0.7)
+    audit_ax.set_xticks(x)
+    audit_ax.set_xticklabels([label for label, _entries in inset_specs], fontsize=7)
+    audit_ax.set_ylabel("real - stabilized (%)")
+    audit_ax.set_title("spike-count audit", loc="left", fontsize=9)
+    audit_ax.tick_params(axis="y", labelsize=7)
+    style_axis(audit_ax)
     return {"endpoint": endpoint_stats, "spike_inset": inset_stats}
 
 
@@ -1024,56 +1130,84 @@ def _fmt_ci(row: dict[str, object], digits: int = 3) -> str:
     return f"{_fmt(row.get('ci95_low'), digits)} to {_fmt(row.get('ci95_high'), digits)}"
 
 
+def _plain_caption_text(markdown_text: str) -> str:
+    text = markdown_text.replace("# Figure 5 Caption\n\n", "")
+    text = text.replace("# Active-Sensing Movie Information Figure Legend\n\n", "")
+    return " ".join(text.replace("**", "").split())
+
+
+def _save_main_figure_with_caption_metadata(
+    fig: plt.Figure,
+    *,
+    pdf: Path,
+    png: Path,
+    svg: Path,
+    caption_markdown: str,
+) -> None:
+    plain_caption = _plain_caption_text(caption_markdown)
+    creator = "VisionCore active-sensing movie-information figure generator"
+    pdf_metadata = {
+        "Title": CAPTION_TITLE,
+        "Subject": plain_caption,
+        "Keywords": "active fixation; retinal motion; V1 model; spatial information; FEM",
+        "Creator": creator,
+    }
+    png_metadata = {
+        "Title": CAPTION_TITLE,
+        "Description": plain_caption,
+        "Caption": plain_caption,
+        "Software": creator,
+    }
+    svg_metadata = {
+        "Title": CAPTION_TITLE,
+        "Description": plain_caption,
+        "Keywords": "active fixation, retinal motion, V1 model, spatial information, FEM",
+        "Creator": creator,
+    }
+    fig.savefig(pdf, bbox_inches="tight", facecolor="white", metadata=pdf_metadata)
+    fig.savefig(png, dpi=220, bbox_inches="tight", facecolor="white", metadata=png_metadata)
+    fig.savefig(svg, bbox_inches="tight", facecolor="white", metadata=svg_metadata)
+
+
 def write_manuscript_caption(stats: dict[str, object], out_dir: Path) -> Path:
     """Write the manuscript-style Figure 5 caption beside the rendered figure."""
     caption_path = out_dir / "active_sensing_movie_information_figure_caption.md"
     panel_c = stats.get("panel_c_primary_endpoint_and_spike_audit", {})
     endpoint = panel_c.get("endpoint", []) if isinstance(panel_c, dict) else []
     spike_inset = panel_c.get("spike_inset", []) if isinstance(panel_c, dict) else []
-    stabilized = _stat_by_label(endpoint, "stabilized")
-    real = _stat_by_label(endpoint, "real FEM")
     delta = _stat_by_label(endpoint, "real - stabilized")
-    raw_bits = _stat_by_label(spike_inset, "raw bits")
-    expected_spikes = _stat_by_label(spike_inset, "expected spikes")
-
-    sf_rows = stats.get("panel_d_spatial_frequency_dependence", [])
-    sf = {str(row.get("label", "")).replace("\n", " "): row for row in sf_rows if isinstance(row, dict)}
-    boundary_rows = stats.get("panel_e_matched_motion_boundary", [])
-    boundary = {str(row.get("label", "")).replace("\n", " "): row for row in boundary_rows if isinstance(row, dict)}
     time_stats = stats.get("panel_b_time_resolved_real_vs_stabilized", {})
     cloud = stats.get("random_amp_cloud_matched_mode_audit", {})
 
     lines = [
         "# Figure 5 Caption",
         "",
-        "**Figure 5. Real FEM retinal motion improves spatial information efficiency in the V1 model.** "
-        "(A) Paired stabilization counterfactual. For each image history and measured fixation trace, "
-        "the real retinal movie was compared with a stabilized movie in which retinal translation was removed. "
-        "(B) Cumulative spatial information per expected spike over time for real and stabilized movies; "
-        "inset shows the paired real-minus-stabilized gain. The final paired gain was "
-        f"{_fmt(time_stats.get('final_mean_delta'), 3, prefix_plus=True)} bits/expected spike and the mean "
-        f"real-minus-stabilized curve remained positive at {_fmt(100.0 * float(time_stats.get('fraction_timepoints_mean_positive', 0.0)), 1)}% "
-        "of sampled time points. "
-        "(C) Final endpoint and spike-count audit. Real FEMs increased spatial information per expected spike "
-        f"from {_fmt(stabilized.get('mean'), 3)} to {_fmt(real.get('mean'), 3)} bits/expected spike "
-        f"(paired gain {_fmt(delta.get('mean'), 3, prefix_plus=True)}, 95% CI {_fmt_ci(delta)}). "
-        "Raw information and expected spike count also increased "
-        f"({_fmt(raw_bits.get('mean_percent_delta'), 1, prefix_plus=True)}% and "
-        f"{_fmt(expected_spikes.get('mean_percent_delta'), 1, prefix_plus=True)}%, respectively), "
-        "but the efficiency gain survived normalization. "
-        "(D) Direct FEM-minus-stabilized gain across spatial-frequency controls. The gain rose from lowpass "
-        f"({_fmt(sf.get('lowpass', {}).get('mean'), 3, prefix_plus=True)}) to mid-low "
-        f"({_fmt(sf.get('mid-low', {}).get('mean'), 3, prefix_plus=True)}) and mid-high "
-        f"({_fmt(sf.get('mid-high', {}).get('mean'), 3, prefix_plus=True)}) spatial-frequency content, "
-        f"with highpass also elevated ({_fmt(sf.get('highpass', {}).get('mean'), 3, prefix_plus=True)}); "
-        f"intact natural images are shown as a reference ({_fmt(sf.get('intact', {}).get('mean'), 3, prefix_plus=True)}) "
-        f"and phase scramble as a diagnostic ({_fmt(sf.get('phase scramble', {}).get('mean'), 3, prefix_plus=True)}). "
-        "(E) Matched-motion controls. Amp-matched and amp+cloud-matched random trajectories equaled or exceeded "
-        "real FEM endpoint efficiency "
-        f"(stabilized {_fmt(boundary.get('stabilized', {}).get('mean'), 3)}, real FEM {_fmt(boundary.get('real FEM', {}).get('mean'), 3)}, "
-        f"amp-matched random {_fmt(boundary.get('amp-matched random', {}).get('mean'), 3)}, "
-        f"amp+cloud random {_fmt(boundary.get('amp+cloud random', {}).get('mean'), 3)} bits/expected spike), "
-        "bounding the claim to a retinal-motion benefit rather than unique optimality of measured trajectory statistics.",
+        f"**{CAPTION_TITLE}**",
+        "(A) Real versus stabilized retinal input. For each natural-image history and measured fixation trace, "
+        "the real retinal movie was compared with a stabilized counterfactual in which retinal translation was "
+        "removed while image identity and timing were held fixed.",
+        "(B) Retinal motion increases cumulative spatial information. Cumulative spatial information was larger "
+        "for real FEM retinal movies than for stabilized movies; inset shows the paired real-minus-stabilized "
+        "gain in spatial information per expected spike. The mean real-minus-stabilized efficiency curve remained "
+        f"positive at {_fmt(100.0 * float(time_stats.get('fraction_timepoints_mean_positive', 0.0)), 1)}% of sampled time points.",
+        "(C) Endpoint and spike-count audit. At the end of the movie, real FEMs increased spatial information "
+        "per expected spike relative to stabilization by "
+        f"{_fmt(delta.get('mean'), 3, prefix_plus=True)} bits / expected spike. Raw spatial information and "
+        "expected spike count both increased, but the information gain exceeded the spike-count increase, so the "
+        "per-spike gain survived normalization.",
+        "(D) Spatial-frequency dependence. The real-minus-stabilized gain was weakest for lowpass image content "
+        "and largest for mid/high spatial-frequency content, consistent with retinal motion converting fine spatial "
+        "structure into informative temporal response modulation. Phase-scrambled images showed a gain comparable "
+        "to intact images, indicating that this effect primarily tracks spectral content rather than natural phase structure.",
+        "(E) Matched motion bounds trajectory-specific claims. Amplitude-matched and amplitude-plus-cloud-matched "
+        "random trajectories equaled or exceeded real FEMs on this endpoint. Thus, the benefit is attributable to "
+        "retinal image motion under this model-information metric, not to unique optimality of the measured FEM "
+        "trajectory statistics.",
+        "",
+        "Interpretation guardrail: spatial information per expected spike was computed under an independent-Poisson "
+        "single-neuron readout, corresponding to a pose-aware upper-bound regime in which retinal-motion-induced "
+        "rate modulation is treated as decodable signal. Matched-motion controls bound the interpretation to a "
+        "benefit of retinal image motion rather than unique optimality of measured FEM trajectory statistics.",
         "",
         "Validation notes: all intervals are image-then-trace bootstrap 95% CIs unless otherwise noted. "
         f"The `random_amp_cloud_matched` validation used {cloud.get('n_random_candidate', 0)}/{cloud.get('n', 0)} "
@@ -1246,18 +1380,27 @@ def make_figure(run_dir: Path, out_dir: Path) -> dict[str, object]:
     rows = read_csv_rows(run_dir / "metadata" / "05_lagcube_information_summary.csv")
     table = paired_table(rows, PRIMARY_METRIC)
     present = available_conditions(table)
-    time_s, series, records = load_series(run_dir)
+    time_s, efficiency_series, records = load_series(
+        run_dir,
+        metric_key="cumulative_spatial_ssi_bits_per_spike",
+    )
+    time_s_bits, raw_bits_series, raw_records = load_series(
+        run_dir,
+        metric_key="cumulative_spatial_ssi_bits",
+    )
+    if not np.array_equal(time_s, time_s_bits) or records != raw_records:
+        raise ValueError("Raw-bit and efficiency time-series records are not aligned.")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     cloud_mode_audit = write_cloud_matched_mode_audit(run_dir, out_dir)
     time_delta_audit = write_time_resolved_real_stabilized_audit(
         out_dir=out_dir,
         time_s=time_s,
-        y=series,
+        y=efficiency_series,
         records=records,
     )
     spike_audit = write_spike_count_audit(rows, out_dir=out_dir, elapsed_s=float(time_s[-1]))
-    delta_curves = plot_direct_delta_curves(out_dir=out_dir, time_s=time_s, y=series, records=records)
+    delta_curves = plot_direct_delta_curves(out_dir=out_dir, time_s=time_s, y=efficiency_series, records=records)
     supplement_controls = write_supplement_event_content_panels(out_dir=out_dir, table=table, present=present)
 
     fig = plt.figure(figsize=(15.0, 8.0))
@@ -1268,15 +1411,21 @@ def make_figure(run_dir: Path, out_dir: Path) -> dict[str, object]:
     ax_d = fig.add_subplot(gs[1, 2:4])
     ax_e = fig.add_subplot(gs[1, 4:6])
 
-    stats_a = plot_stabilization_schematic(ax_a)
-    stats_b = plot_real_stabilized_timecourse(ax_b, time_s=time_s, series=series, records=records)
+    stats_a = plot_active_fixation_counterfactual(ax_a, run_dir)
+    stats_b = plot_real_stabilized_timecourse(
+        ax_b,
+        time_s=time_s,
+        raw_bits_series=raw_bits_series,
+        efficiency_series=efficiency_series,
+        records=records,
+    )
     stats_c = plot_primary_endpoint_with_spike_inset(ax_c, rows)
     stats_d, has_augmented = plot_sf_mechanism_panel(ax_d, table, present)
     stats_e = plot_matched_motion_boundary_panel(ax_e, table, present)
     annotate_missing(ax_d, has_augmented)
 
     fig.suptitle(
-        "Real FEM retinal motion improves spatial information efficiency in the V1 model",
+        "Self-generated retinal motion improves visual information in the V1 model",
         y=0.965,
         fontsize=13,
         fontweight="bold",
@@ -1286,10 +1435,6 @@ def make_figure(run_dir: Path, out_dir: Path) -> dict[str, object]:
     pdf = out_dir / "active_sensing_movie_information_figure.pdf"
     png = out_dir / "active_sensing_movie_information_figure.png"
     svg = out_dir / "active_sensing_movie_information_figure.svg"
-    fig.savefig(pdf, bbox_inches="tight", facecolor="white")
-    fig.savefig(png, dpi=220, bbox_inches="tight", facecolor="white")
-    fig.savefig(svg, bbox_inches="tight", facecolor="white")
-    plt.close(fig)
 
     stats = {
         "source_run": str(run_dir),
@@ -1297,7 +1442,7 @@ def make_figure(run_dir: Path, out_dir: Path) -> dict[str, object]:
         "n_rows": len(rows),
         "n_pairs": len(table),
         "has_stabilized_visual_controls": bool(has_augmented),
-        "panel_a_schematic": stats_a,
+        "panel_a_active_fixation_counterfactual": stats_a,
         "panel_b_time_resolved_real_vs_stabilized": stats_b,
         "panel_c_primary_endpoint_and_spike_audit": stats_c,
         "panel_d_spatial_frequency_dependence": stats_d,
@@ -1310,6 +1455,15 @@ def make_figure(run_dir: Path, out_dir: Path) -> dict[str, object]:
         "outputs": {"pdf": str(pdf), "png": str(png), "svg": str(svg)},
     }
     caption_path = write_manuscript_caption(stats, out_dir)
+    caption_markdown = caption_path.read_text(encoding="utf-8")
+    _save_main_figure_with_caption_metadata(
+        fig,
+        pdf=pdf,
+        png=png,
+        svg=svg,
+        caption_markdown=caption_markdown,
+    )
+    plt.close(fig)
     stats["outputs"]["caption_md"] = str(caption_path)
     with (out_dir / "active_sensing_movie_information_figure_stats.json").open("w", encoding="utf-8") as handle:
         json.dump(stats, handle, indent=2, sort_keys=True)
@@ -1318,7 +1472,7 @@ def make_figure(run_dir: Path, out_dir: Path) -> dict[str, object]:
     with (out_dir / "active_sensing_movie_information_figure_legend.md").open("w", encoding="utf-8") as handle:
         stabilized_note = (
             "The source run contains the augmented stabilized lowpass, mid-low, mid-high, "
-            "highpass, and visual-phase controls, so panel F is the direct FEM-minus-stabilized "
+            "highpass, and visual-phase controls, so panel D is the direct FEM-minus-stabilized "
             "interaction within each image-control family."
             if has_augmented
             else
@@ -1333,19 +1487,12 @@ def make_figure(run_dir: Path, out_dir: Path) -> dict[str, object]:
             if cloud_mode_audit.get("n", 0)
             else "`random_amp_cloud_matched` provenance was unavailable. "
         )
+        legend_text = caption_markdown.replace("# Figure 5 Caption", "# Active-Sensing Movie Information Figure Legend")
         handle.write(
-            "# Active-Sensing Movie Information Figure Legend\n\n"
-            "Real FEM retinal motion improves spatial information efficiency relative to the "
-            "matched stabilized counterfactual. The primary endpoint is cumulative spatial "
-            "single-spike information from the deterministic V1-model rate movie, normalized "
-            "by expected spike count. Panel D shows direct FEM-minus-stabilized gains across "
-            "spatial-frequency image controls; intact natural images are shown as a reference "
-            "and phase-scrambled images as a diagnostic. Matched random controls in Panel E "
-            "bound trajectory-specific optimality claims rather than negating the retinal-motion "
-            "benefit. "
-            f"{cloud_note}"
-            f"{stabilized_note} Event-class and measured-FEM-only image-content panels were moved "
-            "to `active_sensing_supplement_event_content_panels`.\n"
+            legend_text.rstrip()
+            + "\n\n"
+            + f"{cloud_note}{stabilized_note} Event-class and measured-FEM-only image-content panels were moved "
+            + "to `active_sensing_supplement_event_content_panels`.\n"
         )
 
     return stats

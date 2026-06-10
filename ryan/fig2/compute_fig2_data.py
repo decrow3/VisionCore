@@ -4,9 +4,10 @@ then derive every per-window/per-panel statistic the fig2 panel scripts
 need. Cached as a single bundle so panel scripts load instantly.
 
 Rowley/Luke sessions use a Rowley-specific inclusion adapter before the
-decomposition: load all V1 units passing contamination QC, replace the older
-Gaborium/YAML visual list with primary-eye dots RF SNR, and drop units with
-excess FixRSVP missingness. The downstream plotted-cell quality gates
+decomposition: start from refractory-contamination-passing V1 units when
+available, replace the older Gaborium/YAML visual list with the production
+dots RF gate (dots RF SNR + spike-count, matching DataRowleyV1V2 step 02),
+and drop units with excess FixRSVP missingness. The downstream plotted-cell quality gates
 (rate + FixRSVP split-half PSTH R^2) remain shared across subjects.
 
 Bundle keys returned by ``load_fig2_data(refresh=False)``:
@@ -75,7 +76,8 @@ N_STAGE1_GPUS = 2            # GPUs to distribute workers across (round-robin)
 MIN_RATE_HZ = 2.0            # firing-rate inclusion threshold
 MIN_PSTH_R2 = 0.05           # split-half PSTH R^2 inclusion threshold
 N_PSTH_SPLITS = 100          # random halvings for split-half PSTH reliability
-ROWLEY_DOTS_SNR_THRESH = 5.0 # visual criterion from test_rowley12 dots RF path
+ROWLEY_DOTS_SNR_THRESH = 10.0 # DataRowley step02 dots RF mask extraction SNR
+ROWLEY_DOTS_MIN_SPIKES = 2000 # DataRowley step02 dots RF mask extraction spikes
 ROWLEY_MAX_NAN_FRAC = 0.20   # max FixRSVP NaN fraction within valid bins
 ROWLEY_PROCESSED_ROOT = Path("/mnt/ssd2/RowleyMarmoV1V2/processed")
 ROWLEY_DOTS_ROI_DEG = np.array([[-5, 5], [-5, 5]], dtype=np.float32)
@@ -88,6 +90,7 @@ MIN_VAR = 0                  # minimum variance for correlation computation
 EPS_RHO = 1e-3               # floor for correlation denominators
 SUBJECTS = ["Allen", "Logan", "Luke"]
 SUBJECT_COLORS = {"Allen": "tab:blue", "Logan": "tab:green", "Luke": "tab:orange"}
+FIG2_DATA_TYPES = ["fixrsvp"]
 
 DATASET_CONFIGS_PATH = (
     VISIONCORE_ROOT
@@ -106,6 +109,15 @@ DERIVED_CACHE = CACHE_DIR / "fig2_derived_yates_rowley.pkl"
 def _is_rowley_config(cfg):
     """Return True for Rowley-session configs."""
     return str(cfg.get("lab", "")).lower() == "rowley"
+
+
+def _rowley_initial_cid_pool(cfg):
+    """Return the Rowley pre-decomposition CID pool and its source field."""
+    for key in ("qccontam", "sortercontam", "cids"):
+        values = np.asarray(cfg.get(key, []), dtype=int)
+        if values.size > 0:
+            return values, key
+    return np.asarray([], dtype=int), "none"
 
 
 def _resolve_rowley_session_root(dataset_directory):
@@ -195,24 +207,73 @@ def _interp_xy(sample_times, xy, target_times):
     ]).astype(np.float32)
 
 
-def _load_rowley_dots_snr_for_cids(cfg, cids):
-    """Load primary-eye dots RF SNR values for the requested Rowley CIDs."""
+def _load_rowley_dots_quality_for_cids(cfg, cids):
+    """Load primary-eye dots RF SNR and dots spike counts for Rowley CIDs."""
     session_root = _resolve_rowley_session_root(cfg.get("directory", ""))
     eye = cfg.get("eye", "right")
-    snr_path = session_root / "dpi_calibration" / f"{eye}_eye" / "dots_rf_snr.npz"
     cids = np.asarray(cids)
+
+    cal_path = (
+        session_root
+        / "dots_calibration"
+        / f"{eye}_eye"
+        / "calibration_results.npz"
+    )
+    if cal_path.exists():
+        data = np.load(cal_path, allow_pickle=True)
+        if "calibration_cluster_ids" in data and "optimized_max_snr" in data:
+            snr_cids = np.asarray(data["calibration_cluster_ids"])
+            max_snr = np.asarray(data["optimized_max_snr"])
+            n_spikes = np.asarray(
+                data["n_spikes"] if "n_spikes" in data else np.full(len(max_snr), np.nan)
+            )
+            snr_by_cid = {
+                int(cid): float(snr) for cid, snr in zip(snr_cids, max_snr)
+            }
+            spikes_by_cid = {
+                int(cid): float(n) for cid, n in zip(snr_cids, n_spikes)
+            }
+            snr = np.array([snr_by_cid.get(int(cid), np.nan) for cid in cids])
+            spikes = np.array([spikes_by_cid.get(int(cid), np.nan) for cid in cids])
+            if np.isfinite(snr).any():
+                return snr, spikes
+            print(
+                f"  [{cfg['session']}] Dots calibration IDs did not match "
+                f"requested Rowley CIDs in {cal_path}; trying fallback cache"
+            )
+        else:
+            print(
+                f"  [{cfg['session']}] Dots calibration result missing ID/SNR "
+                f"keys: {cal_path}; trying fallback cache"
+            )
+
+    snr_path = session_root / "dpi_calibration" / f"{eye}_eye" / "dots_rf_snr.npz"
     if snr_path.exists():
         data = np.load(snr_path, allow_pickle=True)
         snr_cids = np.asarray(data["cids"])
         max_snr = np.asarray(data["max_snr"])
+        n_spikes = np.asarray(
+            data["n_spikes"] if "n_spikes" in data else np.full(len(max_snr), np.nan)
+        )
         snr_by_cid = {int(cid): float(snr) for cid, snr in zip(snr_cids, max_snr)}
-        return np.array([snr_by_cid.get(int(cid), np.nan) for cid in cids])
+        spikes_by_cid = {int(cid): float(n) for cid, n in zip(snr_cids, n_spikes)}
+        return (
+            np.array([snr_by_cid.get(int(cid), np.nan) for cid in cids]),
+            np.array([spikes_by_cid.get(int(cid), np.nan) for cid in cids]),
+        )
 
     return _compute_rowley_dots_snr(session_root, eye, cids, snr_path)
 
 
 def _prepare_rowley_unit_mapping(cfg, rowley_cids):
-    """Validate Rowley full-column cids and map them to V1-local dots ids."""
+    """Validate Rowley CIDs against fixRSVP metadata.
+
+    Rowley session YAMLs store the V1 sorter/QC pool as cluster IDs.
+    The newer processed_declan datasets preserve those IDs in metadata, while
+    older raw datasets may only expose robs columns. Prefer metadata IDs when
+    present so loading sorter/QC-passing V1 units does not fall back to the older
+    Gaborium visual list.
+    """
     from DataYatesV1 import DictDataset
 
     fix_path = Path(cfg["directory"]) / "fixrsvp.dset"
@@ -223,12 +284,10 @@ def _prepare_rowley_unit_mapping(cfg, rowley_cids):
     dset = DictDataset.load(fix_path)
     n_cols = int(dset["robs"].shape[1])
     rowley_cids = np.asarray(rowley_cids, dtype=int)
-    if rowley_cids.size == 0 or np.any(rowley_cids < 0) or np.max(rowley_cids) >= n_cols:
+    if rowley_cids.size == 0 or np.any(rowley_cids < 0):
         print(
-            f"  [{cfg['session']}] Skipping Rowley session: qccontam values "
-            f"do not index fixrsvp columns (n_cols={n_cols}, "
-            f"range={rowley_cids.min() if rowley_cids.size else 'NA'}-"
-            f"{rowley_cids.max() if rowley_cids.size else 'NA'})"
+            f"  [{cfg['session']}] Skipping Rowley session: empty/negative "
+            "CID pool values"
         )
         return None
 
@@ -240,22 +299,64 @@ def _prepare_rowley_unit_mapping(cfg, rowley_cids):
         )
         return None
 
-    v1_cols = np.flatnonzero(region == cfg.get("region", "V1"))
-    if v1_cols.size == 0:
+    region_ok = region == cfg.get("region", "V1")
+    if not np.any(region_ok):
         print(f"  [{cfg['session']}] Skipping Rowley session: no V1 columns found")
         return None
 
-    full_to_v1 = {int(col): i for i, col in enumerate(v1_cols.tolist())}
-    dots_ids = np.array([full_to_v1.get(int(cid), -1) for cid in rowley_cids], dtype=int)
-    if np.any(dots_ids < 0):
-        missing = rowley_cids[dots_ids < 0]
+    stored_cids = None
+    for key in ("cluster_ids", "all_cids", "cids"):
+        value = dset.metadata.get(key, None)
+        if value is None:
+            continue
+        value = np.asarray(value)
+        if value.ndim == 1 and value.shape[0] == n_cols:
+            stored_cids = value.astype(int, copy=False)
+            break
+
+    if stored_cids is not None:
+        cid_to_col = {int(cid): col for col, cid in enumerate(stored_cids.tolist())}
+        col_indices = np.array(
+            [cid_to_col.get(int(cid), -1) for cid in rowley_cids],
+            dtype=int,
+        )
+        missing = rowley_cids[col_indices < 0]
+        if missing.size:
+            print(
+                f"  [{cfg['session']}] Skipping Rowley session: CID pool "
+                f"CIDs missing from fixrsvp metadata, e.g. {missing[:10].tolist()}"
+            )
+            return None
+        non_region = rowley_cids[~region_ok[col_indices]]
+        if non_region.size:
+            print(
+                f"  [{cfg['session']}] Skipping Rowley session: CID pool "
+                f"contains non-{cfg.get('region', 'V1')} CIDs, "
+                f"e.g. {non_region[:10].tolist()}"
+            )
+            return None
+
+        # prepare_data will map these cluster IDs through the same metadata.
+        return rowley_cids, rowley_cids
+
+    if np.max(rowley_cids) >= n_cols:
         print(
-            f"  [{cfg['session']}] Skipping Rowley session: qccontam contains "
-            f"non-V1 columns, e.g. {missing[:10].tolist()}"
+            f"  [{cfg['session']}] Skipping Rowley session: fixrsvp has no "
+            f"cluster_ids metadata and CID pool values do not index columns "
+            f"(n_cols={n_cols}, range={rowley_cids.min()}-{rowley_cids.max()})"
         )
         return None
 
-    return rowley_cids, dots_ids
+    if not np.all(region_ok[rowley_cids]):
+        non_region = rowley_cids[~region_ok[rowley_cids]]
+        print(
+            f"  [{cfg['session']}] Skipping Rowley session: CID pool column "
+            f"indices include non-{cfg.get('region', 'V1')} units, "
+            f"e.g. {non_region[:10].tolist()}"
+        )
+        return None
+
+    return rowley_cids, rowley_cids
 
 
 def _compute_rowley_dots_snr(session_root, eye, target_cids, cache_path):
@@ -336,12 +437,20 @@ def _compute_rowley_dots_snr(session_root, eye, target_cids, cache_path):
 
     max_snr_target = np.full(len(target_cids), np.nan, dtype=np.float32)
     max_snr_target[found] = max_snr_all[matched[found]].astype(np.float32, copy=False)
+    n_spikes_all = robs_valid.sum(axis=0).astype(np.float32, copy=False)
+    n_spikes_target = np.full(len(target_cids), np.nan, dtype=np.float32)
+    n_spikes_target[found] = n_spikes_all[matched[found]]
     try:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(cache_path, cids=target_cids, max_snr=max_snr_target)
+        np.savez(
+            cache_path,
+            cids=target_cids,
+            max_snr=max_snr_target,
+            n_spikes=n_spikes_target,
+        )
     except OSError as e:
         print(f"  Warning: could not save dots RF SNR cache {cache_path}: {e}")
-    return max_snr_target
+    return max_snr_target, n_spikes_target
 
 
 def _split_half_psth_r2(robs, n_splits, seed=42, min_valid_bins=10,
@@ -399,8 +508,14 @@ def _apply_rowley_inclusion(cfg, robs, eyepos, valid_mask, neuron_mask, meta):
     cids_used = loaded_cids[neuron_mask]
     dots_ids_used = loaded_dots_ids[neuron_mask]
 
-    dots_snr = _load_rowley_dots_snr_for_cids(cfg, dots_ids_used)
-    visual_ok = np.isfinite(dots_snr) & (dots_snr >= ROWLEY_DOTS_SNR_THRESH)
+    dots_snr, dots_spikes = _load_rowley_dots_quality_for_cids(cfg, dots_ids_used)
+    pool_source = str(cfg.get("_rowley_pool_source", ""))
+    visual_ok = (
+        np.isfinite(dots_snr)
+        & (dots_snr >= ROWLEY_DOTS_SNR_THRESH)
+        & np.isfinite(dots_spikes)
+        & (dots_spikes >= ROWLEY_DOTS_MIN_SPIKES)
+    )
 
     eye_valid = np.isfinite(np.sum(eyepos, axis=2))
     valid_bins = eye_valid[:, :, None]
@@ -410,7 +525,9 @@ def _apply_rowley_inclusion(cfg, robs, eyepos, valid_mask, neuron_mask, meta):
 
     keep = visual_ok & nan_ok
     print(
-        f"  [{cfg['session']}] Rowley dots RF SNR >= {ROWLEY_DOTS_SNR_THRESH}: "
+        f"  [{cfg['session']}] Rowley dots gate "
+        f"(pool={pool_source or 'unknown'}, SNR >= {ROWLEY_DOTS_SNR_THRESH}, "
+        f"spikes >= {ROWLEY_DOTS_MIN_SPIKES}): "
         f"{int(visual_ok.sum())}/{len(visual_ok)} pass"
     )
     print(
@@ -422,13 +539,15 @@ def _apply_rowley_inclusion(cfg, robs, eyepos, valid_mask, neuron_mask, meta):
         f"{int(keep.sum())}/{len(keep)} pass both"
     )
 
-    if keep.sum() < 3:
+    if keep.sum() < 2:
         return None, None, None, None, meta
 
     robs = robs[:, :, keep]
     neuron_mask = neuron_mask[keep]
     cids_used = cids_used[keep]
+    dots_ids_used = dots_ids_used[keep]
     dots_snr = dots_snr[keep]
+    dots_spikes = dots_spikes[keep]
     nan_frac = nan_frac[keep]
     valid_mask = (
         np.isfinite(np.sum(robs, axis=2))
@@ -444,7 +563,10 @@ def _apply_rowley_inclusion(cfg, robs, eyepos, valid_mask, neuron_mask, meta):
         "rowley_cids_used": cids_used.tolist(),
         "rowley_dots_cids_used": dots_ids_used.tolist(),
         "rowley_dots_snr_thresh": ROWLEY_DOTS_SNR_THRESH,
+        "rowley_dots_min_spikes": ROWLEY_DOTS_MIN_SPIKES,
         "rowley_dots_snr": dots_snr.tolist(),
+        "rowley_dots_spikes": dots_spikes.tolist(),
+        "rowley_pool_source": pool_source,
         "rowley_max_nan_frac": ROWLEY_MAX_NAN_FRAC,
         "rowley_nan_frac": nan_frac.tolist(),
     })
@@ -492,15 +614,24 @@ def _compute_one_session(cfg):
         return None
 
     cfg = dict(cfg)
+    cfg["types"] = list(FIG2_DATA_TYPES)
     is_rowley = _is_rowley_config(cfg)
     if is_rowley:
-        # Rowley session YAML `cids` is still tied to the older Gaborium visual
-        # criterion. Load the broader contamination-QC V1 pool, then apply the
-        # dots RF visual gate after trial alignment.
-        rowley_cids = np.asarray(cfg.get("qccontam", cfg.get("cids", [])), dtype=int)
+        # Rowley session YAML `cids` is still tied to the shifted-Gaborium visual
+        # criterion. Load the broad refractory-QC V1 pool when available, then
+        # apply the production dots RF SNR/spike-count gate after trial alignment.
+        rowley_cids, rowley_pool_source = _rowley_initial_cid_pool(cfg)
         if rowley_cids.size == 0:
-            print(f"  [{session_name}] Skipping: Rowley config has no qccontam/cids")
+            print(
+                f"  [{session_name}] Skipping: Rowley config has no "
+                "qccontam/sortercontam/cids"
+            )
             return None
+        print(
+            f"  [{session_name}] Rowley initial unit pool: "
+            f"{rowley_pool_source} ({rowley_cids.size} CIDs)"
+        )
+        cfg["_rowley_pool_source"] = rowley_pool_source
         cfg["directory"], cfg["eye"] = _resolve_rowley_dataset_directory(cfg)
         mapped = _prepare_rowley_unit_mapping(cfg, rowley_cids)
         if mapped is None:
@@ -508,9 +639,6 @@ def _compute_one_session(cfg):
         rowley_cids, rowley_dots_cids = mapped
         cfg["cids"] = rowley_cids.tolist()
         cfg["_rowley_dots_cids"] = rowley_dots_cids.tolist()
-
-    if "fixrsvp" not in cfg["types"]:
-        cfg["types"] = cfg["types"] + ["fixrsvp"]
 
     print(f"\n--- {session_name} ({subject}) ---")
     try:
@@ -526,11 +654,21 @@ def _compute_one_session(cfg):
         return None
     fixrsvp_dset = train_data.dsets[dset_idx]
 
-    robs, eyepos, valid_mask, neuron_mask, meta = align_fixrsvp_trials(
-        fixrsvp_dset,
+    align_kwargs = dict(
         valid_time_bins=120,
         min_fix_dur=20,
         min_total_spikes=0,
+    )
+    if is_rowley:
+        align_kwargs.update(
+            fixation_radius=1.5,
+            fixation_center="median_valid",
+            require_dpi_valid=True,
+            min_neurons=2,
+        )
+    robs, eyepos, valid_mask, neuron_mask, meta = align_fixrsvp_trials(
+        fixrsvp_dset,
+        **align_kwargs,
     )
     if robs is None or robs.shape[0] < 10:
         print(f"  [{session_name}] Skipping: insufficient data ({meta})")
@@ -546,7 +684,7 @@ def _compute_one_session(cfg):
         except Exception as e:
             print(f"  [{session_name}] Skipping Rowley session: {e}")
             return None
-        if robs is None or robs.shape[2] < 3:
+        if robs is None or robs.shape[2] < 2:
             print(f"  [{session_name}] Skipping: too few Rowley units after inclusion")
             return None
 
@@ -711,7 +849,7 @@ def _metrics_one(sr, w_idx):
         & np.isfinite(np.diag(Crate))
         & np.isfinite(np.diag(Cpsth))
     )
-    if valid.sum() < 3:
+    if valid.sum() < 2:
         return None
 
     diag_psth = np.diag(Cpsth)[valid]
@@ -1430,6 +1568,9 @@ def load_fig2_data(refresh=False, refresh_decomposition=False):
             MIN_RATE_HZ=MIN_RATE_HZ, MIN_PSTH_R2=MIN_PSTH_R2,
             N_PSTH_SPLITS=N_PSTH_SPLITS, INTERCEPT_MODE=INTERCEPT_MODE,
             INTERCEPT_KWARGS=INTERCEPT_KWARGS, MIN_VAR=MIN_VAR, EPS_RHO=EPS_RHO,
+            ROWLEY_DOTS_SNR_THRESH=ROWLEY_DOTS_SNR_THRESH,
+            ROWLEY_DOTS_MIN_SPIKES=ROWLEY_DOTS_MIN_SPIKES,
+            ROWLEY_MAX_NAN_FRAC=ROWLEY_MAX_NAN_FRAC,
         ),
         **subspace,
     )
