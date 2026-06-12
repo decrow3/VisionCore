@@ -1,6 +1,6 @@
 # declan Manifest
 
-Last curated: 2026-06-09.
+Last curated: 2026-06-12.
 
 This is a human-maintained map of the `declan/` workspace. It is intentionally
 ordered newest-to-oldest in reading order where chronology is recoverable. The
@@ -30,21 +30,318 @@ or handoff that interprets them.
 
 ## Current Active / Uncommitted Work
 
-As of 2026-06-09, active uncommitted `declan/` files include:
+As of 2026-06-12, active uncommitted work has moved beyond the 2026-06-09
+Figure 4/Figure 5 split. The most important files to check first are:
 
-- `active_sensing_movie_information/README.md`
-- `active_sensing_movie_information/figure5_additional_checks_prep.md`
-- `active_sensing_movie_information/run_figure5_cached_rate_checks_5_to_9.py`
-- `active_sensing_movie_information/run_figure5_natural_image_population_checks_5_to_9.py`
-- `active_sensing_movie_information/summarize_figure5_additional_checks.py`
-- `compact_retinal_translation_geometry/run_compact_geometry_audits.py`
-- `compact_retinal_translation_geometry/run_relative_displacement_decoding.py`
-- `Figure5_active_sensing_triage_plan.md`
+- `Non_circular_FEM_information_tests_prescription.md`: non-circular Figure 5
+  extension plan centered on input whitening, recorded pose-aware information,
+  spatial-frequency localization, and sustained accumulation.
+- `Covariance_aware_FEM_optimality_analysis_prescription.md`: covariance-aware
+  movement-scale prescription separating pose-aware information from
+  pose-blind covariance penalties.
+- `jake/twininfo/covariance_optimality.py` and
+  `jake/twininfo/run_covariance_optimality.py`: implemented covariance-aware
+  scaled-trajectory machinery for production `jake.twininfo` runs; production
+  run `covopt_full_gpu1` completed 3888/3888 rows.
+- `active_sensing_movie_information/summarize_covariance_optimality.py`:
+  summary, decision-table, and plotting helper for covariance-optimality
+  outputs.
+- `outputs/active_sensing_movie_information/covariance_optimality/covopt_full_gpu1/`:
+  completed covariance-aware operating-regime summary. Main result: empirical
+  `D=1` usually lies on a high-efficiency plateau rather than a sharp optimum;
+  pose-aware minus pose-blind covariance Fisher gaps are consistently positive,
+  especially for microsaccade traces.
+- `structured_translation_decoder_analysis.md` and
+  `compact_retinal_translation_geometry/run_windowed_siamese_relative_decoding.py`:
+  structured decoder framing plus gain-orthogonal/rank-1 gain-null additions to
+  the windowed Siamese decoder.
+- `compact_retinal_translation_geometry/run_tejas_style_eyepos_decoder.py`:
+  permissive absolute eye-position decoder sanity check.
+- `forward_twin_reafferent_denoising_analysis.md` and
+  `forward_twin_reafferent_denoising/run_forward_twin_reafferent_denoising.py`:
+  single-trial forward-twin reafferent denoising hypothesis and runner; latest
+  matched diagnostics are useful but do not pass the shuffled-eye specificity
+  gate.
+- `content_routed_retinal_registration_analysis_plan.md` and
+  `compact_retinal_translation_geometry/run_correct_chart_swap_alignment.py`:
+  correct-chart versus wrong-chart content-routed retinal-registration analysis.
+  Current result is a narrow gain-bottom compact positive, with all-unit primary
+  still diagnostic/null.
+- `vernier_active_sensing_analysis_plan.md` and `vernier_active_sensing/`:
+  controlled Vernier hyperacuity branch. First pass supports phase-cloud
+  sampling over static center, not unique biological trajectory order.
+- `fig1/generate_fig1*.py`, `fig2/generate_figure2_3_combined.py`, and
+  `fig3/generate_figure3_combined.py`: refreshed manuscript figure assembly.
+- `fig4_cov_TFTS/plot_covariance_binning_sweep_panel.py`: standalone
+  covariance-closure response-window stability panel.
 
-These are probably the best first files to check before trusting older Figure 5
-or compact-geometry notes.
+Treat the new prescriptions as claim discipline, not finished results. The
+covariance-optimality route now has interpreted production outputs; other new
+runners should still be treated as implemented routes whose outputs need their
+own review before promotion.
+
+Recent numerical-audit note: the compact covariance-closure ratio can be
+slightly above `1.0` because the full and compact sources are compared as
+separately constructed sources, not as a strict nested full-versus-subspace
+estimator. Read it as retained closure, not compact outperforming full. The
+large Jacobian magnitude mismatch, stimulus-specific 100% intervention,
+E-optotype SSI/decoding split, pooled subspace-ablation ambiguity, and
+near-perfect within-image displacement decoding are historical guardrails rather
+than active headline claims.
+
+Current content-routing note: correct-chart alignment is no longer a pure null,
+but it is also not yet a promoted bridge. The broad all-unit primary failed its
+gate; the gain-bottom compact subset passed wrong-chart and control comparisons.
+Treat this as a specific diagnostic that needs pre-registered unit selection or
+replication before becoming a claim.
 
 ## Chronology: Newest To Oldest
+
+### 2026-06-12: Content-Routed Correct-Chart Alignment
+
+Primary locations:
+
+- `content_routed_retinal_registration_analysis_plan.md`
+- `compact_retinal_translation_geometry/run_correct_chart_swap_alignment.py`
+- `compact_retinal_translation_geometry/summarize_correct_chart_swap_alignment.py`
+- `outputs/compact_retinal_translation_geometry/gainbottom_match_rate_norm_structure_unitdot_v1/`
+- `outputs/compact_retinal_translation_geometry/gainbottom_match_rate_norm_unitdot_v1/`
+- `outputs/compact_retinal_translation_geometry/gainbottom_pool_same_image_wrong_time_unitdot_v1/`
+- `outputs/compact_retinal_translation_geometry/gainbottom_pool_same_time_unitdot_v1/`
+
+Purpose: test the stronger content-routed version of compact translation
+geometry: the correct image/time-specific fitted-twin chart should explain
+recorded response differences better than wrong charts and gain/subspace
+controls.
+
+Current result:
+
+- All-unit primary in the best matched variant remained diagnostic: compact
+  `k=10`, `global_rate`, true-minus-wrong mean `0.0118`, CI
+  `[-0.1148, 0.1182]`, `3/5` positive sessions; controls failed.
+- Gain-bottom compact subset was specifically positive: `57` units,
+  true-minus-wrong mean `0.0927`, CI `[0.0253, 0.1717]`, `5/5` positive
+  sessions; all required control CI lows were above zero.
+- Same-image/wrong-time variants could make all-unit true-minus-wrong positive,
+  but controls failed, so they are diagnostics rather than claim rows.
+- Leakage audits passed in the reported runs.
+
+Status: `Diagnostic / narrow positive`. This is the first recorded-data hint
+for content-routed compact charts, but it is not yet a promoted all-unit Figure
+4 bridge. Require pre-registered unit selection, replication, and pseudo-spike
+positive-control checks before promoting.
+
+### 2026-06-12: Vernier Active-Sensing Hyperacuity Branch
+
+Primary locations:
+
+- `vernier_active_sensing_analysis_plan.md`
+- `vernier_active_sensing/README.md`
+- `vernier_active_sensing/run_vernier_active_sensing.py`
+- `vernier_active_sensing/summarize_vernier_active_sensing.py`
+- `outputs/vernier_active_sensing_first_pass/`
+- `outputs/vernier_active_sensing_component_smoke/`
+- `outputs/vernier_active_sensing_component_scale/`
+
+Purpose: replace compound E-optotype functional stress tests with a cleaner
+continuous Vernier offset endpoint under explicit pose-aware and pose-blind
+observer models.
+
+First-pass result:
+
+- Rendering audit passed the basic symmetry checks: `+/-` offsets had matched
+  total luminance, model pixel pitch was about `1.60` arcmin, and pixel-level
+  Fisher was about `28` per arcmin squared for both `0.25` and `0.5` arcmin
+  finite-difference steps.
+- Pose-aware first pass used cached model rates for `16` traces, `60` frames,
+  and `756` units.
+- At `0.25` arcmin, phase-cloud matched positions beat static center:
+  mean Fisher `0.2733` versus `0.1753`, threshold ratio `0.822`.
+- Real FEM also beat static center: mean Fisher `0.2676`, threshold ratio
+  `0.820`, positive in `16/16` traces.
+- Real FEM was essentially tied with phase-cloud matched positions, and
+  order-shuffled positions also tied phase-cloud, so exact biological temporal
+  order is not supported as special in the first pass.
+- `scaled_real_0.5` was strongest in the first pass: mean Fisher `0.3293`,
+  threshold proxy `1.765`; `scaled_real_1.5` was worse than phase-cloud.
+- Pose-blind readout was much weaker for motion conditions and should be treated
+  as an observer-assumption caveat, not an absolute threshold estimate.
+
+Status: `Open / supportive for phase-cloud sampling`. The safe claim is that
+nearby phase-cloud sampling improves pose-aware Vernier information relative to
+a static center. Do not claim unique optimality of real FEM order. The
+component-scale run currently has partial caches but no completed manifest or
+summary, so treat it as incomplete.
+
+### 2026-06-12: Non-Circular FEM Information / Covariance-Aware Optimality
+
+Primary locations:
+
+- `Non_circular_FEM_information_tests_prescription.md`
+- `Covariance_aware_FEM_optimality_analysis_prescription.md`
+- `jake/twininfo/covariance_optimality.py`
+- `jake/twininfo/run_covariance_optimality.py`
+- `active_sensing_movie_information/summarize_covariance_optimality.py`
+- `outputs/twininfo/active-sensing-all-images-1crop-2fix2ms-16units-gpu/covariance_optimality/covopt_full_gpu1/`
+- `outputs/active_sensing_movie_information/covariance_optimality/covopt_full_gpu1/`
+
+Purpose: extend Figure 5 without making a circular "the twin proves FEM
+optimality" argument. The new direction separates input-level efficient-coding
+tests, recorded-cortex pose-aware information, and model-based covariance-aware
+movement-scale diagnostics.
+
+Important ideas:
+
+- Input whitening should be tested from natural-image statistics plus drift
+  kinematics, without using the fitted twin as the main optimality oracle.
+- Recorded-cortex pose-aware information should ask whether the same spikes are
+  more informative when retinal pose or recent eye history is known.
+- Covariance-aware model tests should compare independent/pose-aware,
+  covariance-aware/pose-aware, and covariance-aware/pose-blind Fisher
+  efficiency across movement scale.
+- Empirical FEM scale can be overlaid as an operating-regime diagnostic, but
+  not claimed as globally optimal unless non-tautological and gain/noise
+  sensitivity checks survive.
+
+Implemented machinery:
+
+- Scaled trajectory family parsing and deterministic scaling:
+  `scaled_real_D...`, `random_amp_scaled_D...`,
+  `random_amp_cloud_matched_scaled_D...`, and
+  `trajectory_order_shuffle_scaled_D...`.
+- Center-response and finite-difference rate collection from existing
+  `jake.twininfo` run metadata.
+- Movement-induced covariance estimates using pooled-residual and within-pair
+  estimators.
+- Independent and covariance-aware Fisher summaries, gain/noise sensitivity
+  rows, covariance spectra, coding/signal alignment diagnostics, and summary
+  decision tables.
+
+Production result:
+
+- The full GPU run completed `3888 / 3888` rate rows across `108` image/trace
+  pairs, four scaled trajectory families, and nine movement scales.
+- Primary metric: final Fisher trace per expected spike. Empirical `D=1`
+  landed on an `empirical_on_plateau` or `peak_near_empirical` regime in 7/8
+  family-by-trace-kind cases.
+- The clearest near-empirical peak was `random_amp_scaled / fixation`:
+  empirical value `77.22`, peak at `D=1.5` with value `81.38`, empirical
+  fraction of peak `0.949`.
+- The main negative/discriminator case was
+  `trajectory_order_shuffle_scaled / microsaccade`: peak at `D=0.125`, value
+  `88.73`, empirical `D=1` value `66.40`, empirical fraction of peak `0.748`.
+- Pose-aware minus pose-blind covariance Fisher gaps at empirical `D=1` were
+  positive in all families: fixation gaps ranged `0.034-0.092`, microsaccade
+  gaps ranged `0.099-0.267` (`n=54` each).
+- Gain/noise sensitivity labels were stable in all tested grids: each
+  family/kind label was unchanged across `9/9` gain/noise settings.
+
+Status: `Closed / supportive with guardrails`. The result supports an
+efficient operating-regime claim, not a unique optimum claim: empirical FEM
+scale generally lies on a high-efficiency plateau, and conditioning on retinal
+pose recovers information that pose-blind covariance accounting treats as
+nuisance. Do not phrase this as proof that biological FEM amplitude is exactly
+optimized.
+
+### 2026-06-12: Structured Translation Decoders and Forward Denoising
+
+Primary locations:
+
+- `structured_translation_decoder_analysis.md`
+- `compact_retinal_translation_geometry/run_windowed_siamese_relative_decoding.py`
+- `compact_retinal_translation_geometry/run_tejas_style_eyepos_decoder.py`
+- `forward_twin_reafferent_denoising_analysis.md`
+- `forward_twin_reafferent_denoising/run_forward_twin_reafferent_denoising.py`
+
+Purpose: turn compact translation geometry into falsifiable recorded-data
+predictions beyond "eye position matters."
+
+Important ideas:
+
+- The structured decoder target is a content-routed local translation code that
+  cannot be reduced to rank-1 global gain.
+- The headline decoder discriminator is the displacement component orthogonal
+  to the local gain axis.
+- The windowed Siamese decoder now has gain-orthogonal metrics, Poisson
+  chart-weighting, and a local rank-1 gain inverse null.
+- The Tejas-style eye-position decoder is intentionally permissive and should
+  be used as a sanity/convention check, not as a compact-geometry claim.
+- Forward-twin denoising asks whether
+  `twin(real eye trace) - twin(stabilized trace)` predicts held-out recorded
+  residual fluctuations beyond shuffled-eye, gain-only, random-subspace, and
+  unit-shuffled controls.
+
+Latest forward-denoising outputs:
+
+- `outputs/forward_twin_reafferent_denoising_preview_patched_matched/`
+- `outputs/forward_twin_reafferent_denoising_diag_zero_beh/`
+- `outputs/forward_twin_reafferent_denoising_diag_fixed_alpha/`
+- `outputs/forward_twin_reafferent_denoising_diag_image_time/`
+
+Latest forward-denoising result:
+
+- The corrected matched preview used 24/24 sessions, trial folds,
+  `max_samples=128`, cross-fit response gains/alpha, `eye_reference=zero`,
+  `stabilized_behavior=same`, and 20 matched shuffled-eye nulls including
+  compact-projected shuffled-eye controls.
+- Full-forward compact k=10 denoising was positive in raw held-out variance
+  reduction and beat random/unit-shuffled compact controls:
+  compact minus random-k `+0.000904 [0.000465, 0.001437]`; compact minus
+  unit-shuffled compact `+0.000887 [0.000443, 0.001426]`.
+- The same compact correction did **not** clearly beat shuffled-eye controls:
+  compact minus compact-projected shuffled-eye `+0.000188
+  [-0.000206, 0.000645]`, `12/24` sessions positive; compact minus full
+  shuffled-eye `-0.000051 [-0.000453, 0.000412]`, `11/24` positive.
+- Diagnostics did not rescue eye-trace specificity. Zero-behavior and
+  image-time-fold sweeps preserved random/unit-shuffle excess but remained null
+  versus compact-projected shuffled-eye. Fixed-alpha was a calibration failure
+  for compact denoising.
+
+Status: `Mixed / not promoted`. Structured decoder and forward denoising are
+implemented and audited enough to interpret. The compact geometry/covariance
+closure story remains intact, but these single-trial decoder/denoising bridges
+should not be promoted as main positive evidence without a new endpoint.
+
+### 2026-06-12: Manuscript Figure Assembly Refresh
+
+Primary locations:
+
+- `fig1/generate_fig1.py`
+- `fig1/generate_fig1b.py`
+- `fig1/generate_fig1c.py`
+- `fig1/generate_fig1d.py`
+- `fig1/generate_fig1f.py`
+- `fig1/fig1a.svg`
+- `fig2/generate_figure2_3_combined.py`
+- `fig2/generate_fig3b.py`
+- `fig2/generate_fig3f.py`
+- `fig3/generate_figure3_combined.py`
+- `fig4_cov_TFTS/plot_covariance_binning_sweep_panel.py`
+- `scripts/diagnose_luke_fig2_inclusion.py`
+- `vernier_active_sensing/`
+
+Purpose: recompose the early manuscript figures around the tightened story.
+
+Important changes:
+
+- Figure 1 now uses an A-I layout: experimental schematic, gaze distribution,
+  RF map, gaze/raster/PSTH population example, and single-unit gaze-sort
+  example. The RF panel highlights the example unit, and the panel-A inset uses
+  the `dpieg.png` image.
+- Figure 2/3 combined now pools included subjects by default, can split
+  subjects with `--split-subjects`, clarifies the covariance decomposition, and
+  replaces the old eigenspectrum panel slot with pairwise noise correlations at
+  8 ms.
+- New Figure 3 compositor selects the main-text digital-twin mechanism chain:
+  twin schematic, empirical-vs-model FEM modulation, eye-state zeroing,
+  non-universal translation axes, compact tangent subspace, image-disjoint
+  generalization, and translation-predicted recorded covariance.
+- The covariance-binning sweep panel checks whether the covariance-closure
+  effect is stable across spike-count windows.
+
+Status: `Active figure polish`. These files are figure assembly and
+presentation work; use the underlying analysis outputs for scientific claim
+status.
 
 ### 2026-06-09: Active-Sensing Movie Information / Figure 5
 
@@ -115,6 +412,13 @@ The folder currently reuses:
 
 - `outputs/twin_feature_tangent_structure_prod_v2`
 - `outputs/matched_twin_covariance_closure_rf_null_step025_rfbacked_v2`
+
+Current claim boundary: the promoted result is structural compact
+retinal-translation geometry and recorded covariance closure. The compact source
+retains full-source closure within tolerance; do not describe the small
+compact-over-full ordering in summary tables as a compact superiority result.
+The strict recorded relative-displacement decoder and gain-orthogonal structured
+decoder are controlled nulls under current audits, not positive Panel F bridges.
 
 ### 2026-06-08: Direct Recorded Derivative / Twin Tangent Alignment
 
@@ -449,14 +753,19 @@ Use this section when you know the folder but not the date.
 | Path | Contents |
 | --- | --- |
 | `active_sensing_movie_information/` | Figure 5 / active-sensing movie-information plans, figure generator, QC, and population checks. |
-| `compact_retinal_translation_geometry/` | Spec-facing compact translation-geometry panel builder, audits, metric validation, and displacement decoding. |
+| `compact_retinal_translation_geometry/` | Spec-facing compact translation-geometry panel builder, audits, metric validation, displacement decoding, structured/gain-orthogonal decoder work, and permissive Tejas-style decoder checks. |
+| `vernier_active_sensing/` | Controlled Vernier hyperacuity analysis package, renderer, model runner, and summary/figure helper. |
+| `forward_twin_reafferent_denoising/` | Forward twin reafferent denoising runner for held-out recorded residual correction tests. |
 | `direct_recorded_derivative_twin_alignment/` | Supplemental recorded derivative vs twin tangent alignment runner and notes. |
 | `matched_twin_covariance_closure/` | Cache and finite-difference closure of recorded FEM covariance by fitted-twin tangents. |
 | `fig4_cov_TFTS/` | Figure 4 covariance/TFTS figure scripts, panel analyses, handoffs, and tests. |
+| `fig1/`, `fig2/`, `fig3/` | Main-text figure assembly scripts and panel generators. |
 | `natural_image_tangent_scale/` | Natural-image tangent scale/breakdown analysis. |
 | `twin_feature_tangent_structure/` | Fitted-twin tangent basis compactness and split/generalization analyses. |
 | `shared_transformation_geometry/` | Early recorded/twin shared transformation geometry pipeline. |
 | `twin_covariance_structure/` | Reafferent covariance geometry analysis and audit scripts. |
+| `../jake/twininfo/covariance_optimality.py` | Cross-package covariance-aware FEM optimality helpers used by the active-sensing Figure 5 extension. |
+| `../jake/twininfo/run_covariance_optimality.py` | Cross-package covariance-aware FEM optimality runner for existing production `jake.twininfo` outputs. |
 | `results/` | Generated phase-landscape, translation-mimicry, and Jacobian identity outputs. |
 | `jacobian_results/` | Generated Jacobian analysis outputs and interpretation note. |
 | `translation_covariance/` | Early translation-covariance generated products and figures. |
@@ -471,8 +780,14 @@ These threads overlap scientifically but are useful for navigation.
 
 | Thread | Current home | Historical/related files |
 | --- | --- | --- |
-| Active-sensing natural-image information | `active_sensing_movie_information/` | `Figure5_active_sensing_triage_plan.md`, `Figure5_random_amp_cloud_matched_control_spec.md`, `e1_active_sensing_efficiency_revised_handoff.md` |
+| Active-sensing natural-image information | `active_sensing_movie_information/` | `Figure5_active_sensing_triage_plan.md`, `Figure5_random_amp_cloud_matched_control_spec.md`, `e1_active_sensing_efficiency_revised_handoff.md`, `Non_circular_FEM_information_tests_prescription.md` |
+| Vernier active sensing | `vernier_active_sensing/` | `vernier_active_sensing_analysis_plan.md`, `outputs/vernier_active_sensing_first_pass/` |
+| Covariance-aware FEM operating regime | `jake/twininfo/covariance_optimality.py`, `jake/twininfo/run_covariance_optimality.py` | `Covariance_aware_FEM_optimality_analysis_prescription.md`, `active_sensing_movie_information/summarize_covariance_optimality.py` |
+| Structured translation decoding | `compact_retinal_translation_geometry/run_windowed_siamese_relative_decoding.py` | `structured_translation_decoder_analysis.md`, `compact_retinal_translation_geometry/run_tejas_style_eyepos_decoder.py` |
+| Content-routed chart alignment | `compact_retinal_translation_geometry/run_correct_chart_swap_alignment.py` | `content_routed_retinal_registration_analysis_plan.md`, `compact_retinal_translation_geometry/summarize_correct_chart_swap_alignment.py` |
+| Forward twin reafferent denoising | `forward_twin_reafferent_denoising/` | `forward_twin_reafferent_denoising_analysis.md`, `matched_twin_covariance_closure/`, `compact_retinal_translation_geometry/` |
 | Compact retinal translation geometry | `compact_retinal_translation_geometry/` | `fig4_cov_TFTS/`, `twin_feature_tangent_structure/`, `matched_twin_covariance_closure/` |
+| Manuscript figure assembly | `fig1/`, `fig2/`, `fig3/` | `fig4_cov_TFTS/plot_covariance_binning_sweep_panel.py`, `scripts/diagnose_luke_fig2_inclusion.py` |
 | Recorded derivative/twin tangent alignment | `direct_recorded_derivative_twin_alignment/` | `shared_transformation_geometry/`, `matched_twin_covariance_closure/` |
 | Covariance closure | `matched_twin_covariance_closure/` | Ryan cache copies under `outputs/cache/` and RF-backed closure outputs under `outputs/` |
 | Shared transformation geometry | `shared_transformation_geometry/` | `shared_transformation_geometry_handoff*.md` |

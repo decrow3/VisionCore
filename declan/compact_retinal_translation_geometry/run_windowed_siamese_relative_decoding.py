@@ -82,8 +82,12 @@ class SiameseConfig:
     batch_size_decoder: int
     run_mlp_decoder: bool
     enable_chart_inverse: bool
+    enable_gain_orth_metrics: bool
+    chart_weighting: str
     chart_ridge_frac: float
     chart_calibration_ridge_frac: float
+    candidate_positive_min_sessions: int
+    candidate_positive_min_margin: float
     seed: int
 
 
@@ -405,11 +409,17 @@ def _chart_inverse_predict(
     dy: np.ndarray,
     charts: np.ndarray,
     ridge_frac: float,
+    weights: np.ndarray | None = None,
 ) -> np.ndarray:
     dy = np.asarray(dy, dtype=np.float64)
     charts = np.asarray(charts, dtype=np.float64)
-    jtj = np.einsum("pda,pdb->pab", charts, charts)
-    jty = np.einsum("pda,pd->pa", charts, dy)
+    if weights is None:
+        jtj = np.einsum("pda,pdb->pab", charts, charts)
+        jty = np.einsum("pda,pd->pa", charts, dy)
+    else:
+        w = np.asarray(weights, dtype=np.float64)
+        jtj = np.einsum("pda,pd,pdb->pab", charts, w, charts)
+        jty = np.einsum("pda,pd,pd->pa", charts, w, dy)
     trace = np.trace(jtj, axis1=1, axis2=2)
     lam = np.maximum(float(ridge_frac) * trace / 2.0, 1e-9)
     eye = np.eye(2, dtype=np.float64)[None, :, :]
@@ -428,25 +438,231 @@ def _fit_chart_calibration(raw_pred: np.ndarray, y: np.ndarray, ridge_frac: floa
     return np.linalg.solve(xtx + lam * np.eye(x.shape[1], dtype=np.float64), x.T @ yy)
 
 
+def _normalize_rows(x: np.ndarray, eps: float = 1e-9) -> tuple[np.ndarray, np.ndarray]:
+    arr = np.asarray(x, dtype=np.float64)
+    norm = np.linalg.norm(arr, axis=1, keepdims=True)
+    ok = np.isfinite(norm[:, 0]) & (norm[:, 0] > float(eps))
+    out = np.zeros_like(arr)
+    out[ok] = arr[ok] / norm[ok]
+    return out, ok
+
+
+def _fold_condition_gain_response(pairs: dict[str, np.ndarray], train_mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    center_gain = 0.5 * (
+        np.asarray(pairs["response_a"][:, -1, :], dtype=np.float64)
+        + np.asarray(pairs["response_b"][:, -1, :], dtype=np.float64)
+    )
+    train = np.asarray(train_mask, dtype=bool)
+    out = np.zeros_like(center_gain)
+    ok = np.zeros(center_gain.shape[0], dtype=bool)
+    if not np.any(train):
+        return out.astype(np.float32), ok
+    train_gain = center_gain[train]
+    global_mean = np.nanmean(train_gain, axis=0)
+    for condition_id in np.unique(pairs["condition_id"]):
+        rows = pairs["condition_id"] == int(condition_id)
+        train_rows = rows & train
+        if np.any(train_rows):
+            out[rows] = np.nanmean(center_gain[train_rows], axis=0)
+            ok[rows] = True
+        else:
+            out[rows] = global_mean
+            ok[rows] = np.isfinite(global_mean).all()
+    ok &= np.isfinite(out).all(axis=1)
+    return out.astype(np.float32), ok
+
+
+def _project_response_to_feature_space(response: np.ndarray, matrix: np.ndarray) -> np.ndarray:
+    basis = orth(np.asarray(matrix, dtype=np.float64))
+    if basis.shape[1] == 0:
+        return np.zeros_like(np.asarray(response, dtype=np.float64))
+    return (np.asarray(response, dtype=np.float64) @ basis) @ basis.T
+
+
+def _project_charts_to_feature_space(j_pair: np.ndarray, matrix: np.ndarray) -> np.ndarray:
+    basis = orth(np.asarray(matrix, dtype=np.float64))
+    charts = np.asarray(j_pair, dtype=np.float64)
+    if basis.shape[1] == 0:
+        return np.zeros_like(charts)
+    chart_feat = np.einsum("nd,pna->pda", basis, charts)
+    return np.einsum("nd,pda->pna", basis, chart_feat)
+
+
+def _response_weights(gain_response: np.ndarray, weighting: str) -> np.ndarray | None:
+    if str(weighting) == "none":
+        return None
+    if str(weighting) != "poisson":
+        raise ValueError(f"Unsupported chart weighting: {weighting}")
+    gain = np.asarray(gain_response, dtype=np.float64)
+    finite_pos = gain[np.isfinite(gain) & (gain > 0)]
+    floor = max(float(np.nanpercentile(finite_pos, 5.0)) if finite_pos.size else 0.0, 1e-3)
+    return 1.0 / np.maximum(gain, floor)
+
+
+def _gain_displacement_axis(
+    *,
+    pairs: dict[str, np.ndarray],
+    j: np.ndarray,
+    matrix: np.ndarray,
+    gain_response: np.ndarray,
+    gain_ok: np.ndarray,
+    weighting: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    mat = np.asarray(matrix, dtype=np.float64)
+    sample_a = np.asarray(pairs["sample_a"], dtype=np.int64)
+    sample_b = np.asarray(pairs["sample_b"], dtype=np.int64)
+    j_pair = 0.5 * (np.asarray(j, dtype=np.float64)[sample_a] + np.asarray(j, dtype=np.float64)[sample_b])
+    chart_model = _project_charts_to_feature_space(j_pair, mat)
+    gain_model = _project_response_to_feature_space(gain_response, mat)
+    weights = _response_weights(gain_response, str(weighting))
+    if weights is None:
+        q = np.einsum("pna,pn->pa", chart_model, gain_model)
+    else:
+        q = np.einsum("pna,pn,pn->pa", chart_model, weights, gain_model)
+    q_axis, ok = _normalize_rows(q)
+    ok &= np.asarray(gain_ok, dtype=bool)
+    orth_axis = np.stack([-q_axis[:, 1], q_axis[:, 0]], axis=1)
+    return orth_axis.astype(np.float32), ok.astype(bool)
+
+
+def _gain_rank1_charts(
+    *,
+    pairs: dict[str, np.ndarray],
+    j: np.ndarray,
+    matrix: np.ndarray,
+    gain_response: np.ndarray,
+    gain_ok: np.ndarray,
+    weighting: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    mat = np.asarray(matrix, dtype=np.float64)
+    sample_a = np.asarray(pairs["sample_a"], dtype=np.int64)
+    sample_b = np.asarray(pairs["sample_b"], dtype=np.int64)
+    j_pair = 0.5 * (np.asarray(j, dtype=np.float64)[sample_a] + np.asarray(j, dtype=np.float64)[sample_b])
+    chart_model = _project_charts_to_feature_space(j_pair, mat)
+    gain_model = _project_response_to_feature_space(gain_response, mat)
+    weights = _response_weights(gain_response, str(weighting))
+    if weights is None:
+        norm2 = np.sum(gain_model * gain_model, axis=1)
+        coeff = np.einsum("pn,pna->pa", gain_model, chart_model) / np.maximum(norm2[:, None], 1e-12)
+    else:
+        norm2 = np.einsum("pn,pn,pn->p", gain_model, weights, gain_model)
+        coeff = np.einsum("pn,pn,pna->pa", gain_model, weights, chart_model) / np.maximum(norm2[:, None], 1e-12)
+    ok = np.isfinite(norm2) & (norm2 > 1e-12)
+    ok &= np.asarray(gain_ok, dtype=bool)
+    rank1 = gain_model[:, :, None] * coeff[:, None, :]
+    ok &= np.isfinite(rank1).all(axis=(1, 2)) & np.any(np.abs(coeff) > 1e-9, axis=1)
+    rank1[~ok] = 0.0
+    return rank1.astype(np.float32), ok.astype(bool)
+
+
+def _rank1_gain_predictions_for_spec(
+    *,
+    pairs: dict[str, np.ndarray],
+    j: np.ndarray,
+    matrix: np.ndarray,
+    gain_response: np.ndarray,
+    gain_ok: np.ndarray,
+    test_mask: np.ndarray,
+    alignment_control: str,
+    ridge_frac: float,
+    weighting: str,
+    seed: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    dy_center = np.asarray(pairs["response_a"][:, -1, :] - pairs["response_b"][:, -1, :], dtype=np.float64)
+    rank1_charts, chart_ok = _gain_rank1_charts(
+        pairs=pairs,
+        j=j,
+        matrix=matrix,
+        gain_response=gain_response,
+        gain_ok=gain_ok,
+        weighting=str(weighting),
+    )
+    weights = _response_weights(gain_response, str(weighting))
+    if str(alignment_control) == "chart_time_shuffled":
+        rng = np.random.default_rng(int(seed))
+        test_source = rng.permutation(np.flatnonzero(test_mask))
+    elif str(alignment_control) == "observed":
+        test_source = np.flatnonzero(test_mask)
+    else:
+        raise ValueError(f"Unsupported gain alignment control: {alignment_control}")
+    raw_test = _chart_inverse_predict(
+        dy=dy_center[test_mask],
+        charts=rank1_charts[test_source],
+        ridge_frac=float(ridge_frac),
+        weights=None if weights is None else weights[test_mask],
+    )
+    pred = np.zeros((raw_test.shape[0], pairs["target_delta"].shape[1], 2), dtype=np.float32)
+    pred[:, 0, :] = raw_test
+    if pred.shape[1] > 1:
+        pred[:, 1:, :] = pred[:, :1, :]
+    return pred, chart_ok[test_source]
+
+
+def _gain_orth_metrics(y_true: np.ndarray, y_pred: np.ndarray, orth_axis: np.ndarray, axis_ok: np.ndarray) -> dict[str, float]:
+    yt = np.asarray(y_true[:, 0, :], dtype=np.float64)
+    yp = np.asarray(y_pred[:, 0, :], dtype=np.float64)
+    axis = np.asarray(orth_axis, dtype=np.float64)
+    ok = np.asarray(axis_ok, dtype=bool) & np.isfinite(yt).all(axis=1) & np.isfinite(yp).all(axis=1) & np.isfinite(axis).all(axis=1)
+    if int(np.sum(ok)) < 3:
+        return {
+            "gain_orth_n": float(np.sum(ok)),
+            "gain_orth_axis_valid_fraction": float(np.mean(axis_ok)) if axis_ok.size else float("nan"),
+            "gain_orth_R2": float("nan"),
+            "gain_orth_corr": float("nan"),
+            "gain_orth_rmse": float("nan"),
+            "gain_orth_sign_accuracy": float("nan"),
+            "gain_orth_balanced_sign_accuracy": float("nan"),
+            "gain_orth_true_std": float("nan"),
+            "gain_orth_pred_std": float("nan"),
+        }
+    true_s = np.sum(yt[ok] * axis[ok], axis=1)
+    pred_s = np.sum(yp[ok] * axis[ok], axis=1)
+    ss_tot = float(np.sum((true_s - np.mean(true_s)) ** 2))
+    ss_res = float(np.sum((true_s - pred_s) ** 2))
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else float("nan")
+    true_std = float(np.std(true_s))
+    pred_std = float(np.std(pred_s))
+    corr = float(np.corrcoef(true_s, pred_s)[0, 1]) if true_std > 1e-12 and pred_std > 1e-12 else float("nan")
+    true_pos = true_s >= 0.0
+    pred_pos = pred_s >= 0.0
+    sign_acc = float(np.mean(true_pos == pred_pos))
+    pos_acc = float(np.mean(pred_pos[true_pos])) if np.any(true_pos) else float("nan")
+    neg_acc = float(np.mean(~pred_pos[~true_pos])) if np.any(~true_pos) else float("nan")
+    bal = float(np.nanmean([pos_acc, neg_acc]))
+    return {
+        "gain_orth_n": float(np.sum(ok)),
+        "gain_orth_axis_valid_fraction": float(np.mean(axis_ok)) if axis_ok.size else float("nan"),
+        "gain_orth_R2": r2,
+        "gain_orth_corr": corr,
+        "gain_orth_rmse": float(np.sqrt(np.mean((true_s - pred_s) ** 2))),
+        "gain_orth_sign_accuracy": sign_acc,
+        "gain_orth_balanced_sign_accuracy": bal,
+        "gain_orth_true_std": true_std,
+        "gain_orth_pred_std": pred_std,
+    }
+
+
 def _chart_predictions_for_spec(
     *,
     pairs: dict[str, np.ndarray],
     j: np.ndarray,
     matrix: np.ndarray,
+    gain_response: np.ndarray,
     train_mask: np.ndarray,
     test_mask: np.ndarray,
     alignment_control: str,
     ridge_frac: float,
     calibration_ridge_frac: float,
+    weighting: str,
     seed: int,
 ) -> dict[str, np.ndarray]:
     mat = np.asarray(matrix, dtype=np.float64)
     dy_center = np.asarray(pairs["response_a"][:, -1, :] - pairs["response_b"][:, -1, :], dtype=np.float64)
-    dy_feat = dy_center @ mat
     sample_a = np.asarray(pairs["sample_a"], dtype=np.int64)
     sample_b = np.asarray(pairs["sample_b"], dtype=np.int64)
     j_pair = 0.5 * (np.asarray(j, dtype=np.float64)[sample_a] + np.asarray(j, dtype=np.float64)[sample_b])
-    chart_feat = np.einsum("nd,pna->pda", mat, j_pair)
+    chart_model = _project_charts_to_feature_space(j_pair, mat)
+    weights = _response_weights(gain_response, str(weighting))
     if str(alignment_control) == "chart_time_shuffled":
         rng = np.random.default_rng(int(seed))
         train_source = rng.permutation(np.flatnonzero(train_mask))
@@ -457,14 +673,16 @@ def _chart_predictions_for_spec(
     else:
         raise ValueError(f"Unsupported chart alignment control: {alignment_control}")
     raw_train = _chart_inverse_predict(
-        dy=dy_feat[train_mask],
-        charts=chart_feat[train_source],
+        dy=dy_center[train_mask],
+        charts=chart_model[train_source],
         ridge_frac=float(ridge_frac),
+        weights=None if weights is None else weights[train_mask],
     )
     raw_test = _chart_inverse_predict(
-        dy=dy_feat[test_mask],
-        charts=chart_feat[test_source],
+        dy=dy_center[test_mask],
+        charts=chart_model[test_source],
         ridge_frac=float(ridge_frac),
+        weights=None if weights is None else weights[test_mask],
     )
     w = _fit_chart_calibration(
         raw_train,
@@ -625,6 +843,7 @@ def _session_rows(
         if not np.any(train_mask) or not np.any(test_mask):
             continue
         train_sample_mask = ~np.isin(samples.trial_ids, held_ids) if split_mode == "trial_disjoint" else np.isin(labels, list(train_conditions))
+        gain_response_all, gain_response_ok_all = _fold_condition_gain_response(pairs, train_mask)
         for projection_control in projection_controls:
             modes = _projection_modes(str(projection_control), target_cov)
             projection = _projection_complement(pairs["response_a"].shape[2], modes)
@@ -660,20 +879,82 @@ def _session_rows(
                     xb = _transform_windows(pairs["response_b"], mat)
                     kind = "siamese"
                 if kind == "siamese" and bool(args.enable_chart_inverse):
+                    orth_axis_all, orth_axis_ok_all = _gain_displacement_axis(
+                        pairs=pairs,
+                        j=j,
+                        matrix=mat,
+                        gain_response=gain_response_all,
+                        gain_ok=gain_response_ok_all,
+                        weighting=str(args.chart_weighting),
+                    )
+                    for gain_alignment in ("observed",):
+                        gain_pred, gain_chart_ok = _rank1_gain_predictions_for_spec(
+                            pairs=pairs,
+                            j=j,
+                            matrix=mat,
+                            gain_response=gain_response_all,
+                            gain_ok=gain_response_ok_all,
+                            test_mask=test_mask,
+                            alignment_control=gain_alignment,
+                            ridge_frac=float(args.chart_ridge_frac),
+                            weighting=str(args.chart_weighting),
+                            seed=int(args.seed) + fold_idx * 1741 + len(metric_rows),
+                        )
+                        metrics = _trajectory_metrics(pairs["target_delta"][test_mask], gain_pred)
+                        if bool(args.enable_gain_orth_metrics):
+                            metrics.update(
+                                _gain_orth_metrics(
+                                    pairs["target_delta"][test_mask],
+                                    gain_pred,
+                                    orth_axis_all[test_mask],
+                                    orth_axis_ok_all[test_mask] & gain_chart_ok,
+                                )
+                            )
+                        metrics["gain_rank1_chart_valid_fraction"] = float(np.mean(gain_chart_ok)) if gain_chart_ok.size else float("nan")
+                        base = {
+                            "session": session,
+                            "subject": subject,
+                            "fold_id": int(fold_idx),
+                            "feature_space": f"{feature_space}_gain_only_rank1",
+                            "feature_role": "rank1_global_gain_null",
+                            "k": int(spec["k"]),
+                            "basis_rank": int(basis_rank),
+                            "projection_control": projection_control,
+                            "alignment_control": gain_alignment,
+                            "decoder": "local_gain_rank1_inverse",
+                            "split_mode": str(split_mode),
+                            "n_train_pairs": int(np.sum(train_mask)),
+                            "n_test_pairs": int(np.sum(test_mask)),
+                            "target_len": int(pairs["target_delta"].shape[1]),
+                            "input_len": int(pairs["response_a"].shape[1]),
+                        }
+                        for name, value in metrics.items():
+                            metric_rows.append({**base, "metric_name": name, "metric_value": value})
                     for chart_alignment in ("observed", "chart_time_shuffled"):
                         chart_preds = _chart_predictions_for_spec(
                             pairs=pairs,
                             j=j,
                             matrix=mat,
+                            gain_response=gain_response_all,
                             train_mask=train_mask,
                             test_mask=test_mask,
                             alignment_control=chart_alignment,
                             ridge_frac=float(args.chart_ridge_frac),
                             calibration_ridge_frac=float(args.chart_calibration_ridge_frac),
+                            weighting=str(args.chart_weighting),
                             seed=int(args.seed) + fold_idx * 1429 + len(metric_rows),
                         )
                         for chart_kind, chart_pred in chart_preds.items():
                             metrics = _trajectory_metrics(pairs["target_delta"][test_mask], chart_pred)
+                            if bool(args.enable_gain_orth_metrics):
+                                metrics.update(
+                                    _gain_orth_metrics(
+                                        pairs["target_delta"][test_mask],
+                                        chart_pred,
+                                        orth_axis_all[test_mask],
+                                        orth_axis_ok_all[test_mask],
+                                    )
+                                )
                             base = {
                                 "session": session,
                                 "subject": subject,
@@ -775,7 +1056,9 @@ def _summaries(metric_rows: list[dict[str, Any]], primary_projection: str, prima
         )
         by_session.setdefault((*key, str(row["session"])), []).append(float(row["metric_value"]))
     for key_sess, vals in by_session.items():
-        groups.setdefault(key_sess[:5], []).append(float(np.nanmean(vals)))
+        arr = np.asarray(vals, dtype=np.float64)
+        finite = arr[np.isfinite(arr)]
+        groups.setdefault(key_sess[:5], []).append(float(np.mean(finite)) if finite.size else float("nan"))
     summary = []
     for (feature_space, k, projection_control, alignment_control, metric_name), vals in sorted(groups.items()):
         arr = np.asarray(vals, dtype=np.float64)
@@ -840,6 +1123,22 @@ def _summaries(metric_rows: list[dict[str, Any]], primary_projection: str, prima
         shuffled = shuffled_vals.get((feature_space, k, shuffled_name), float("nan"))
         c[f"{feature_space}_alignment_null_center_R2_mean"] = shuffled
         c[f"{feature_space}_alignment_gain_center_R2"] = observed - shuffled if np.isfinite(observed) and np.isfinite(shuffled) else float("nan")
+    summary_vals = {
+        (str(r["feature_space"]), int(r["k"]), str(r["alignment_control"]), str(r["metric_name"])): float(r["observed_mean"])
+        for r in summary
+        if str(r["projection_control"]) == str(primary_projection)
+    }
+    for metric_name in ("gain_orth_R2", "gain_orth_corr", "gain_orth_balanced_sign_accuracy", "gain_orth_sign_accuracy"):
+        raw = summary_vals.get(("compact_chart_inverse", int(primary_k), "observed", metric_name), float("nan"))
+        cal = summary_vals.get(("compact_chart_inverse_calibrated", int(primary_k), "observed", metric_name), float("nan"))
+        gain = summary_vals.get(("compact_gain_only_rank1", int(primary_k), "observed", metric_name), float("nan"))
+        chart_shuffle = summary_vals.get(("compact_chart_inverse", int(primary_k), "chart_time_shuffled", metric_name), float("nan"))
+        c[f"compact_chart_inverse_{metric_name}"] = raw
+        c[f"compact_chart_inverse_calibrated_{metric_name}"] = cal
+        c[f"compact_gain_only_rank1_{metric_name}"] = gain
+        c[f"compact_chart_inverse_chart_shuffle_{metric_name}"] = chart_shuffle
+        c[f"compact_chart_inverse_minus_gain_rank1_{metric_name}"] = raw - gain if np.isfinite(raw) and np.isfinite(gain) else float("nan")
+        c[f"compact_chart_inverse_minus_chart_shuffle_{metric_name}"] = raw - chart_shuffle if np.isfinite(raw) and np.isfinite(chart_shuffle) else float("nan")
     return summary, comparison
 
 
@@ -887,8 +1186,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--weight-decay", type=float, default=1e-4)
     p.add_argument("--run-mlp-decoder", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--enable-chart-inverse", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--enable-gain-orth-metrics", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--chart-weighting", choices=["none", "poisson"], default="poisson")
     p.add_argument("--chart-ridge-frac", type=float, default=1e-3)
     p.add_argument("--chart-calibration-ridge-frac", type=float, default=1e-3)
+    p.add_argument("--candidate-positive-min-sessions", type=int, default=6)
+    p.add_argument("--candidate-positive-min-margin", type=float, default=0.02)
     p.add_argument("--min-units", type=int, default=50)
     p.add_argument("--enable-rf-readout-null", action="store_true", default=True)
     p.add_argument("--rf-null-min-bin-units", type=int, default=6)
@@ -931,8 +1234,12 @@ def run_analysis(args: argparse.Namespace) -> None:
         batch_size_decoder=int(args.batch_size_decoder),
         run_mlp_decoder=bool(args.run_mlp_decoder),
         enable_chart_inverse=bool(args.enable_chart_inverse),
+        enable_gain_orth_metrics=bool(args.enable_gain_orth_metrics),
+        chart_weighting=str(args.chart_weighting),
         chart_ridge_frac=float(args.chart_ridge_frac),
         chart_calibration_ridge_frac=float(args.chart_calibration_ridge_frac),
+        candidate_positive_min_sessions=int(args.candidate_positive_min_sessions),
+        candidate_positive_min_margin=float(args.candidate_positive_min_margin),
         seed=int(args.seed),
     )
     write_json(
@@ -943,6 +1250,10 @@ def run_analysis(args: argparse.Namespace) -> None:
             "run_datetime_utc": datetime.now(timezone.utc).isoformat(),
             "config": asdict(config),
             "strict_decoder_reference": str(STRICT_DECODER_ROOT),
+            "chart_observer_details": {
+                "gain_response_source": "fold_train_condition_mean_with_global_train_fallback",
+                "weighting": str(args.chart_weighting),
+            },
             "claim_guardrail": "Context-aware relative decoder; do not describe as absolute eye-position decoding.",
         },
     )
@@ -1044,18 +1355,46 @@ def run_analysis(args: argparse.Namespace) -> None:
     compact_minus_rf = float(comp.get("compact_minus_rf_readout_permuted_compact_center_R2", float("nan"))) if comp else float("nan")
     leakage_failures = int(sum(1 for r in leakage_rows if r.get("status") == "fail"))
     decision = "diagnostic"
-    if np.isfinite(compact) and compact > 0 and np.isfinite(compact_minus_orth) and compact_minus_orth > 0 and np.isfinite(compact_minus_random) and compact_minus_random > 0 and (not np.isfinite(compact_minus_rf) or compact_minus_rf > 0) and leakage_failures == 0:
+    structured_acc = float(comp.get("compact_chart_inverse_gain_orth_balanced_sign_accuracy", float("nan"))) if comp else float("nan")
+    structured_minus_gain = float(comp.get("compact_chart_inverse_minus_gain_rank1_gain_orth_balanced_sign_accuracy", float("nan"))) if comp else float("nan")
+    structured_minus_shuffle = float(comp.get("compact_chart_inverse_minus_chart_shuffle_gain_orth_balanced_sign_accuracy", float("nan"))) if comp else float("nan")
+    n_sessions_ok = int(sum(1 for r in session_rows if r.get("status") == "ok"))
+    min_positive_sessions = int(args.candidate_positive_min_sessions)
+    min_positive_margin = float(args.candidate_positive_min_margin)
+    if (
+        n_sessions_ok >= min_positive_sessions
+        and np.isfinite(structured_acc)
+        and structured_acc >= 0.5 + min_positive_margin
+        and np.isfinite(structured_minus_gain)
+        and structured_minus_gain >= min_positive_margin
+        and np.isfinite(structured_minus_shuffle)
+        and structured_minus_shuffle >= min_positive_margin
+        and leakage_failures == 0
+    ):
         decision = "candidate_positive"
+    elif n_sessions_ok >= min_positive_sessions and np.isfinite(compact) and compact > 0 and np.isfinite(compact_minus_orth) and compact_minus_orth > 0 and np.isfinite(compact_minus_random) and compact_minus_random > 0 and (not np.isfinite(compact_minus_rf) or compact_minus_rf > 0) and leakage_failures == 0:
+        decision = "candidate_positive_legacy_mlp"
     write_json(
         out / "audit.json",
         {
             "status": "ok",
             "decision": decision,
             "n_sessions_requested": int(len(sessions)),
-            "n_sessions_ok": int(sum(1 for r in session_rows if r.get("status") == "ok")),
+            "n_sessions_ok": n_sessions_ok,
             "n_metric_rows": int(len(metric_rows)),
             "n_leakage_failures": leakage_failures,
             "primary_feature_comparison": comp,
+            "chart_observer_details": {
+                "gain_response_source": "fold_train_condition_mean_with_global_train_fallback",
+                "weighting": str(args.chart_weighting),
+                "rank1_gain_decoder": "local weighted inverse through the rank-1 gain-projected chart",
+            },
+            "candidate_positive_gate": {
+                "min_sessions": min_positive_sessions,
+                "min_balanced_accuracy": 0.5 + min_positive_margin,
+                "min_margin_over_gain_rank1": min_positive_margin,
+                "min_margin_over_chart_shuffle": min_positive_margin,
+            },
             "model_info": {k: str(v) for k, v in dict(model_info).items()},
             "claim_guardrail": "Context-aware relative decoder; do not describe as absolute eye-position decoding.",
         },
@@ -1067,6 +1406,10 @@ def run_analysis(args: argparse.Namespace) -> None:
             "status": "ok",
             "run_datetime_utc": datetime.now(timezone.utc).isoformat(),
             "config": asdict(config),
+            "chart_observer_details": {
+                "gain_response_source": "fold_train_condition_mean_with_global_train_fallback",
+                "weighting": str(args.chart_weighting),
+            },
             "model_info": {k: str(v) for k, v in dict(model_info).items()},
         },
     )

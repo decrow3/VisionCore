@@ -31,7 +31,7 @@ from math import comb
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
+from matplotlib.patches import ConnectionPatch, Rectangle
 from scipy.spatial.distance import cdist
 from tqdm import tqdm
 
@@ -95,6 +95,7 @@ COMBO_IDX = 1               # script selected the second-best combo (j=1)
 # Raster rendering.
 PSTH_BIN_MS = 5.0           # ms binning for line PSTHs
 RASTER_GAP_BINS = 10
+RASTER_GROUP_GAP_BINS = 18
 
 CACHE_FIG_DIR = CACHE_DIR / "fig1_population"
 FIG_DIR = FIGURES_DIR / "fig1"
@@ -446,7 +447,12 @@ def plot_gaze_axis(ax, payload, c0_trials, c1_trials, dim,
 
     ax.set_xlim(window_ms[0], window_ms[1])
     label = "Az." if dim == 0 else "El."
-    ax.set_ylabel(f"{label} (°)", fontsize=8)
+    ax.set_ylabel("")
+    ax.text(
+        0.01, 0.86, f"{label} (°)",
+        transform=ax.transAxes, ha="left", va="top",
+        fontsize=8, color="0.1",
+    )
     ax.tick_params(direction="in", length=3, width=0.8, labelsize=7)
     for s in ("top", "right"):
         ax.spines[s].set_visible(False)
@@ -524,7 +530,8 @@ def plot_psth_axis(ax, payload, c0_trials, c1_trials,
 
 def plot_raster_axis(ax, payload, c0_trials=None, c1_trials=None,
                     window_ms=RASTER_WINDOW_MS,
-                    gap=RASTER_GAP_BINS):
+                    gap=RASTER_GAP_BINS,
+                    group_gap=RASTER_GROUP_GAP_BINS):
     """Cluster-grouped population raster with dashed trial dividers."""
     robs = payload["robs"]
     spike_times = payload["spike_times_trials"]
@@ -545,7 +552,7 @@ def plot_raster_axis(ax, payload, c0_trials=None, c1_trials=None,
 
     block_h = n_cells + gap
     row_c0_start = 0
-    row_c1_start = n0 * block_h
+    row_c1_start = n0 * block_h + group_gap
     total_rows = row_c1_start + n1 * block_h - gap
 
     t0_ms = t0_bin * DT * 1000.0
@@ -602,10 +609,11 @@ def plot_raster_axis(ax, payload, c0_trials=None, c1_trials=None,
     for i in range(1, n1):
         ax.axhline(row_c1_start + i * block_h - gap / 2, color="0.6",
                    lw=0.4, ls="--", zorder=0)
-    # Solid divider between the two clusters.
+    # Subtle divider centered in the small gap between trajectory groups.
     if n0 > 0 and n1 > 0:
-        ax.axhline(row_c1_start - gap / 2, color="k",
-                   lw=0.6, ls="-", zorder=0)
+        group_divider_y = n0 * block_h - gap / 2 + group_gap / 2
+        ax.axhline(group_divider_y, color="0.82",
+                   lw=0.5, ls="-", zorder=0)
 
     # Outline the two displayed four-trial groups.
     box_x = t0_ms + 2.0
@@ -627,7 +635,7 @@ def plot_raster_axis(ax, payload, c0_trials=None, c1_trials=None,
     ax.set_xlim(t0_ms, t1_ms)
     ax.set_ylim(total_rows, 0)
     ax.set_xlabel("Time from fixation onset (ms)", fontsize=8)
-    ax.set_ylabel("Trial", fontsize=8)
+    ax.set_ylabel("Trials, grouped by gaze trajectory", fontsize=8)
     ax.set_yticks(tick_positions)
     ax.set_yticklabels(tick_labels)
     for lbl, col in zip(ax.get_yticklabels(), tick_colors):
@@ -647,6 +655,24 @@ def _add_block_label(ax, letter, dx=-22, dy=6):
     )
 
 
+def _add_gaze_raster_links(ax_gaze, ax_raster):
+    """Connect the colored gaze traces to the matching raster trial groups."""
+    links = [
+        ("blue", (1.015, 0.72), (1.015, 0.78), 0.0),
+        ("red", (1.055, 0.32), (1.055, 0.27), 0.0),
+    ]
+    for color, xy_a, xy_b, rad in links:
+        con = ConnectionPatch(
+            xyA=xy_a, coordsA=ax_gaze.transAxes,
+            xyB=xy_b, coordsB=ax_raster.transAxes,
+            arrowstyle="->", mutation_scale=8,
+            linewidth=1.0, color=color, alpha=0.9,
+            connectionstyle=f"arc3,rad={rad}",
+            shrinkA=2, shrinkB=2, clip_on=False, zorder=8,
+        )
+        ax_raster.add_artist(con)
+
+
 def plot_panel_f(fig=None, subject=SUBJECT, date=DATE, refresh=False,
                  panel_letters=("G", "H", "I"), bottom_pad=0.0):
     payload = load_panel_payload(subject, date, refresh=refresh)
@@ -661,12 +687,12 @@ def plot_panel_f(fig=None, subject=SUBJECT, date=DATE, refresh=False,
     if bottom_pad:
         outer = fig.add_gridspec(
             4, 1,
-            height_ratios=[1.25, 2.7, 0.55, bottom_pad],
+            height_ratios=[1.25, 2.45, 0.55, bottom_pad],
             hspace=-0.06,
         )
     else:
         outer = fig.add_gridspec(
-            3, 1, height_ratios=[1.25, 2.7, 0.55], hspace=-0.06,
+            3, 1, height_ratios=[1.25, 2.45, 0.55], hspace=-0.06,
         )
     gaze_gs = outer[0].subgridspec(2, 1, hspace=-0.04)
     ax_h = fig.add_subplot(gaze_gs[0])
@@ -688,13 +714,14 @@ def plot_panel_f(fig=None, subject=SUBJECT, date=DATE, refresh=False,
     # only left + bottom spines.
     ax_h.spines["bottom"].set_visible(False)
     ax_h.tick_params(bottom=False, labelbottom=False)
-    ax_v.tick_params(top=False, labeltop=False)
+    ax_v.tick_params(top=False, labeltop=False, labelbottom=False)
 
     # PSTH summarizes the raster above, so keep the time labels only at the
     # bottom of this stack.
     ax_raster.tick_params(labelbottom=False)
     ax_raster.set_xlabel("")
     ax_psth.tick_params(labelbottom=True)
+    _add_gaze_raster_links(ax_v, ax_raster)
 
     if panel_letters is not None:
         _add_block_label(ax_h, panel_letters[0])

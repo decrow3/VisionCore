@@ -441,7 +441,7 @@ def plot_sta_axis(ax, payload):
     img = sta["image"]
     vmax = float(np.nanmax(np.abs(img))) or 1.0
     ax.imshow(img, extent=sta["extent"], origin="upper",
-              cmap="RdBu_r", vmin=-vmax, vmax=vmax, interpolation="nearest")
+              cmap="gray", vmin=-vmax, vmax=vmax, interpolation="nearest")
     ax.set_aspect("equal")
     return ax
 
@@ -562,7 +562,7 @@ def plot_psth_axis(ax, payload):
         warnings.simplefilter("ignore", RuntimeWarning)
         mean = np.nanmean(robs, axis=0) / DT
         sem = np.nanstd(robs, axis=0) / np.sqrt(max(n, 1)) / DT
-    t_ms = (np.arange(s0, e0) + 0.5) * DT * 1000.0
+    t_ms = (np.arange(s0, e0) - s0 + 0.5) * DT * 1000.0
 
     # Conditional PSTHs by sign of projection in each segment
     mean_neg = np.full(e0 - s0, np.nan)
@@ -590,9 +590,9 @@ def plot_psth_axis(ax, payload):
     ax.fill_between(t_ms, mean - sem, mean + sem,
                     color="0.6", alpha=0.4, linewidth=0, zorder=2)
     ax.plot(t_ms, mean, color="k", lw=1.0, zorder=3, label="all")
-    ax.set_xlim(s0 * DT * 1000.0, e0 * DT * 1000.0)
+    ax.set_xlim(0, (e0 - s0) * DT * 1000.0)
     ax.set_ylim(bottom=0)
-    ax.set_ylabel("Spikes/s")
+    ax.set_ylabel("Spikes/s", fontsize=8)
     ax.tick_params(direction="in", length=3, labelsize=7)
     return ax
 
@@ -648,7 +648,7 @@ def plot_raster_axis(ax, payload, tick_height=0.7, tick_lw=0.6,
     # Left axis: 0 / N_trials with terse title.
     ax.set_yticks([0, n_rows])
     ax.set_yticklabels(["0", str(n_rows)])
-    ax.set_ylabel("Trials, gaze ordered", fontsize=8)
+    ax.set_ylabel("Trials, by gaze along oriented axis", fontsize=8)
     ax.tick_params(axis="y", labelsize=7, direction="in", length=3, left=True)
 
     # Single color strip to the right of the raster, for the last segment.
@@ -808,7 +808,7 @@ def plot_panel_d_gaze(ax=None, subject=SUBJECT, date=DATE, cell=DEFAULT_CELL,
 
 def plot_panel_ef(fig=None, subject=SUBJECT, date=DATE, cell=DEFAULT_CELL,
                   refresh=False, panel_letters=("F", "E"),
-                  vertical_pad=(0.0, 0.0)):
+                  vertical_pad=(0.0, 0.0), raster_height=2.6):
     payload = load_cell_payload(subject, date, cell, refresh=refresh)
 
     if fig is None:
@@ -818,13 +818,13 @@ def plot_panel_ef(fig=None, subject=SUBJECT, date=DATE, cell=DEFAULT_CELL,
     if top_pad or bottom_pad:
         gs = fig.add_gridspec(
             4, 1,
-            height_ratios=[top_pad, 2.6, 0.8, bottom_pad],
+            height_ratios=[top_pad, raster_height, 0.8, bottom_pad],
             hspace=0.05,
         )
         ax_raster = fig.add_subplot(gs[1])
         ax_psth = fig.add_subplot(gs[2], sharex=ax_raster)
     else:
-        gs = fig.add_gridspec(2, 1, height_ratios=[2.6, 0.8], hspace=0.05)
+        gs = fig.add_gridspec(2, 1, height_ratios=[raster_height, 0.8], hspace=0.05)
         ax_raster = fig.add_subplot(gs[0])
         ax_psth = fig.add_subplot(gs[1], sharex=ax_raster)
 
@@ -838,8 +838,8 @@ def plot_panel_ef(fig=None, subject=SUBJECT, date=DATE, cell=DEFAULT_CELL,
     ax_raster.spines["top"].set_visible(False)
 
     if panel_letters is not None:
-        _add_block_label(ax_raster, panel_letters[0])
-        _add_block_label(ax_psth, panel_letters[1])
+        _add_block_label(ax_raster, panel_letters[0], dx=-8)
+        _add_block_label(ax_psth, panel_letters[1], dx=-8, dy=-5)
 
     return fig, {"raster": ax_raster, "psth": ax_psth}
 

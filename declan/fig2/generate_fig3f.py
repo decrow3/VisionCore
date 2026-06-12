@@ -33,6 +33,7 @@ def plot_panel_f(ax=None, refresh=False, data=None):
         fig = ax.figure
 
     SUBJECT_COLORS = data["SUBJECT_COLORS"]
+    SUBJECT_DISPLAY_NAMES = data.get("SUBJECT_DISPLAY_NAMES", {})
     sub_subjects = np.array(data["sub_subjects"])
     pr_fem = np.array(data["pr_fem_list"])
     pr_psth = np.array(data["pr_psth_list"])
@@ -53,7 +54,8 @@ def plot_panel_f(ax=None, refresh=False, data=None):
             p = binomtest(k, n, p=0.5, alternative="greater").pvalue
         else:
             p = np.nan
-        label = f"Monkey {subj[0]} {_stars(p)}"
+        subj_label = SUBJECT_DISPLAY_NAMES.get(subj, f"Monkey {subj[0]}")
+        label = f"{subj_label} {_stars(p)}"
         legend_handles.append(Line2D(
             [0], [0], marker="o", linestyle="none",
             markerfacecolor=SUBJECT_COLORS.get(subj, "gray"),

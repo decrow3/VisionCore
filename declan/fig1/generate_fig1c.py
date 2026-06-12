@@ -100,6 +100,53 @@ def _extract_contours_for_session(session_name, recalc=False):
     return hulls
 
 
+def _gaborium_row_for_cluster(session_name, cluster_id):
+    sess = YatesV1Session(session_name)
+    cluster_ids = np.asarray(sess.get_cluster_ids())
+    matches = np.where(cluster_ids == cluster_id)[0]
+    if matches.size == 0:
+        return None
+    return int(matches[0])
+
+
+def _extract_contour_for_cell(session_name, cluster_id, recalc=False):
+    """Return the RF hull for one cluster using the same coordinates as C."""
+    res = compute_sta_ste(session_name, recalc=recalc)
+    if res is None:
+        return None
+    row = _gaborium_row_for_cluster(session_name, cluster_id)
+    if row is None:
+        return None
+
+    stes = res["stes"]
+    sess = YatesV1Session(session_name)
+    dset = sess.get_dataset("gaborium")
+    if dset is None:
+        return None
+    roi_origin = dset.metadata["roi_src"][:, 0]
+    ppd = dset.metadata["ppd"]
+    del dset
+
+    _, peak_lag, _ = compute_snr(stes)
+    img = stes[row, peak_lag[row]]
+    centered = img - np.median(img)
+    if centered.max() < abs(centered.min()):
+        centered = -centered
+    ptp = np.ptp(centered)
+    if ptp < 1e-8:
+        return None
+    norm = (centered - centered.min()) / ptp
+    try:
+        contour, _, _ = get_contour(norm, 0.5)
+        hull_pts, _ = _hull(contour)
+    except Exception:
+        return None
+    hull_pix = hull_pts + roi_origin[None, :]
+    hull_deg = hull_pix / ppd
+    hull_deg[:, 0] *= -1
+    return hull_deg
+
+
 def _load_all_contours(recalc=False):
     by_subject = {s: [] for s in SUBJECTS}
     for name, subject in sessions_from_yaml(DATASET_CONFIGS_PATH, subjects=SUBJECTS):
@@ -109,7 +156,8 @@ def _load_all_contours(recalc=False):
     return by_subject
 
 
-def plot_panel_c(ax=None, refresh=None, roi_extent=None):
+def plot_panel_c(ax=None, refresh=None, roi_extent=None,
+                 highlight_session=None, highlight_cell=None):
     if refresh is None:
         refresh = RECALC
     if ax is None:
@@ -137,9 +185,9 @@ def plot_panel_c(ax=None, refresh=None, roi_extent=None):
                    label=f"{subject} ({len(sessions)} sess)")
         )
 
-    circle = plt.Circle((0, 0), 1.0, color="r", ls="--", lw=1.5, fill=False, zorder=5)
+    circle = plt.Circle((0, 0), 1.0, color="k", ls="--", lw=0.8, fill=False, zorder=5)
     ax.add_artist(circle)
-    ax.text(0.5, 0.05, "1°", color="r", fontsize=9, ha="center", va="bottom")
+    ax.text(0.5, 0.05, "1°", color="k", fontsize=9, ha="center", va="bottom")
 
     ax.axhline(0, color="k", lw=0.8, ls="--", zorder=0)
     ax.axvline(0, color="k", lw=0.8, ls="--", zorder=0)
@@ -150,6 +198,15 @@ def plot_panel_c(ax=None, refresh=None, roi_extent=None):
             fill=False, edgecolor="0.45", linewidth=0.9,
             linestyle="-", alpha=0.75, zorder=6,
         ))
+    if highlight_session is not None and highlight_cell is not None:
+        hull = _extract_contour_for_cell(
+            highlight_session, highlight_cell, recalc=refresh,
+        )
+        if hull is not None:
+            ax.plot(
+                hull[:, 1], hull[:, 0],
+                color="0.05", alpha=0.95, lw=2.0, zorder=8,
+            )
     ax.set_aspect("equal")
     ax.set_xlim(-1.5, 1.5)
     ax.set_ylim(-1.5, 1.5)

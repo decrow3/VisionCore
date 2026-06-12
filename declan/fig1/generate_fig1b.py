@@ -161,9 +161,9 @@ def plot_panel_b(ax=None, session_name=None, eyepos=None):
     ax.contourf(X, Y, Hn, levels=fill_levels, colors=fill_colors, alpha=0.85)
     ax.contour(X, Y, Hn, levels=levels, colors="k", linewidths=0.6, alpha=0.6)
 
-    circle = plt.Circle((0, 0), 1.0, color="r", ls="--", lw=1.5, fill=False, zorder=5)
+    circle = plt.Circle((0, 0), 1.0, color="k", ls="--", lw=0.8, fill=False, zorder=5)
     ax.add_artist(circle)
-    ax.text(0, 1.02, "1°", color="r", fontsize=9, ha="center", va="bottom")
+    ax.text(0, 1.02, "1°", color="k", fontsize=9, ha="center", va="bottom")
 
     lim = PLOT_LIM_DEG
     ax.set_xlim(-lim, lim)
@@ -179,10 +179,13 @@ def plot_panel_b(ax=None, session_name=None, eyepos=None):
     # Stepped colorbar matching the discrete percentile bands. Same colors,
     # same ordering: light = low-density band, dark = high-density band.
     import matplotlib as mpl
-    from mpl_toolkits.axes_grid1 import make_axes_locatable
+    from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
-    divider = make_axes_locatable(ax)
-    cax = divider.append_axes("right", size="5%", pad=0.08)
+    cax = inset_axes(
+        ax, width="4.5%", height="68%", loc="center right",
+        bbox_to_anchor=(0.0, 0.0, 1.0, 1.0),
+        bbox_transform=ax.transAxes, borderpad=0.55,
+    )
     boundaries_pct = [0] + list(PERCENTILE_LEVELS) + [100]
     listed = mpl.colors.ListedColormap(fill_colors)
     norm = mpl.colors.BoundaryNorm(boundaries_pct, listed.N)

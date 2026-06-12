@@ -1,6 +1,6 @@
 # declan Analysis Narrative
 
-Last curated: 2026-06-09.
+Last curated: 2026-06-12.
 
 Companion to `MANIFEST.md`. The manifest answers "where is it?" This file
 answers "why did we do it, what happened, and how did later work change the
@@ -25,7 +25,7 @@ the later revision when a control or follow-up narrowed the claim.
 
 ## Current Synthesis
 
-The story has moved through three broad phases:
+The story has moved through four broad phases:
 
 1. Early FEM population-coding work found a real E-optotype crossover and a
    tempting temporal/covariance story, but later controls narrowed the mechanism
@@ -33,10 +33,664 @@ The story has moved through three broad phases:
 2. The Jacobian/translation-covariance work rescued the structural part of the
    idea: image translation directions robustly organize FEM-linked covariance,
    even when magnitude identities and temporal-code interpretations fail.
-3. The newest Figure 4/Figure 5 split is cleaner: Figure 4 is about compact
+3. The Figure 4/Figure 5 split is cleaner: Figure 4 is about compact
    reafferent retinal-translation geometry and recorded covariance closure;
    Figure 5 is about active-sensing movie information efficiency, with explicit
    limits on claims of real-trajectory optimality.
+4. The newest direction is more disciplined and more falsifiable. Figure 5
+   extensions now avoid twin-circular optimality by separating input-level
+   whitening, covariance-aware pose-aware/pose-blind penalties, and recorded
+   cortex anchors. The first production covariance-aware operating-regime run
+   landed as supportive but not a unique-optimum result: empirical FEM scale is
+   usually on a high-efficiency plateau, while pose-aware covariance accounting
+   consistently recovers information discarded by pose-blind accounting. The
+   first cache-based recorded pose-aware GLM ladder landed as a controlled null
+   rather than a positive bridge. The first corrected Figure 4 structured
+   decoder also landed as a controlled null: the compact chart did not recover
+   gain-orthogonal displacement beyond rank-1 gain or chart-shuffle controls.
+   A newer content-routed correct-chart analysis found a narrow positive in
+   gain-bottom compact units, but the all-unit primary remains diagnostic/null,
+   so it is not yet a promoted bridge. Forward-twin residual correction remains
+   a useful but unpromoted Figure 4 extension. A new Vernier branch now provides
+   a cleaner hyperacuity-style Figure 5 test: phase-cloud motion beats a static
+   center, real and order-shuffled motion roughly match the phase-cloud control,
+   and half-scale real motion was strongest in the first pass.
+
+Numerical audit update, 2026-06-12:
+
+- The compact covariance-closure source can slightly exceed the full
+  finite-difference source in reported mean capture because the current
+  comparison uses separately constructed full and cross-fit compact sources, not
+  a strict nested projection of the same source under a shared estimator. Treat
+  ratios such as `1.005` as "no detectable closure cost", not as evidence that
+  compact beats full.
+- The large Jacobian magnitude mismatch, the stimulus-specific 100% intervention
+  result, the E-optotype `lm=-0.20` SSI-versus-orientation split, the pooled
+  FEM-subspace ablation, and the near-perfect within-image displacement decoder
+  are historical guardrails. They are not current active headline claims.
+- The current recorded pose-aware GLM ladder and gain-orthogonal structured
+  decoder are controlled nulls, not rescue routes for those older functional
+  interpretations.
+- The current correct-chart swap alignment is a specific-positive diagnostic,
+  not a broad positive: the gain-bottom compact subset passes controls, but the
+  all-unit primary row does not.
+
+## 2026-06-12: Content-Routed Correct-Chart Alignment
+
+Status: `Diagnostic / narrow positive, not yet promoted`.
+
+Primary docs, code, and outputs:
+
+- `content_routed_retinal_registration_analysis_plan.md`
+- `compact_retinal_translation_geometry/run_correct_chart_swap_alignment.py`
+- `compact_retinal_translation_geometry/summarize_correct_chart_swap_alignment.py`
+- `outputs/compact_retinal_translation_geometry/gainbottom_match_rate_norm_structure_unitdot_v1/`
+- `outputs/compact_retinal_translation_geometry/gainbottom_match_rate_norm_unitdot_v1/`
+- `outputs/compact_retinal_translation_geometry/gainbottom_pool_same_image_wrong_time_unitdot_v1/`
+- `outputs/compact_retinal_translation_geometry/gainbottom_pool_same_time_unitdot_v1/`
+
+Motivation:
+
+The content-routed retinal-registration plan reframes compact geometry correctly:
+
+```text
+U_trans is a shared transformation channel, not a shared pose coordinate system.
+```
+
+The right recorded-data question is therefore not "can a generic decoder recover
+absolute eye position?" It is whether the correct image/time-specific fitted-twin
+translation chart explains recorded response differences better than wrong
+charts, gain-only structure, random geometry, unit-shuffled geometry, and
+RF/readout-preserving controls.
+
+What was implemented:
+
+The A2 correct-chart runner pairs recorded fixRSVP repeats at the same
+image/time condition, predicts response differences from the fitted-twin
+translation chart, and compares true-chart alignment to matched wrong-chart and
+subspace controls. It includes leakage audits, drift masks, compact/full chart
+spaces, unit subsets, pseudo-spike positive controls, latency/history sweeps,
+wrong-chart matching variants, and stratifications by prediction norm and image
+structure.
+
+Current result:
+
+The strict all-unit primary remains diagnostic/null. In
+`gainbottom_match_rate_norm_structure_unitdot_v1`, the primary compact all-unit
+row under `global_rate` had:
+
+- `true_minus_wrong` session mean `0.0118`, CI `[-0.1148, 0.1182]`,
+  `3/5` positive sessions.
+- Required controls failed because several control CIs crossed zero.
+- Leakage failures were `0`.
+
+However, a targeted gain-bottom compact subset was specifically positive:
+
+- Variant: `global_rate | gain_bottom50`, compact `k=10`, `57` units.
+- `true_minus_wrong` mean `0.0927`, CI `[0.0253, 0.1717]`, `5/5` positive
+  sessions.
+- All required control CI lows were above zero; weakest control CI low was
+  `0.0040`.
+- Same result held under the drift-only sample set in the summary table.
+
+Other variants clarify the boundary:
+
+- Matching wrong charts only on rate/response norm improved the all-unit primary
+  mean to `0.0614`, but the CI still crossed zero and controls failed.
+- Same-image/wrong-time wrong charts produced a positive all-unit
+  `true_minus_wrong` mean `0.1860`, CI `[0.0143, 0.4416]`, but control CIs
+  failed.
+- Same-time/different-image wrong charts were null/negative on the all-unit
+  primary.
+
+Interpretation:
+
+This is the first recorded-data hint that the correct content-routed compact
+chart can matter, but it is not yet a general bridge. The effect lives in a
+selected gain-bottom unit subset and depends on the stricter wrong-chart
+matching/control framing. Treat it as:
+
+```text
+content-routed compact translation geometry has a specific positive diagnostic,
+but the all-unit recorded chart-alignment claim is not yet promoted.
+```
+
+Next gates:
+
+- Reproduce the gain-bottom positive under a pre-registered unit-selection rule.
+- Confirm the pseudo-spike positive control and SNR scaling are not selecting a
+  trivial score artifact.
+- Test whether latency/window choices move the all-unit row toward the targeted
+  positive.
+- Keep covariance closure as the promoted structural Figure 4 result until the
+  all-unit or pre-registered subset result survives controls.
+
+## 2026-06-12: Vernier Active-Sensing Hyperacuity Branch
+
+Status: `Open / first-pass supportive for phase-cloud sampling`.
+
+Primary docs, code, and outputs:
+
+- `vernier_active_sensing_analysis_plan.md`
+- `vernier_active_sensing/README.md`
+- `vernier_active_sensing/run_vernier_active_sensing.py`
+- `vernier_active_sensing/summarize_vernier_active_sensing.py`
+- `outputs/vernier_active_sensing_first_pass/`
+- `outputs/vernier_active_sensing_component_smoke/`
+- `outputs/vernier_active_sensing_component_scale/`
+
+Motivation:
+
+Vernier offset is a cleaner active-sensing endpoint than E-optotype orientation:
+it isolates a continuous fine-position variable rather than mixing object
+orientation, stroke width, global identity, phase, and scale. The analysis asks
+whether FEM-like motion improves recoverable sensitivity to tiny retinal
+misalignment under explicit pose-aware and pose-blind observer assumptions.
+
+Rendering/provenance audit:
+
+The first-pass renderer uses a high-resolution Vernier stimulus rendered at
+`120` world pixels/degree and sampled onto the model's `101 x 101` retinal grid
+at about `37.50` pixels/degree. The audit confirmed balanced total luminance
+for `+/-` offsets and finite pixel-level Vernier signal:
+
+- model pixel pitch about `1.60` arcmin;
+- finite-difference steps `0.25` and `0.5` arcmin;
+- total luminance absolute delta `0.0` for both steps;
+- pixel-level Fisher about `28.31` and `27.64` per arcmin squared.
+
+First-pass outcome:
+
+The summary was computed from cached first-pass model rates for `16` traces,
+`60` frames, `756` units, and `0.25/0.5` arcmin finite-difference steps. At
+`0.25` arcmin under the pose-aware diagonal-Poisson readout:
+
+- `static_center`: mean Fisher `0.1753`, threshold proxy `2.389`.
+- `static_phase_cloud_matched_positions`: mean Fisher `0.2733`, threshold proxy
+  `1.962`.
+- `real_fem`: mean Fisher `0.2676`, threshold proxy `1.958`.
+- `order_shuffled_positions`: mean Fisher `0.2713`, threshold proxy `1.959`.
+- `scaled_real_0.5`: mean Fisher `0.3293`, threshold proxy `1.765`.
+- `scaled_real_1.5`: mean Fisher `0.2195`, threshold proxy `2.169`.
+
+Contrasts:
+
+- Real FEM beat static center in `16/16` traces at both finite-difference steps;
+  at `0.25` arcmin, mean Fisher delta was `+0.0923` and threshold ratio was
+  `0.820`.
+- Static phase-cloud matched positions also beat static center
+  (`+0.0981`, threshold ratio `0.822`), so the main benefit is phase-cloud
+  sampling rather than a unique real-order trajectory effect.
+- Real FEM was essentially tied with the phase-cloud control
+  (`-0.0058` mean Fisher delta at `0.25`, positive in `9/16` traces).
+- Order-shuffled positions also tied the phase-cloud control, again arguing
+  against exact temporal order as the first-pass mechanism.
+- Half-scale real motion was strongest in this first pass: versus phase-cloud,
+  `scaled_real_0.5` had mean Fisher delta `+0.0559` at `0.25` and `+0.0413` at
+  `0.5`; `scaled_real_1.5` was worse than phase-cloud at both steps.
+
+Pose-blind caveat:
+
+The pose-blind diagonal count-plus-marginal readout was much weaker for motion
+conditions than pose-aware readout and even made `static_center` look strong.
+Use this as a warning that observer assumptions dominate the absolute Vernier
+information numbers.
+
+Incomplete component-scale run:
+
+`outputs/vernier_active_sensing_component_scale/` currently has partial rate
+caches and render audits, but no completed manifest or summary. The logged PID
+is no longer live. Treat this as an incomplete run, not a result, until rerun or
+summarized cleanly.
+
+Interpretation:
+
+The clean current claim is:
+
+```text
+For a controlled Vernier stimulus in the V1 twin, nearby phase-cloud sampling
+improves pose-aware fine-offset information relative to a static center. Real
+FEM and order-shuffled motion mostly match that phase-cloud benefit; exact
+biological trajectory order is not yet supported as special. Motion scale
+matters, with half-scale real motion strongest in the first pass.
+```
+
+This branch is useful because it gives Figure 5 a cleaner hyperacuity endpoint
+than E-optotypes, but it remains observer-model-dependent and model-only until
+paired with non-circular input statistics or recorded-data anchors.
+
+## 2026-06-12: Non-Circular FEM Information and Covariance-Aware Optimality
+
+Status: `Closed / supportive with guardrails`.
+
+Primary docs and code:
+
+- `Non_circular_FEM_information_tests_prescription.md`
+- `Covariance_aware_FEM_optimality_analysis_prescription.md`
+- `jake/twininfo/covariance_optimality.py`
+- `jake/twininfo/run_covariance_optimality.py`
+- `active_sensing_movie_information/summarize_covariance_optimality.py`
+- `outputs/twininfo/active-sensing-all-images-1crop-2fix2ms-16units-gpu/covariance_optimality/covopt_full_gpu1/`
+- `outputs/active_sensing_movie_information/covariance_optimality/covopt_full_gpu1/`
+
+Motivation:
+
+The current Figure 5 result shows that natural-image retinal motion can improve
+model spatial information efficiency over stabilization, but random trajectory
+controls made "real FEMs are optimal" unsafe. The new direction keeps the
+functional question alive while removing the easy circular path.
+
+New interpretation:
+
+There are now three distinct claims, with different evidentiary burdens:
+
+- `Input whitening`: biological drift scale may sit near the scale that
+  decorrelates natural retinal input across a V1-relevant band. This should be
+  computed from image statistics and drift kinematics, not from the fitted
+  twin.
+- `Recorded pose-aware information`: recorded V1 spikes may be more
+  informative about stimulus labels when retinal pose or recent eye history is
+  known. This is the direct cortex anchor.
+- `Covariance-aware operating regime`: in the twin, movement may increase
+  pose-aware information while creating nuisance covariance for pose-blind
+  readouts. The safe quantity is the pose-aware minus pose-blind gap across
+  movement scale.
+
+What was implemented and run:
+
+The covariance-aware path now has real code and a completed production run. It
+reuses production `jake.twininfo` metadata, builds scaled real and
+random-control trajectories, computes expected counts and finite-difference
+derivatives, estimates movement-induced covariance, and summarizes independent,
+covariance-aware, and pose-blind Fisher efficiency curves with gain/noise
+sensitivity.
+
+The full GPU run completed `3888 / 3888` rate rows across `108` image/trace
+pairs, four scaled trajectory families, and nine movement scales. The summary
+tables and figures live under
+`outputs/active_sensing_movie_information/covariance_optimality/covopt_full_gpu1/`.
+
+Outcome:
+
+The primary metric was final Fisher trace per expected spike. The cleanest
+one-sentence result is:
+
+```text
+Empirical D=1 is usually in the efficient operating range, but the run does
+not show that D=1 is the unique optimum.
+```
+
+Peak/plateau calls for the covariance-aware pose-aware metric:
+
+- `random_amp_cloud_matched_scaled / fixation`: empirical `D=1` value
+  `74.51`; peak `D=2`, value `82.37`; empirical fraction of peak `0.905`;
+  label `empirical_on_plateau`.
+- `random_amp_cloud_matched_scaled / microsaccade`: empirical `76.67`; peak
+  `D=0.5`, value `81.97`; empirical fraction `0.935`; label
+  `empirical_on_plateau`.
+- `random_amp_scaled / fixation`: empirical `77.22`; peak `D=1.5`, value
+  `81.38`; empirical fraction `0.949`; label `peak_near_empirical`.
+- `random_amp_scaled / microsaccade`: empirical `75.43`; peak `D=0`, value
+  `79.75`; empirical fraction `0.946`; label `empirical_on_plateau`.
+- `scaled_real / fixation`: empirical `64.42`; peak `D=3`, value `73.18`;
+  empirical fraction `0.880`; label `empirical_on_plateau`.
+- `scaled_real / microsaccade`: empirical `71.21`; peak `D=0`, value `79.75`;
+  empirical fraction `0.893`; label `empirical_on_plateau`.
+- `trajectory_order_shuffle_scaled / fixation`: empirical `65.17`; peak
+  `D=2`, value `67.96`; empirical fraction `0.959`; label
+  `empirical_on_plateau`.
+- `trajectory_order_shuffle_scaled / microsaccade`: empirical `66.40`; peak
+  `D=0.125`, value `88.73`; empirical fraction `0.748`; label
+  `resolved_nonempirical_peak`.
+
+Pose-aware minus pose-blind covariance Fisher gaps at empirical `D=1` were
+positive in every family and larger for microsaccade traces:
+
+- `random_amp_cloud_matched_scaled`: fixation `0.0618 +/- 0.0051`,
+  microsaccade `0.2666 +/- 0.0187`.
+- `random_amp_scaled`: fixation `0.0923 +/- 0.0065`, microsaccade
+  `0.2556 +/- 0.0217`.
+- `scaled_real`: fixation `0.0445 +/- 0.0034`, microsaccade
+  `0.2027 +/- 0.0165`.
+- `trajectory_order_shuffle_scaled`: fixation `0.0344 +/- 0.0026`,
+  microsaccade `0.0995 +/- 0.0087`.
+
+The gain/noise sensitivity grid was stable: all eight family-by-kind labels
+were unchanged across `9/9` tested gain/noise settings. This makes the
+plateau/near-empirical language robust to the tested covariance-gain and noise
+floor assumptions.
+
+Claim boundary:
+
+This is supportive Figure 5 evidence, but its wording should stay disciplined.
+The displacement derivative and movement-induced covariance are structurally
+coupled, so a pose-blind penalty along the displacement axis is expected. It is
+valid evidence that retinal pose matters and that empirical FEM amplitude sits
+near an efficient operating range in the twin. It is not proof that biological
+FEM amplitude is exactly optimized, and it is weaker than a non-circular input
+whitening optimum or a positive recorded-cortex pose-aware information result.
+
+## 2026-06-12: Recorded Pose-Aware Prediction GLM
+
+Status: `Closed / controlled null`.
+
+Primary docs, code, and outputs:
+
+- `recorded_pose_aware_active_sensing_analysis.md`
+- `active_sensing_movie_information/run_recorded_pose_aware_prediction.py`
+- `outputs/active_sensing_movie_information/recorded_pose_aware_prediction_pilot_allen_2022-02-16/`
+- `outputs/active_sensing_movie_information/recorded_pose_aware_prediction_multisession_6pilot/`
+
+Motivation:
+
+This was the direct recorded-cortex bridge proposed for the active-sensing
+story: ask whether measured eye state improves held-out prediction of recorded
+V1 spike counts when added to a stimulus-time/PSTH model. The ladder was
+intentionally cache-first and content-blind:
+
+```text
+M0: PSTH-only Poisson GLM
+M_eye_only: eye features without PSTH
+M1: PSTH + additive eye position/velocity/radius/speed
+M2: PSTH + scalar eye-state/gain factor
+M3: PSTH + additive eye features + coarse time-by-eye interactions
+```
+
+Controls included trial-disjoint folds, valid-aware shuffled-eye traces,
+per-row penalty metadata, leakage audits, and session-bootstrap summaries.
+
+Outcome:
+
+The pilot on `Allen_2022-02-16` was technically clean: 102 units, 5/5 folds,
+zero fit failures, zero max-iteration failures, zero shuffle self-donors, and
+all leakage checks passed. The six-session batch was also technically clean:
+6/6 sessions ok, 30/30 fold leakage audits passed, and no fit or max-iteration
+failures.
+
+The result was a null for the planned bridge:
+
+- `M1_additive_eye` did not beat valid-aware shuffled-eye controls across the
+  six-session batch: mean real-minus-shuffle `-0.074` bits/spike, CI
+  `[-0.216, 0.052]`, 2/6 sessions positive.
+- `M1_additive_eye` and its shuffled-eye control were both negative relative to
+  the fitted `M0_psth_glm` in every session-level mean. Treat this as a
+  secondary diagnostic rather than the central null because the archived run
+  used a lighter penalty for the PSTH-only baseline than for augmented models,
+  so some M0-relative loss can reflect stronger shrinkage of the shared PSTH
+  columns in M1/M2/M3.
+- `M3_time_by_eye_interaction` was worse than shuffled-eye, additive-eye, and
+  scalar gain controls. `M3 - M1` was `-97.366` bits/spike, CI
+  `[-270.324, -0.484]`, 0/6 sessions positive; `M3 - M2` was similarly
+  negative.
+- Some M3 folds had catastrophically bad held-out likelihoods despite no
+  optimizer convergence flags, indicating overfitting/extrapolation pathology
+  of this coarse interaction estimator rather than a meaningful biological
+  negative.
+
+Interpretation:
+
+This does **not** refute the covariance or compact-geometry result. It refutes
+a narrower downstream claim:
+
+```text
+Recorded V1 spikes are better predicted by this simple cache-first
+pose-aware GLM ladder.
+```
+
+The covariance closure can still be true if the FEM-linked effect is sparse,
+nonlinear, image-chart dependent, latency-sensitive, primarily a population
+covariance phenomenon, or accessible only through geometry-constrained
+translation structure. The GLM ladder used here is deliberately content-blind
+and is not the true fitted-twin local translation chart.
+
+Claim boundary:
+
+Do not use this as a main Figure 4/Figure 5 knockout panel. If mentioned, frame
+it as a useful controlled null:
+
+> A simple cross-validated additive or coarse interaction GLM did not recover a
+> pose-aware prediction benefit beyond shuffled-eye controls, indicating that
+> the covariance effect is not trivially captured by content-blind eye-state
+> regressors.
+
+Strategic consequence:
+
+Keep the recorded-data centerpiece as covariance decomposition plus compact
+geometry. For Figure 5, lean on model natural-image information, SF-localized
+benefits, sustained accumulation, input-whitening/ecological anchors, and
+covariance-aware pose-aware versus pose-blind metrics. Avoid wording that
+requires a positive recorded spike-prediction endpoint, such as a broad
+"recorded V1 information improves when eye state is known" claim, unless a new
+geometry-constrained or latency-aware recorded analysis lands.
+
+Minimal further audits, if this thread is ever reopened:
+
+- One lag sweep to check whether `eyepos_used` should be latency shifted. The
+  current Fig3 cache stores eye position in the same trial/time bins as
+  `robs/rhat`; no explicit neural-latency-shifted eye regressor was found.
+- A tiny M3-only regularization/bin-size diagnostic to confirm the catastrophic
+  negative likelihoods shrink to approximately zero rather than become
+  positive.
+- A cleaner nested-estimator rerun, if M0-relative deltas ever matter, using an
+  offset PSTH or matched/unpenalized PSTH terms so eye covariates are isolated
+  from baseline shrinkage.
+- Stop if those audits do not change the conclusion; do not turn this into a
+  rescue campaign.
+
+## 2026-06-12: Structured Decoders and Forward Twin Denoising
+
+Status: `Mixed: structured decoder closed / controlled null; forward denoising not promoted`.
+
+Primary docs and code:
+
+- `structured_translation_decoder_analysis.md`
+- `compact_retinal_translation_geometry/run_windowed_siamese_relative_decoding.py`
+- `compact_retinal_translation_geometry/run_tejas_style_eyepos_decoder.py`
+- `forward_twin_reafferent_denoising_analysis.md`
+- `forward_twin_reafferent_denoising/run_forward_twin_reafferent_denoising.py`
+- `outputs/compact_retinal_translation_geometry/gain_orth_structured_cuda_test/`
+- `outputs/compact_retinal_translation_geometry/gain_orth_structured_prod_v2_gpu0/`
+- `outputs/compact_retinal_translation_geometry/gain_orth_structured_prod_v2_gpu1/`
+- `outputs/forward_twin_reafferent_denoising_preview_patched_matched/`
+- `outputs/forward_twin_reafferent_denoising_diag_zero_beh/`
+- `outputs/forward_twin_reafferent_denoising_diag_fixed_alpha/`
+- `outputs/forward_twin_reafferent_denoising_diag_image_time/`
+
+Motivation:
+
+The compact geometry result says that local translations generate
+image-specific response charts inside a shared compact subspace. The new
+decoder and denoising work asks whether that geometry predicts recorded
+single-trial or pairwise signals in a way a global gain explanation cannot.
+
+Structured decoder interpretation:
+
+The important decoder test is no longer "can eye position be decoded?" A
+flexible decoder might recover eye position from time, image context, global
+state, or leakage. The sharper test is:
+
+```text
+gain-only decoder ~= chance on displacement orthogonal to local gain
+compact structured decoder > gain-only on that component
+```
+
+The windowed Siamese decoder now supports the right ingredients for that test:
+gain-orthogonal metrics, Poisson-weighted local chart inversion, and a rank-1
+global-gain chart null. The Tejas-style absolute eye-position decoder is useful
+as a permissive sanity check and convention check, but it should not be
+presented as evidence for compact geometry.
+
+Structured decoder outcome:
+
+The corrected v2 structured decoder ran on six sessions split across two GPUs.
+The test used trial-disjoint folds, same-condition pairs, fold-train condition
+means for the local gain baseline, Poisson-weighted local chart inversion, a
+rank-1 gain-projected chart null, and a chart-time-shuffled routing control.
+All 30/30 fold leakage audits passed with zero shared trials and zero shared
+trial pairs. The same-condition overlap warning is expected under the
+trial-disjoint design.
+
+The pooled six-session result was a controlled null on the headline endpoint:
+
+- Compact chart inverse gain-orthogonal balanced sign accuracy:
+  `0.4985 +/- 0.0053`.
+- Rank-1 gain-only chart null: `0.4901 +/- 0.0056`.
+- Chart-time-shuffled compact chart: `0.5083 +/- 0.0053`.
+- Compact chart inverse gain-orthogonal correlation:
+  `-0.0182 +/- 0.0066`.
+- Compact chart inverse gain-orthogonal R2: `-2.66 +/- 0.53`.
+
+The split GPU1 audit alone marked `candidate_positive`, but that was not stable
+after pooling with GPU0. The combined result is effectively chance on the
+gain-orthogonal direction metric and does not beat the chart-shuffle control.
+
+Interpretation:
+
+This does **not** undermine the promoted compact geometry/covariance closure
+claim. It rejects the stronger decoder-level claim that a local twin-built
+compact chart can recover recorded relative displacement, specifically the
+component orthogonal to global gain, under the current strict controls. The
+safe statement is:
+
+```text
+Recorded V1 contains compact, image-conditioned translation geometry at the
+population/covariance level, but this run did not show a robust compact-specific
+gain-orthogonal displacement readout from single-trial response differences.
+```
+
+Consequences:
+
+- Do not promote Panel F as a positive decoder bridge.
+- Treat the Tejas-style absolute decoder only as a permissive sanity check: it
+  can show that neural activity carries some eye-related signal, but not that
+  compact reafferent geometry provides a calibrated displacement coordinate.
+- Keep the Figure 4 main claim on structural equivariance, compact tangent
+  generalization, and covariance closure.
+- Any future decoder rescue should change the scientific question explicitly
+  rather than tuning this endpoint: e.g. data-built cross-fit local charts,
+  latency-aware response windows, or a forward generative observer with a
+  better trial-noise model.
+
+Forward denoising interpretation:
+
+The denoising branch adds a harder single-trial prediction:
+
+```text
+Delta r_twin = twin(real visual input, real behavior)
+             - twin(stabilized retinal image, stabilized behavior covariates)
+```
+
+The primary mode is a stabilized retinal-image control with behavior covariates
+held fixed (`stabilized_behavior=same`). Sensitivity runs also tested zeroed
+behavior covariates, fixed model amplitude (`fit_alpha=fixed_1`), and
+image-time folds. The runner now uses fold-trained response gains, fold-trained
+scalar alpha by default, fold-trained compact/random/unit-shuffle bases, and
+replicated shuffled-eye nulls. The important matched shuffled-eye null is
+`shuffled_eye_trace_compact`, which projects shuffled-eye corrections into the
+same train-fold compact tangent basis.
+
+Promotion gate:
+
+Promote only controlled excess effects, not raw variance reduction or raw
+decoding accuracy. The critical comparisons are compact structured versus
+gain-only on gain-orthogonal displacement, and compact/full forward correction
+versus shuffled-eye and gain-only denoising controls.
+
+Current gate result:
+
+The structured decoder failed its promotion gate in `gain_orth_structured_prod_v2`.
+Forward denoising is now interpretable and did **not** pass the eye-trace
+specificity gate.
+
+The corrected matched preview
+`outputs/forward_twin_reafferent_denoising_preview_patched_matched/` used 24/24
+sessions, `max_samples=128`, trial folds, `eye_reference=zero`,
+`stabilized_behavior=same`, `n_nulls=20`, and matched
+`n_eye_shuffle_nulls=20`. The raw compact full-forward correction was positive:
+
+- `full_forward compact_k10` variance reduction:
+  `+0.000922 [0.000427, 0.001514]`, positive `18/24`.
+- `full_forward compact_k10` FEM-subspace reduction:
+  `+0.00723 [0.00273, 0.01203]`, positive `17/24`.
+
+It also beat random and unit-shuffled compact geometry controls:
+
+- Compact minus random-k variance excess:
+  `+0.000904 [0.000465, 0.001437]`, positive `19/24`;
+  FEM-subspace excess `+0.00668 [0.00261, 0.01140]`.
+- Compact minus unit-shuffled compact variance excess:
+  `+0.000887 [0.000443, 0.001426]`, positive `18/24`;
+  FEM-subspace excess `+0.00688 [0.00282, 0.01160]`.
+
+But it did **not** beat shuffled-eye controls:
+
+- Compact minus compact-projected shuffled-eye variance excess:
+  `+0.000188 [-0.000206, 0.000645]`, positive `12/24`;
+  FEM-subspace excess `+0.000835 [-0.00200, 0.00387]`.
+- Compact minus full shuffled-eye variance excess:
+  `-0.000051 [-0.000453, 0.000412]`, positive `11/24`;
+  FEM-subspace excess `+0.000550 [-0.00241, 0.00372]`.
+
+Diagnostics:
+
+- `outputs/forward_twin_reafferent_denoising_diag_zero_beh/` kept positive
+  compact excess over random/unit-shuffled controls but stayed null versus
+  compact-projected shuffled-eye: variance excess `+0.000148
+  [-0.000112, 0.000447]`, positive `12/24`.
+- `outputs/forward_twin_reafferent_denoising_diag_image_time/` strengthened
+  random/unit-shuffle excess but again stayed null versus compact-projected
+  shuffled-eye: variance excess `+0.000122 [-0.000377, 0.000640]`,
+  positive `11/24`. Treat this as a stress test because image-time folds alter
+  PSTH support.
+- `outputs/forward_twin_reafferent_denoising_diag_fixed_alpha/` was a
+  calibration failure for compact denoising: compact minus gain-only was
+  strongly negative, so the fold-fit scalar amplitude was doing real work.
+
+Interpretation:
+
+Forward-twin compact corrections carry a reproducible denoising signal relative
+to random and unit-shuffled compact geometry, but the effect is not specific to
+the actual trial eye trace under the matched shuffled-eye controls. This is a
+useful diagnostic, not a main-figure bridge. It does not weaken the covariance
+closure result; it says the current twin/metric captures second-moment geometry
+more robustly than precise single-trial eye-trace phase.
+
+## 2026-06-12: Manuscript Figure Assembly Refresh
+
+Status: `Active figure polish`.
+
+Primary code:
+
+- `fig1/generate_fig1.py`
+- `fig1/generate_fig1b.py`
+- `fig1/generate_fig1c.py`
+- `fig1/generate_fig1d.py`
+- `fig1/generate_fig1f.py`
+- `fig2/generate_figure2_3_combined.py`
+- `fig3/generate_figure3_combined.py`
+- `fig4_cov_TFTS/plot_covariance_binning_sweep_panel.py`
+
+Interpretation:
+
+The figure work is converging toward a clearer manuscript sequence.
+
+- Figure 1 now foregrounds the experimental setup, gaze control, RF coverage,
+  population examples, and a gaze-sorted single-unit example in one A-I layout.
+- The combined covariance figure now emphasizes the decomposition of classical
+  residual covariance into an FEM component and corrected residual, pools
+  included subjects by default, and keeps a subject-split option for audit.
+- The new Figure 3 compositor makes the digital-twin mechanism and compact
+  reafferent geometry a single main-text chain rather than scattering those
+  ideas across older figure workspaces.
+- The covariance-binning sweep panel is a stability check: the recorded
+  covariance-closure effect should not depend on one arbitrary spike-count
+  window.
+
+Claim boundary:
+
+These edits improve exposition. They do not by themselves change claim status.
+For scientific claims, defer to the relevant analysis sections and output
+summaries.
 
 ## 2026-06-09: Active-Sensing Movie Information / Figure 5
 
@@ -157,12 +811,15 @@ Main outcomes:
 - Panel E covariance closure passed: full finite-difference translation sources
   predicted recorded FEM covariance above unit-shuffle and RF/readout nulls.
 - Compact k=10 retained the closure. The compact-to-full capture ratio at k=2
-  was about `1.005`, so restricting to the compact source did not cost the
-  closure effect.
+  was about `1.005`; because the compact source is a separately constructed
+  cross-fit source rather than a guaranteed nested restriction of the full
+  finite-difference source, this should be read as no detectable closure cost,
+  not as compact outperforming full.
 - Under the conservative `global_rate+target_pc1` projection, PSD full
   finite-difference source at `k=10` captured about `0.535`; the compact
   cross-fit source captured about `0.536`, with positive effects over RF/readout
-  fixed-permutation nulls in 24/24 sessions.
+  fixed-permutation nulls in 24/24 sessions. This tiny ordering difference is a
+  comparison/estimator caveat, not a promoted biological effect.
 - Metric structure has partial support: rank-2 local compact metrics pass, and
   displacement scaling is strong (`R2 ~0.995` for norm/metric scaling), but
   coordinate recovery and diagonal composition are not fully landed because the
@@ -748,16 +1405,38 @@ Current safe claims:
   above strong nulls.
 - Real retinal motion improves a V1-model natural-image spatial-information
   efficiency endpoint relative to stabilization.
+- The next safe Figure 5 direction is a pose-conditioning story: retinal motion
+  can create useful pose-aware signal and pose-blind nuisance covariance, but
+  those must be separated explicitly. The cache-first recorded GLM ladder did
+  not provide a positive recorded spike-prediction anchor for this claim.
+- The corrected gain-orthogonal structured decoder did not pass its promotion
+  gate. Treat decoder-level compact displacement readout as currently
+  unsupported, while keeping the compact covariance/geometry claim intact.
 
 Claims to avoid unless new evidence lands:
 
 - Real FEM trajectories are optimal.
+- A covariance-aware Fisher peak near empirical FEM scale proves optimization.
 - V1 has a literal universal 2D eye-position coordinate map.
 - FEM covariance fully explains all recorded shared variability.
+- Absolute eye-position decoding by a permissive MLP proves compact
+  translation geometry.
+- A split-specific `candidate_positive` structured-decoder audit proves a
+  compact displacement readout. The pooled six-session v2 result was null.
+- Raw residual variance reduction proves forward-twin denoising; only
+  controlled excess over shuffled-eye/gain/random-subspace nulls is meaningful.
+- Forward-twin compact denoising is eye-trace-specific. The corrected matched
+  preview beat random/unit-shuffled compact controls but did not beat
+  compact-projected shuffled-eye controls.
 - The E-optotype crossover is caused by a temporal code or covariance-code
   migration.
 - The deterministic twin alone proves whether FEM covariance helps or hurts
   biological visual coding.
+- The cache-first recorded pose-aware GLM null disproves the recorded FEM
+  covariance result; it only bounds a simple content-blind prediction endpoint.
+- A coarse time-by-eye GLM interaction with catastrophic held-out likelihood is
+  evidence against retinal-translation coding; treat it as estimator pathology
+  unless a geometry-constrained model reproduces it.
 
 ## Fast Resume Pointers
 
@@ -772,8 +1451,36 @@ If resuming Figure 5 active sensing:
 
 - Read `active_sensing_movie_information/README.md`.
 - Then read `active_sensing_movie_information/figure5_additional_checks_prep.md`.
+- For the new non-circular direction, read
+  `Non_circular_FEM_information_tests_prescription.md` before adding new model
+  optimality claims.
+- For the covariance-aware implemented path, read
+  `Covariance_aware_FEM_optimality_analysis_prescription.md`, then
+  `jake/twininfo/run_covariance_optimality.py`, then
+  `active_sensing_movie_information/summarize_covariance_optimality.py`.
 - Treat the natural-image-only population checks as current; treat cached
   e-optotype checks as historical scaffolding.
+- Treat `recorded_pose_aware_prediction_multisession_6pilot` as a controlled
+  null for the simple recorded GLM bridge. Do not promote it as a main positive
+  panel.
+
+If resuming structured decoding or denoising:
+
+- Read `structured_translation_decoder_analysis.md` before interpreting
+  `run_windowed_siamese_relative_decoding.py` outputs.
+- For the latest structured decoder result, read
+  `outputs/compact_retinal_translation_geometry/gain_orth_structured_prod_v2_gpu0/`
+  and `outputs/compact_retinal_translation_geometry/gain_orth_structured_prod_v2_gpu1/`;
+  pool across both before interpreting, because the GPU1 split alone was
+  misleadingly positive.
+- Treat `run_tejas_style_eyepos_decoder.py` as a sanity check unless a later
+  note explicitly promotes it.
+- Read `forward_twin_reafferent_denoising_analysis.md`; promote only controlled
+  held-out denoising excess, not raw variance reduction.
+- For the current forward-denoising outcome, read
+  `outputs/forward_twin_reafferent_denoising_preview_patched_matched/` and the
+  three diagnostic folders. Treat the result as useful but not promoted:
+  compact denoising beats random/unit-shuffled geometry, not shuffled-eye.
 
 If resuming recorded derivative alignment:
 

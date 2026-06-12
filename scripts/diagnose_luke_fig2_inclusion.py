@@ -560,7 +560,8 @@ def save_plots(out_dir, reliability_df, timing_df, gate_df):
             fig, ax = plt.subplots(figsize=(max(7, 1.3 * len(agg)), 4))
             width = 0.12
             for i, col in enumerate(cols):
-                ax.bar(x + (i - len(cols) / 2) * width, agg[col], width=width, label=col.replace("n_", ""))
+                label = col[2:] if col.startswith("n_") else col
+                ax.bar(x + (i - len(cols) / 2) * width, agg[col], width=width, label=label)
             ax.set_xticks(x)
             ax.set_xticklabels([f"{r.subject}:{r.mode}" for r in agg.itertuples()], rotation=30, ha="right")
             ax.set_ylabel("unit count")

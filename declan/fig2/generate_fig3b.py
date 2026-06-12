@@ -12,19 +12,9 @@ from compute_fig2_data import load_fig2_data
 def plot_panel_b(ax=None, refresh=False, data=None):
     if data is None:
         data = load_fig2_data(refresh=refresh)
-    if ax is None:
-        fig, axes = plt.subplots(1, 2, figsize=(5, 4), sharey=True)
-    else:
-        fig = ax.figure
-        ss = ax.get_subplotspec()
-        gs_sub = ss.subgridspec(1, 2, wspace=0.08)
-        ax.remove()
-        axL = fig.add_subplot(gs_sub[0])
-        axR = fig.add_subplot(gs_sub[1], sharey=axL)
-        axes = (axL, axR)
-
     SUBJECTS = data["SUBJECTS"]
     SUBJECT_COLORS = data["SUBJECT_COLORS"]
+    SUBJECT_DISPLAY_NAMES = data.get("SUBJECT_DISPLAY_NAMES", {})
     WINDOWS_MS = data["WINDOWS_MS"]
     s0 = data["nc_stats"][WINDOWS_MS[0]]
     pair_labels = data["metrics"][0]["subject_per_pair"]
@@ -34,6 +24,21 @@ def plot_panel_b(ax=None, refresh=False, data=None):
         [s for s in SUBJECTS if subj_counts[s] > 0],
         key=lambda s: subj_counts[s], reverse=True,
     )
+    n_panels = max(len(draw_order), 1)
+    if ax is None:
+        fig, axes = plt.subplots(1, n_panels, figsize=(2.5 * n_panels, 4),
+                                 sharey=True, squeeze=False)
+        axes = tuple(axes.ravel())
+    else:
+        fig = ax.figure
+        ss = ax.get_subplotspec()
+        gs_sub = ss.subgridspec(1, n_panels, wspace=0.08)
+        ax.remove()
+        axes = []
+        for i in range(n_panels):
+            share = axes[0] if axes else None
+            axes.append(fig.add_subplot(gs_sub[i], sharey=share))
+        axes = tuple(axes)
 
     xlim = (-0.1, 0.3)
     ylim = (-0.2, 0.3)
@@ -57,12 +62,14 @@ def plot_panel_b(ax=None, refresh=False, data=None):
         sub_ax.set_xlim(*xlim)
         sub_ax.set_ylim(*ylim)
         sub_ax.set_xlabel("ρ uncorrected")
-        sub_ax.set_title(f"Monkey {subj[0]}", fontsize=9)
+        sub_ax.set_title(SUBJECT_DISPLAY_NAMES.get(subj, f"Monkey {subj[0]}"),
+                         fontsize=9)
         sub_ax.spines["top"].set_visible(False)
         sub_ax.spines["right"].set_visible(False)
 
     axes[0].set_ylabel("ρ FEM-corrected")
-    plt.setp(axes[1].get_yticklabels(), visible=False)
+    for sub_ax in axes[1:]:
+        plt.setp(sub_ax.get_yticklabels(), visible=False)
     return fig, axes[0]
 
 

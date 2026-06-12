@@ -125,6 +125,23 @@ and `natural_image_condition_pose_frames.csv`, aligned to the cached
 natural-image response records. Those files are the design-matrix bridge for a
 future pose-aware decoder; they are not themselves a recoverability result.
 
+Recorded pose-aware response-prediction bridge:
+
+```text
+declan/active_sensing_movie_information/run_recorded_pose_aware_prediction.py
+outputs/active_sensing_movie_information/recorded_pose_aware_prediction/
+```
+
+This cache-first runner uses `outputs/cache/fig3_digitaltwin.pkl` recorded V1
+spikes and measured eye position to compare trial-disjoint held-out penalized
+Poisson prediction for a PSTH-only GLM baseline, eye-only, additive-eye, scalar
+eye-gain, and coarse time-by-eye interaction models. It writes valid-aware
+shuffled-eye controls, per-row penalty metadata, and session-bootstrap
+model-ladder summaries. Treat additive-eye gains as pose-linked predictability;
+translation-specific active-sensing language still requires the interaction
+model to beat additive/gain/shuffled controls and a later geometry-enrichment
+analysis.
+
 Natural-image-only population Checks 5-9 now live here:
 
 ```text

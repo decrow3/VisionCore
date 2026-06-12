@@ -6,15 +6,17 @@ Compose a combined Figure 2/3 main figure:
     C: Fano factor before/after FEM correction
     D: compact covariance decomposition
     E: mean pairwise Fisher-z noise correlations before/after correction
-    F: PSTH/FEM cumulative eigenspectra
+    F: pairwise noise correlations at 8 ms
     G: PSTH/FEM participation ratio
     H: PSTH/FEM subspace alignment
 
 Usage:
     uv run declan/fig2/generate_figure2_3_combined.py
+    uv run declan/fig2/generate_figure2_3_combined.py --split-subjects
     uv run declan/fig2/generate_figure2_3_combined.py --refresh
 """
 import argparse
+import copy
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -22,10 +24,11 @@ import numpy as np
 from matplotlib.gridspec import GridSpec
 from matplotlib.gridspec import GridSpecFromSubplotSpec
 from matplotlib.lines import Line2D
+from matplotlib.patches import ConnectionPatch, Polygon
 
 from VisionCore.covariance import project_to_psd
 from _panel_common import FIG_DIR
-from compute_fig2_data import load_fig2_data
+from compute_fig2_data import load_fig2_data, _compute_fano_stats, _compute_nc_stats
 from generate_fig2a import (
     DT as EYE_DT,
     TRIAL_A,
@@ -38,15 +41,16 @@ from generate_fig2a import (
 )
 from generate_fig2c import plot_panel_c as plot_fem_fraction
 from generate_fig2e import plot_panel_e as plot_fano
+from generate_fig3b import plot_panel_b as plot_pairwise_noise_corr
 from generate_fig3c import plot_panel_c as plot_noise_corr
-from generate_fig3d import plot_panel_d as plot_noise_corr_delta
-from generate_fig3e import plot_panel_e as plot_eigenspectra
 from generate_fig3f import plot_panel_f as plot_participation_ratio
 from generate_fig3g import plot_panel_g as plot_subspace_alignment
 
 TARGET_SESSION = "Allen_2022-02-16"
 WINDOW_IDX = 0
 OMIT_SUBJECTS = {"Luke"}
+POOLED_SUBJECT = "Pooled"
+POOLED_COLOR = "0.25"
 
 
 def _label(ax, letter):
@@ -66,6 +70,44 @@ def _style_matrix_axis(ax):
         ax.spines[side].set_visible(True)
         ax.spines[side].set_color("k")
         ax.spines[side].set_linewidth(0.8)
+
+
+def _add_diagonal_band_box(ax, n, band_frac=0.055):
+    band = max(3.0, n * band_frac)
+    extra = max(3.0, n * 0.04)
+    p0 = np.array([-0.5 - extra, -0.5 - extra], dtype=float)
+    p1 = np.array([n - 0.5 + extra, n - 0.5 + extra], dtype=float)
+    normal = np.array([1.0, -1.0]) / np.sqrt(2.0)
+    pts = [
+        p0 + normal * band / 2,
+        p1 + normal * band / 2,
+        p1 - normal * band / 2,
+        p0 - normal * band / 2,
+    ]
+    ax.add_patch(Polygon(
+        pts,
+        closed=True,
+        fill=False,
+        edgecolor="0.45",
+        linewidth=0.9,
+        alpha=0.8,
+        zorder=12,
+        clip_on=False,
+    ))
+    ax.text(
+        1.02,
+        0.05,
+        "independent",
+        transform=ax.transAxes,
+        ha="left",
+        va="center",
+        rotation=-45,
+        fontsize=6.5,
+        color="0.35",
+        bbox=dict(facecolor="white", edgecolor="none", alpha=0.78, pad=0.7),
+        zorder=13,
+        clip_on=False,
+    )
 
 
 def _despine(ax, left=False, bottom=False):
@@ -100,6 +142,48 @@ def _filter_subjects(data, omit=OMIT_SUBJECTS):
             labels_by_window.append(labels[keep])
         filtered["m_by_window"] = m_by_window
         filtered["subject_per_neuron_by_window"] = labels_by_window
+
+    if "metrics" in data:
+        filtered_metrics = []
+        for m_dict in data["metrics"]:
+            m = copy.copy(m_dict)
+            neuron_mask = ~np.isin(m_dict["subject_per_neuron"], list(omit))
+            pair_mask = ~np.isin(m_dict["subject_per_pair"], list(omit))
+            ds_mask = ~np.isin(m_dict["subject_by_ds"], list(omit))
+            shuff_mask = ~np.isin(m_dict["shuff_rho_subject"], list(omit))
+
+            for key in ("alpha", "uncorr", "corr", "erate",
+                        "subject_per_neuron", "session_per_neuron"):
+                m[key] = np.asarray(m_dict[key])[neuron_mask]
+            if "shuff_var_c" in m_dict:
+                m["shuff_var_c"] = np.asarray(m_dict["shuff_var_c"])[neuron_mask]
+
+            for key in ("rho_uncorr", "rho_corr", "subject_per_pair"):
+                m[key] = np.asarray(m_dict[key])[pair_mask]
+
+            for key in ("rho_u_meanz_by_ds", "rho_c_meanz_by_ds",
+                        "rho_delta_meanz_by_ds", "subject_by_ds"):
+                m[key] = np.asarray(m_dict[key])[ds_mask]
+            for key in ("Ctotal", "Cpsth", "Crate", "CnoiseU",
+                        "CnoiseC", "Cfem"):
+                if key in m_dict:
+                    values = np.asarray(m_dict[key], dtype=object)
+                    m[key] = values[ds_mask].tolist()
+
+            for key in ("shuff_rho_delta_meanz", "shuff_rho_c_meanz",
+                        "shuff_rho_subject"):
+                if key in m_dict:
+                    m[key] = np.asarray(m_dict[key])[shuff_mask]
+
+            filtered_metrics.append(m)
+
+        filtered["metrics"] = filtered_metrics
+        filtered["fano_stats"] = _compute_fano_stats(
+            filtered_metrics, filtered["WINDOWS_MS"]
+        )
+        filtered["nc_stats"] = _compute_nc_stats(
+            filtered_metrics, filtered["WINDOWS_MS"]
+        )
 
     sub_subjects = np.asarray(data.get("sub_subjects", []))
     if sub_subjects.size:
@@ -146,6 +230,67 @@ def _filter_subjects(data, omit=OMIT_SUBJECTS):
                     filtered[key] = np.asarray(data[key])[keep_null].tolist()
 
     return filtered
+
+
+def _pool_subjects_for_plotting(data, label=POOLED_SUBJECT):
+    """Relabel included subjects as one plotting group without changing values."""
+    pooled = copy.copy(data)
+    pooled["SUBJECTS"] = [label]
+    pooled["SUBJECT_COLORS"] = {label: POOLED_COLOR}
+    pooled["SUBJECT_DISPLAY_NAMES"] = {label: "pooled"}
+
+    if "m_by_window" in data and "subject_per_neuron_by_window" in data:
+        pooled["m_by_window"] = [np.asarray(v) for v in data["m_by_window"]]
+        pooled["subject_per_neuron_by_window"] = [
+            np.full(np.asarray(labels).shape, label, dtype=object)
+            for labels in data["subject_per_neuron_by_window"]
+        ]
+
+    metrics = []
+    for m_dict in data.get("metrics", []):
+        m = copy.copy(m_dict)
+        for key in ("subject_by_ds", "subject_per_neuron", "subject_per_pair"):
+            if key in m:
+                m[key] = np.full(np.asarray(m[key]).shape, label, dtype=object)
+        if "shuff_rho_subject" in m:
+            m["shuff_rho_subject"] = np.full(
+                np.asarray(m["shuff_rho_subject"]).shape, label, dtype=object
+            )
+        metrics.append(m)
+    if metrics:
+        pooled["metrics"] = metrics
+
+    if "fano_stats" in data:
+        fano_stats = {}
+        for window, stats in data["fano_stats"].items():
+            s = copy.copy(stats)
+            s["per_subject"] = {
+                label: {
+                    "slope_unc": stats["slope_unc"],
+                    "slope_cor": stats["slope_cor"],
+                    "slope_unc_ci": stats["slope_unc_ci"],
+                    "slope_cor_ci": stats["slope_cor_ci"],
+                    "slope_diff": stats["slope_diff"],
+                    "slope_diff_ci": stats["slope_diff_ci"],
+                    "p_slope": stats["p_slope"],
+                    "n_sessions": stats["n_sessions"],
+                    "n": stats["n"],
+                }
+            }
+            if "subject_per_neuron" in s:
+                s["subject_per_neuron"] = np.full(
+                    np.asarray(s["subject_per_neuron"]).shape,
+                    label,
+                    dtype=object,
+                )
+            fano_stats[window] = s
+        pooled["fano_stats"] = fano_stats
+
+    for key in ("sub_subjects", "null_subjects"):
+        if key in data:
+            pooled[key] = [label] * len(data[key])
+
+    return pooled
 
 
 def _plot_compact_eye_example(fig, subplot_spec):
@@ -222,24 +367,31 @@ def _plot_compact_eye_example(fig, subplot_spec):
 def _make_compact_cov_axes(fig, subplot_spec):
     gs = GridSpecFromSubplotSpec(
         2,
-        5,
+        7,
         subplot_spec=subplot_spec,
-        width_ratios=[1, 0.16, 1, 0.16, 1],
-        height_ratios=[0.78, 1.0],
+        width_ratios=[1.08, 0.14, 1.08, 0.34, 1.08, 0.10, 0.30],
+        height_ratios=[1.0, 1.0],
         wspace=0.04,
         hspace=0.30,
     )
     top_mats = [fig.add_subplot(gs[0, c]) for c in (0, 2, 4)]
-    bot_mats = [fig.add_subplot(gs[1, c]) for c in (0, 2, 4)]
+    bot_mats = [fig.add_subplot(gs[1, c]) for c in (2, 4)]
     top_seps = [fig.add_subplot(gs[0, c]) for c in (1, 3)]
-    bot_seps = [fig.add_subplot(gs[1, c]) for c in (1, 3)]
-    for ax in top_seps + bot_seps:
+    bot_seps = [fig.add_subplot(gs[1, 3])]
+    note_axes = [fig.add_subplot(gs[:, 6])]
+    for ax in top_seps + bot_seps + note_axes:
         ax.axis("off")
-    return top_mats, top_seps, bot_mats, bot_seps
+    return top_mats, top_seps, bot_mats, bot_seps, note_axes
+
+
+def _shift_axes_down(axes, dy=0.018):
+    for ax in axes:
+        pos = ax.get_position()
+        ax.set_position([pos.x0, pos.y0 - dy, pos.width, pos.height])
 
 
 def _plot_compact_cov_decomp(fig, subplot_spec, data, letter="D"):
-    top_axes, top_sep_axes, bot_axes, bot_sep_axes = _make_compact_cov_axes(
+    top_axes, top_sep_axes, bot_axes, bot_sep_axes, note_axes = _make_compact_cov_axes(
         fig, subplot_spec
     )
     sr = next((s for s in data["session_results"]
@@ -264,20 +416,19 @@ def _plot_compact_cov_decomp(fig, subplot_spec, data, letter="D"):
     cmax = float(np.nanmax(ctotal))
     cmap = plt.get_cmap("seismic_r")
     top_titles = [
-        r"$\Sigma_{\mathrm{total}}$",
-        r"$\Sigma_{\mathrm{PSTH}}$",
-        r"$\Sigma_{\mathrm{int}}^{\mathrm{uncorr}}$",
+        "Total covariance",
+        "Stimulus covariance",
+        "Classical residual",
     ]
     bot_titles = [
-        r"$\Sigma_{\mathrm{int}}^{\mathrm{uncorr}}$",
-        r"$\Sigma_{\mathrm{FEM}}$",
-        r"$\Sigma_{\mathrm{int}}^{\mathrm{corr}}$",
+        "FEM component",
+        "Corrected residual",
     ]
     for ax, mat, title, frac in zip(
         top_axes,
         [ctotal, cpsth, cint_uncorr],
         top_titles,
-        [0.5, 0.25, 0.5],
+        [0.35, 0.18, 0.35],
     ):
         vlim = frac * cmax
         ax.imshow(mat, cmap=cmap, interpolation="nearest",
@@ -287,27 +438,48 @@ def _plot_compact_cov_decomp(fig, subplot_spec, data, letter="D"):
 
     for ax, mat, title, frac in zip(
         bot_axes,
-        [cint_uncorr, cfem, cint],
+        [cfem, cint],
         bot_titles,
-        [0.5, 0.5, 0.5],
+        [0.35, 0.35],
     ):
         vlim = frac * cmax
         ax.imshow(mat, cmap=cmap, interpolation="nearest",
                   vmin=-vlim, vmax=vlim, aspect="equal")
-        ax.set_title(title, fontsize=8, pad=3)
+        ax.set_xlabel(title, fontsize=8, labelpad=4)
         _style_matrix_axis(ax)
 
     for ax, sym in zip(top_sep_axes, ["=", "+"]):
         ax.text(0.5, 0.5, sym, ha="center", va="center",
                 fontsize=14, transform=ax.transAxes)
-    for ax, sym in zip(bot_sep_axes, [r"$\approx$", "+"]):
+    for ax, sym in zip(bot_sep_axes, ["+"]):
         ax.text(0.5, 0.5, sym, ha="center", va="center",
                 fontsize=12, transform=ax.transAxes)
 
+    _add_diagonal_band_box(bot_axes[1], cint.shape[0])
+
+    top_residual_ax = top_axes[2]
+    arrow_kw = dict(
+        arrowstyle="-|>",
+        mutation_scale=9,
+        lw=0.9,
+        color="0.45",
+        alpha=0.85,
+        shrinkA=9,
+        shrinkB=9,
+        zorder=10,
+    )
+    fig.add_artist(ConnectionPatch(
+        xyA=(0.42, 0.01), coordsA=top_residual_ax.transAxes,
+        xyB=(0.78, 1.02), coordsB=bot_axes[0].transAxes,
+        **arrow_kw))
+    fig.add_artist(ConnectionPatch(
+        xyA=(0.58, 0.01), coordsA=top_residual_ax.transAxes,
+        xyB=(0.22, 1.02), coordsB=bot_axes[1].transAxes,
+        **arrow_kw))
+
     top_axes[0].text(-0.13, 1.16, letter, transform=top_axes[0].transAxes,
                      fontweight="bold", fontsize=10, va="top", ha="left")
-    top_axes[0].set_ylabel("Classical", fontsize=8, labelpad=5)
-    bot_axes[0].set_ylabel("Eye-position\nsplit", fontsize=8, labelpad=5)
+    return top_axes + top_sep_axes + bot_axes + bot_sep_axes + note_axes
 
 
 def _add_condition_legend(ax, loc="upper left"):
@@ -323,51 +495,26 @@ def _add_condition_legend(ax, loc="upper left"):
               handlelength=1.8, borderpad=0.1, labelspacing=0.25)
 
 
-def _plot_noise_corr_pair(fig, subplot_spec, data):
-    gs = GridSpecFromSubplotSpec(
-        1,
-        2,
-        subplot_spec=subplot_spec,
-        width_ratios=[1.15, 0.95],
-        wspace=0.42,
-    )
-    ax_main = fig.add_subplot(gs[0, 0])
+def _plot_noise_corr_panel(fig, subplot_spec, data):
+    ax_main = fig.add_subplot(subplot_spec)
     _, primary = plot_noise_corr(ax=ax_main, data=data)
     _normalize_axis_text(primary)
     _label(primary, "E")
     _add_condition_legend(primary, loc="upper left")
-
-    ax_delta = fig.add_subplot(gs[0, 1])
-    _, delta_primary = plot_noise_corr_delta(ax=ax_delta, data=data)
-    _normalize_axis_text(delta_primary)
-    delta_primary.set_title("Shuffle control", loc="left", fontsize=8)
-    delta_primary.set_ylabel(r"$\Delta z$")
-    legend = delta_primary.get_legend()
-    if legend is not None:
-        legend.set_title(None)
-        legend.set_bbox_to_anchor((1.02, 1.02))
-        legend._loc = 1
-    return primary, delta_primary
+    return primary
 
 
 def _add_pr_annotations(ax):
-    ax.text(
-        0.05,
-        0.94,
-        "FEM PR approx. 2-3",
-        transform=ax.transAxes,
-        fontsize=7,
-        va="top",
-        bbox=dict(facecolor="white", edgecolor="none", alpha=0.78, pad=1.0),
-    )
     legend = ax.get_legend()
     if legend is not None:
         legend.set_title("PSTH PR > FEM PR")
         legend.get_title().set_fontsize(6)
 
 
-def compose(refresh=False):
+def compose(refresh=False, split_subjects=False):
     data = _filter_subjects(load_fig2_data(refresh=refresh))
+    if not split_subjects:
+        data = _pool_subjects_for_plotting(data)
 
     # Tuned for an ~8.5" manuscript-width figure. Rows follow the argument:
     # single-neuron/rate, population covariance, removed-component structure.
@@ -384,8 +531,8 @@ def compose(refresh=False):
         gs = GridSpec(
             3,
             6,
-            height_ratios=[1.05, 1.10, 1.15],
-            hspace=0.32,
+            height_ratios=[0.95, 1.38, 1.05],
+            hspace=0.30,
             wspace=0.95,
             figure=fig,
             left=0.090,
@@ -399,12 +546,15 @@ def compose(refresh=False):
         panel_specs = [
             ("B", plot_fem_fraction, gs[0, 2:4]),
             ("C", plot_fano, gs[0, 4:6]),
-            ("F", plot_eigenspectra, gs[2, 0:2]),
+            ("F", plot_pairwise_noise_corr, gs[2, 0:2]),
             ("G", plot_participation_ratio, gs[2, 2:4]),
             ("H", plot_subspace_alignment, gs[2, 4:6]),
         ]
-        _plot_compact_cov_decomp(fig, gs[1, 0:3], data, letter="D")
-        _plot_noise_corr_pair(fig, gs[1, 3:6], data)
+        middle_axes = []
+        middle_axes.extend(_plot_compact_cov_decomp(fig, gs[1, 0:4],
+                                                    data, letter="D"))
+        middle_axes.append(_plot_noise_corr_panel(fig, gs[1, 4:6], data))
+        _shift_axes_down(middle_axes)
         for letter, plot_fn, spec in panel_specs:
             ax = fig.add_subplot(spec)
             _, primary_ax = plot_fn(ax=ax, data=data)
@@ -433,10 +583,15 @@ def _parse_args():
         action="store_true",
         help="Force recompute of derived fig2 data.",
     )
+    p.add_argument(
+        "--split-subjects",
+        action="store_true",
+        help="Plot included subjects separately instead of pooling them.",
+    )
     args, _ = p.parse_known_args()
     return args
 
 
 if __name__ == "__main__":
     args = _parse_args()
-    compose(refresh=args.refresh)
+    compose(refresh=args.refresh, split_subjects=args.split_subjects)
