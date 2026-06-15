@@ -212,7 +212,14 @@ def covariance_fisher_by_time(
         raise ValueError(f"Expected mu (T, N) and J (T, N, 2), got {mu.shape} and {jac.shape}")
     n_units = mu.shape[1]
     if sigma_extra is None:
-        extra = np.zeros((n_units, n_units), dtype=np.float64)
+        out = np.zeros((mu.shape[0], 2, 2), dtype=np.float64)
+        for t in range(mu.shape[0]):
+            diag = np.clip(float(noise_floor_multiplier) * mu[t], eps, None)
+            ridge_base = float(np.median(diag)) if n_units else 0.0
+            ridge = max(float(ridge_frac) * ridge_base, eps)
+            denom = diag + ridge
+            out[t] = jac[t].T @ (jac[t] / denom[:, None])
+        return 0.5 * (out + np.swapaxes(out, -1, -2))
     else:
         extra = np.asarray(sigma_extra, dtype=np.float64)
         if extra.shape != (n_units, n_units):
@@ -227,8 +234,15 @@ def covariance_fisher_by_time(
         sigma_t = 0.5 * (sigma_t + sigma_t.T)
         ridge_base = float(np.median(np.diag(sigma_t))) if n_units else 0.0
         ridge = max(float(ridge_frac) * ridge_base, eps)
-        inv = np.linalg.pinv(sigma_t + ridge * eye, hermitian=True)
-        out[t] = jac[t].T @ inv @ jac[t]
+        sigma_ridged = sigma_t + ridge * eye
+        try:
+            chol = np.linalg.cholesky(sigma_ridged)
+            whitened_j = np.linalg.solve(chol, jac[t])
+            out[t] = whitened_j.T @ whitened_j
+        except np.linalg.LinAlgError:
+            # Numerical fallback for nearly-PSD residual covariances.
+            solved_j = np.linalg.solve(sigma_ridged, jac[t])
+            out[t] = jac[t].T @ solved_j
     return 0.5 * (out + np.swapaxes(out, -1, -2))
 
 
@@ -338,6 +352,58 @@ def top_eigenvectors(mat: np.ndarray, k: int) -> np.ndarray:
     return vecs[:, order[:kk]]
 
 
+def orthonormalize_columns(basis: np.ndarray, *, n_rows: int | None = None, tol: float = 1e-10) -> np.ndarray:
+    """Return an orthonormal basis for the column span of ``basis``."""
+    u = np.asarray(basis, dtype=np.float64)
+    if u.ndim != 2:
+        raise ValueError(f"Expected 2D basis, got {u.shape}")
+    if n_rows is not None and u.shape[0] != int(n_rows):
+        raise ValueError(f"Basis shape {u.shape} incompatible with n_rows={n_rows}")
+    if u.shape[1] == 0:
+        return np.zeros((u.shape[0], 0), dtype=np.float64)
+    left, singular_values, _right = np.linalg.svd(u, full_matrices=False)
+    if singular_values.size == 0:
+        return np.zeros((u.shape[0], 0), dtype=np.float64)
+    cutoff = float(tol) * max(float(singular_values[0]), 1.0)
+    keep = singular_values > cutoff
+    return left[:, keep]
+
+
+def covariance_residual_noise_side(covariance: np.ndarray, basis: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return ``(P cov P, R cov R)`` for nuisance-only covariance removal.
+
+    This is the matched noise-side semantic for geometry-aware Fisher audits:
+    the signal, task derivative, response mean, and expected spikes are left
+    untouched; only the nuisance covariance added to the observation model is
+    replaced by ``R Sigma R.T`` where ``R = I - B B.T``.
+    """
+    cov = project_to_psd(covariance, eps=0.0)
+    u = orthonormalize_columns(basis, n_rows=cov.shape[0])
+    if u.shape[1] == 0:
+        return np.zeros_like(cov), cov
+    projector = u @ u.T
+    residual_projector = np.eye(cov.shape[0], dtype=np.float64) - projector
+    compact = projector @ cov @ projector
+    residual = residual_projector @ cov @ residual_projector
+    compact = project_to_psd(0.5 * (compact + compact.T), eps=0.0)
+    residual = project_to_psd(0.5 * (residual + residual.T), eps=0.0)
+    return compact, residual
+
+
+def covariance_residual_after_subspace(covariance: np.ndarray, basis: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return covariance explained by a subspace and the PSD residual."""
+    cov = project_to_psd(covariance, eps=0.0)
+    u = np.asarray(basis, dtype=np.float64)
+    if u.ndim != 2 or u.shape[0] != cov.shape[0]:
+        raise ValueError(f"Basis shape {u.shape} incompatible with covariance {cov.shape}")
+    if u.shape[1] == 0:
+        return np.zeros_like(cov), cov
+    compact = u @ (u.T @ cov @ u) @ u.T
+    compact = project_to_psd(compact, eps=0.0)
+    residual = project_to_psd(cov - compact, eps=0.0)
+    return compact, residual
+
+
 def coding_covariance_from_j(j_rows: Iterable[np.ndarray]) -> np.ndarray:
     """Neuron-space coding covariance ``sum J_t J_t.T``."""
     mats: list[np.ndarray] = []
@@ -398,6 +464,52 @@ def alignment_rows(
                 "signal_trace": float(np.trace(signal)),
                 "signal_variance_fem": directional_variance_capture(sigma, u_signal) if u_signal.size else np.nan,
                 "fem_variance_signal": directional_variance_capture(signal, u_fem) if u_fem.size else np.nan,
+            })
+        rows.append(row)
+    return rows
+
+
+def geometry_covariance_rows(
+    *,
+    family: str,
+    scale: float,
+    kind: str,
+    sigma_fem: np.ndarray,
+    coding_cov: np.ndarray,
+    signal_cov: np.ndarray | None,
+    k_list: Iterable[int] = DEFAULT_K_LIST,
+) -> list[dict[str, Any]]:
+    """Summarize compact-geometry conditioning of movement covariance."""
+    sigma = project_to_psd(sigma_fem, eps=0.0)
+    coding = project_to_psd(coding_cov, eps=0.0)
+    signal = None if signal_cov is None else project_to_psd(signal_cov, eps=0.0)
+    sigma_trace = float(np.trace(sigma))
+    coding_trace = float(np.trace(coding))
+    signal_trace = float("nan") if signal is None else float(np.trace(signal))
+    rows: list[dict[str, Any]] = []
+    for k in k_list:
+        kk = int(k)
+        basis = top_eigenvectors(sigma, kk)
+        compact, residual = covariance_residual_after_subspace(sigma, basis)
+        compact_trace = float(np.trace(compact))
+        residual_trace = float(np.trace(residual))
+        row: dict[str, Any] = {
+            "family": family,
+            "scale_D": float(scale),
+            "kind": kind,
+            "k": kk,
+            "sigma_trace": sigma_trace,
+            "compact_covariance_trace": compact_trace,
+            "residual_covariance_trace": residual_trace,
+            "nuisance_variance_removed_fraction": compact_trace / max(sigma_trace, 1e-12),
+            "nuisance_variance_remaining_fraction": residual_trace / max(sigma_trace, 1e-12),
+            "coding_trace": coding_trace,
+            "coding_variance_geometry": directional_variance_capture(coding, basis) if basis.size else np.nan,
+        }
+        if signal is not None:
+            row.update({
+                "signal_trace": signal_trace,
+                "signal_variance_geometry": directional_variance_capture(signal, basis) if basis.size else np.nan,
             })
         rows.append(row)
     return rows

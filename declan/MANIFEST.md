@@ -1,6 +1,6 @@
 # declan Manifest
 
-Last curated: 2026-06-12.
+Last curated: 2026-06-13.
 
 This is a human-maintained map of the `declan/` workspace. It is intentionally
 ordered newest-to-oldest in reading order where chronology is recoverable. The
@@ -30,27 +30,197 @@ or handoff that interprets them.
 
 ## Current Active / Uncommitted Work
 
-As of 2026-06-12, active uncommitted work has moved beyond the 2026-06-09
+As of 2026-06-13, active uncommitted work has moved beyond the 2026-06-09
 Figure 4/Figure 5 split. The most important files to check first are:
 
+- `active_sensing_roadmap_after_vernier_fixation_image_structure.md`: current
+  active-sensing synthesis after Vernier, fixation-regime, BackImage
+  image-structure, scaled twin drift-geometry adjudication, and the
+  input-whitening negative result. It now also records the n=256 local
+  Gabor/pyramid latent-information scale sweep, effective-scale audit, active
+  optimized seed-dependence replication, and the new aggregate natural-image
+  FEM information branch.
+- `backimage_aggregate_fem_information_plan.md`: newest Figure-level candidate
+  plan for testing whether the empirical FEM distribution improves ensemble
+  natural-image representation over static and matched Brownian/OU/shuffled
+  controls, with effective-scale, clipping, motion-energy, and shared/fixed
+  decoder-regularization guardrails.
+- `active_sensing_unit_space_provenance.md`: response-space ledger separating
+  16-channel matched/session results, sampled-population results, and full
+  756-channel canonical results. Use it before comparing pose-aware,
+  geometry-aware, and pose-blind observers. General rule: matched/session
+  readouts are for empirical-session or individual-neuron comparability; the
+  canonical large digital twin is the default for normative/mechanistic
+  population-level questions.
+- `fixation_statistics_by_stimulus/`: reviewed fixation-regime and BackImage
+  image-structure analysis package, including the twin drift-geometry runner.
+  `run_backimage_twin_drift_geometry.py` now also includes the conditional
+  fixation objective family: pixel isophote/stability cost, response-stability
+  cost, saturating path-refresh benefit, and refresh-plus-stability tradeoffs.
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/`: reviewed
+  BackImage/fixation-statistics outputs. The scaled `29`-session twin
+  drift-geometry adjudication found raw local edge orientation strongest
+  (`+0.182` session mean cos2, `23/29` positive, random-axis `p_ge = 0.0004`).
+  Current optimized PA/PB/Pareto twin axes did not beat raw edge geometry;
+  `optimized_PB - raw_edge_axis` was `-0.201` with CI `[-0.348, -0.064]`.
+  Provenance audit: the folder's `n256` label refers to `max_windows=256`;
+  saved metadata reports `twin_population_n=64`, so this is a sampled
+  population diagnostic rather than a full 756-channel canonical result.
+  Summary artifacts live under
+  `backimage_twin_drift_geometry_scaled_n256_twin_axis_only/summary/`.
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_conditional_fixation_objectives_proxy_n256/`:
+  first conditional-fixation proxy run. Pixel isophote/stability matched the
+  raw-edge benchmark but did not clearly beat it: `optimized_pixel_isophote`
+  session mean cos2 `+0.200`, raw edge `+0.182`, paired delta `+0.018` with CI
+  `[-0.044, +0.084]`.
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_conditional_fixation_objectives_twin_axis_only_n256/`:
+  comparable true V1 response-stability conditional-fixation run. Main result:
+  V1 response stability underperformed raw edge (`optimized_response_stability`
+  session mean cos2 `-0.019`; paired delta vs raw edge `-0.201`, CI
+  `[-0.349, -0.069]`). The cache-first residual summary in
+  `conditional_residual_summary/` did not rescue this via confidence strata:
+  high-confidence response-stability windows still had negative deltas versus
+  raw edge.
 - `Non_circular_FEM_information_tests_prescription.md`: non-circular Figure 5
   extension plan centered on input whitening, recorded pose-aware information,
   spatial-frequency localization, and sustained accumulation.
+- `active_sensing_movie_information/run_input_whitening_optimum.py` and
+  `active_sensing_movie_information/summarize_input_whitening_optimum.py`:
+  superseded pooled temporal-PSD input-statistics test. Output:
+  `outputs/active_sensing_movie_information/input_whitening/`. Main result:
+  larger retinal motion spreads pooled temporal power and increases the old
+  entropy/flatness metric, but this is not a faithful Rucci-style spatial
+  power-law whitening test.
+- `active_sensing_movie_information/run_rucci_powerlaw_whitening_audit.py`:
+  newer non-circular input-statistics audit. Outputs include
+  `outputs/active_sensing_movie_information/rucci_powerlaw_whitening_smoke_v2/`
+  and the longer pending
+  `outputs/active_sensing_movie_information/rucci_powerlaw_whitening_rawfix_n64_allimages_v2/`.
+  It measures spatial-frequency flattening of frame-to-frame modulation power,
+  keeps `amplitude_scale` separate from `diffusion_scale = amplitude_scale^2`,
+  and writes trace/image-level summaries plus power-gated decisions. Smoke
+  runs show total modulation power increasing with motion, while Rucci-style
+  spatial flattening peaks at small nonzero motion.
+- `active_sensing_movie_information/summarize_fem_scale_tradeoff.py`:
+  cache-first tradeoff extension combining input whitening, covariance-aware
+  pose costs, Vernier acuity, and analytic motion-cost proxies. Output:
+  `outputs/active_sensing_movie_information/fem_scale_tradeoff/`. First pass:
+  covariance and diffusion costs counter the upper-bound whitening optimum but
+  mostly overshoot to small scales; one-sided above-biological window costs can
+  place the optimum at `D_scale=1` under strong weights, partly by construction.
+  Treat this as a directional diagnostic, not an explanatory model.
 - `Covariance_aware_FEM_optimality_analysis_prescription.md`: covariance-aware
   movement-scale prescription separating pose-aware information from
   pose-blind covariance penalties.
 - `jake/twininfo/covariance_optimality.py` and
   `jake/twininfo/run_covariance_optimality.py`: implemented covariance-aware
   scaled-trajectory machinery for production `jake.twininfo` runs; production
-  run `covopt_full_gpu1` completed 3888/3888 rows.
+  run `covopt_full_gpu1` completed 3888/3888 rows. A 2026-06-13 audit fixed
+  the pose-aware path so it now uses the same covariance-Fisher/ridge code path
+  as pose-blind with zero extra movement covariance.
 - `active_sensing_movie_information/summarize_covariance_optimality.py`:
   summary, decision-table, and plotting helper for covariance-optimality
   outputs.
 - `outputs/active_sensing_movie_information/covariance_optimality/covopt_full_gpu1/`:
   completed covariance-aware operating-regime summary. Main result: empirical
   `D=1` usually lies on a high-efficiency plateau rather than a sharp optimum;
-  pose-aware minus pose-blind covariance Fisher gaps are consistently positive,
-  especially for microsaccade traces.
+  corrected pose-aware minus pose-blind covariance Fisher gaps are consistently
+  positive, especially for microsaccade traces, but random amplitude controls
+  match or exceed real.
+- `outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/`
+  and `.../posthoc_geometry_hierarchy/`: canonical sampled-population
+  covariance hierarchy (`N=256`) with gap-closure posthoc tables and figures.
+  Current interpretation: strong low-rank covariance rescue, translation-
+  geometry specificity untested. At empirical `D=1`, the current
+  `cov_geometry_aware_k` closes most of the pose-aware versus pose-blind gap,
+  but it is implemented as the top eigenspace of the movement covariance being
+  corrected, so it is an oracle top-PC correction rather than an independent
+  compact translation-tangent basis.
+- `outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/tangent_geometry_pathfinding_d1/`:
+  exact D=1 partial-overlap tangent pathfinding on the 116 units shared between
+  the `N=256` covariance cache and the canonical 756-channel Figure 4/TFTS
+  tangent manifest. Tangent subspaces beat random and usually unit-shuffled
+  tangent controls, but oracle top movement-PC remains much better
+  (`topPC_much_better_than_tangent` for all 32 decision rows). Current
+  interpretation: compact translation tangents capture a non-random slice of
+  the covariance penalty, but the strong hierarchy rescue is still mostly
+  low-rank movement-covariance/top-PC accounting. Next target: evaluate
+  `cov_tangent_geometry_aware_k` in a fully matched response space, preferably
+  the full canonical 756-channel model for population-level questions.
+- `outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/tangent_geometry_pathfinding_d1_cache_tangent/`:
+  same-cache tangent sanity check using Jacobian columns from the exact
+  116-unit evaluation cache. This does not rescue the functional readout
+  mechanism under the original residual semantics, but that interpretation is
+  now paused.
+- `declan/active_sensing_movie_information/run_noise_side_closure_audit.py` and
+  `outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/noise_side_closure_audit_sampled/`:
+  corrected noise-side-only closure audit using `Sigma_k = R Sigma_FEM R.T` for
+  every basis and leaving task derivatives/responses untouched. Sanity checks
+  pass (`D=0` null and synthetic `Sigma_FEM = J Sigma_e J.T`). Sampled D=1
+  result: manifest tangent is stronger under corrected semantics, while cache
+  tangent still leaves high residual pooled-residual covariance trace. Current
+  status: pause the compact functional useful-negative label; treat the sampled
+  result as evidence for possible `J`/`Sigma_FEM` provenance mismatch pending a
+  full corrected audit. The compact structural branch remains promotable as a
+  FEM-linked covariance structure mechanism, not as a demonstrated functional
+  readout mechanism.
+- `declan/active_sensing_movie_information/run_covariance_target_provenance_audit.py`,
+  `outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/covariance_target_provenance_d1/`,
+  and
+  `outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/covariance_target_provenance_d1_highk/`:
+  trace-capture provenance audit across exact reconstructed `J Sigma_e J.T`,
+  within-pair movement covariance, and pooled-residual covariance. This did not
+  run additional closure variants. At `k=20`, cache tangent captures about
+  `0.63` of exact `J Sigma_e J.T` trace and `0.59` of pooled/within-pair trace,
+  while oracle top-PC captures about `0.89` and `0.97`. At `k=116`, the current
+  cache-tangent construction still captures only about `0.74` of exact
+  `J Sigma_e J.T` and `0.64` of pooled/within-pair trace, while manifest/full
+  response-space basis captures all trace. Updated status: compact covariance
+  functional branch is paused pending covariance-provenance and cache-basis
+  decomposition; do not interpret the previous useful-negative label yet.
+- `declan/active_sensing_movie_information/run_covariance_projection_debug.py`
+  and
+  `outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/projection_debug_d1/`:
+  minimal projection/provenance assertions. Identity and `orth(J_exact)` pass
+  on the same 116-unit covariance targets; `orth(J_exact)` gives trace capture
+  `1.0`, residual trace near zero, direct J residual near zero, closure `1.0`,
+  and rank `116`. The existing cache tangent basis is rank `115` at `k=116`
+  because it is built from unit-centered J columns, so `U U.T` is not identity
+  and the uncentered J residual is about `0.257`. Unit hashes match
+  (`baac97be3d382ca4`), identifying a centering/response-space definition issue
+  rather than unit-order provenance mismatch.
+- `declan/active_sensing_movie_information/run_uncentered_j_tangent_closure_audit.py`
+  and
+  `outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/uncentered_j_tangent_closure_d1_sample6_k2_20_116/`:
+  focused corrected noise-side-only closure pass comparing oracle top-PC,
+  uncentered exact-J tangent, centered exact-J tangent, manifest tangent,
+  random, and unit-shuffled manifest bases. Sampled D=1 result: uncentered
+  exact-J nearly matches oracle for exact `J Sigma_e J.T` and pooled/within
+  covariance (`k=20` pooled closure `0.998` versus oracle `0.999`), while
+  centered exact-J remains poor because it omits the common mode. Updated
+  status: positive matched-cache mechanism. Uncentered local translation
+  sensitivity explains the movement-covariance rescue in the matched cache. The
+  independent canonical/manifest tangent basis remains partial and is not
+  sufficient for the full rescue.
+- `declan/active_sensing_movie_information/summarize_uncentered_j_tangent_closure.py`
+  and
+  `outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/uncentered_j_tangent_closure_d1_sample6_k20_summary/`:
+  final focused k=20 summary table/figure for closure, residual trace, and
+  signal fraction. At `k=20`, uncentered exact-J is essentially oracle-like
+  across exact-J, pooled-residual, and within-pair targets; centered exact-J
+  closure remains low for pooled/within (`0.241`), and manifest tangent closure
+  is intermediate (`0.502`) with low signal fraction (`0.210`). Main message:
+  the common-mode uncentered tangent is essential.
+- `declan/active_sensing_movie_information/rebuild_manifest_tangent_basis_conventions.py`
+  and
+  `outputs/active_sensing_movie_information/compact_basis_exports/manifest_tangent_basis_conventions/`:
+  diagnostic rebuild of canonical TFTS manifest bases from raw cached `bx/by`
+  tangent maps. The manifest basis can be rebuilt uncentered without rerunning
+  the twin, but the historical centered convention was centering across source
+  tangent samples per unit, not removing the response-space common mode within
+  each tangent vector. At default `0.25` arcmin, uncentered-vs-historical
+  overlap is `0.999` at `k=2` and `k=20`; this convention change alone is
+  unlikely to rescue independent manifest closure.
 - `structured_translation_decoder_analysis.md` and
   `compact_retinal_translation_geometry/run_windowed_siamese_relative_decoding.py`:
   structured decoder framing plus gain-orthogonal/rank-1 gain-null additions to
@@ -76,9 +246,9 @@ Figure 4/Figure 5 split. The most important files to check first are:
   covariance-closure response-window stability panel.
 
 Treat the new prescriptions as claim discipline, not finished results. The
-covariance-optimality route now has interpreted production outputs; other new
-runners should still be treated as implemented routes whose outputs need their
-own review before promotion.
+covariance-optimality and input-whitening routes now have interpreted
+production outputs; other new runners should still be treated as implemented
+routes whose outputs need their own review before promotion.
 
 Recent numerical-audit note: the compact covariance-closure ratio can be
 slightly above `1.0` because the full and compact sources are compared as
@@ -96,6 +266,247 @@ Treat this as a specific diagnostic that needs pre-registered unit selection or
 replication before becoming a claim.
 
 ## Chronology: Newest To Oldest
+
+### 2026-06-15: BackImage n=256 Latent Scale Sweep, Seed Replication, and Aggregate FEM Information Plan
+
+Primary locations:
+
+- `free_viewing_latent_information_test_plan.md`
+- `active_sensing_roadmap_after_vernier_fixation_image_structure.md`
+- `backimage_aggregate_fem_information_plan.md`
+- `fixation_statistics_by_stimulus/run_backimage_latent_information_screen.py`
+- `fixation_statistics_by_stimulus/summarize_backimage_latent_information_screen.py`
+- `fixation_statistics_by_stimulus/audit_backimage_latent_real_random.py`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_scalesweep_n256_rel0125-2_rand8_delta/`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_scalesweep_n256_rel0125-2_rand8_delta_seed1_manifest_optimized_tb2/`
+
+Purpose: complete the locked canonical n=256 BackImage Gabor/pyramid
+latent-information scale sweep, audit effective scale/clipping/subsampling
+stability, patch the runner for replayable seed-dependence checks and faster
+canonical trace batching, launch an optimized same-window seed-1 replication,
+and formalize a broader aggregate FEM information plan.
+
+Completed n=256 scale sweep:
+
+- Canonical 756-unit twin, fixed Gabor/pyramid local fields,
+  `pose_blind_delta_mean`, rand8, scales `0.125x`, `0.25x`, `0.5x`, `1x`, and
+  `2x` observed RMS.
+- Gabor `k=4`, `0.25x`: real-minus-random `+3.48`,
+  CI `[+0.75, +6.87]`; unclipped subset `+2.85`, CI `[+0.21, +6.25]`.
+- Pyramid `k=8`, `0.25x`: real-minus-random `+2.19`,
+  CI `[+0.62, +4.18]`; unclipped subset `+1.86`, CI `[+0.45, +3.67]`.
+- Gabor `k=4`, `1x`: positive but guarded, `+2.59` with CI crossing zero.
+- Pyramid `k=8`, `1x`: global weak, but unclipped subset `+1.40`,
+  CI `[+0.05, +2.71]`.
+- Clipping rises with nominal scale: `1.2%`, `3.9%`, `9.4%`, `18.8%`, and
+  `40.2%`.
+- Subsampling explains n=64/n=128 variability: n=64 Gabor `k=4`, `1x`
+  subsamples can be negative; n=128 Gabor `k=4`, `0.25x` is usually positive.
+- Leave-session-out is reassuring at `0.25x`: Gabor `k=4`
+  `+2.17/+3.52/+4.09`; pyramid `k=8` `+1.41/+2.25/+2.38`.
+
+Runner/posthoc updates:
+
+- `run_backimage_latent_information_screen.py` now supports `--window-manifest`
+  replay, stable `source_row` output for new runs, fixed-alpha sensitivity mode,
+  canonical trace batching via `--twin-trace-batch-size`, and
+  `--check-trace-batch-equivalence`.
+- `summarize_backimage_latent_information_screen.py` reports scale clipping and
+  merges clipping fractions into candidate/scale summaries.
+- `audit_backimage_latent_real_random.py` adds effective-scale splits,
+  clipped/unclipped real-minus-random summaries, subsampling, leave-session-out,
+  and regime stratification.
+
+Active optimized replication:
+
+- Output:
+  `backimage_latent_information_scalesweep_n256_rel0125-2_rand8_delta_seed1_manifest_optimized_tb2`.
+- Same physical windows as the completed n=256 run via `--window-manifest`,
+  random-axis seed changed to `1`, canonical trace batching enabled, and
+  trace-batch equivalence preflight enabled.
+- The first trace-batch-8 launch exceeded GPU memory during preflight; the live
+  run uses `--twin-trace-batch-size 2` and `--twin-batch-size 48`.
+
+New aggregate plan:
+
+- `backimage_aggregate_fem_information_plan.md` shifts the figure-level
+  question from exact per-fixation axis optimality to distributional adaptation:
+  whether empirical FEM motion distributions improve ensemble natural-image
+  representation compared with static and matched Brownian/OU/shuffled
+  controls.
+- Guardrails: report effective RMS and clipping for every nominal scale, match
+  motion energy, include paired/unpaired image-trace modes, use shared/fixed
+  decoder regularization for figure-level claims, and do not interpret
+  largest-motion wins as biological optimality.
+
+Status: `Open / local I_z has stable small-scale support; optimized
+same-window seed replication running; aggregate ensemble plan documented`.
+
+### 2026-06-14: BackImage Latent-Information Fixes and Edge-Parallel Stability Synthesis
+
+Primary locations:
+
+- `free_viewing_latent_information_test_plan.md`
+- `active_sensing_roadmap_after_vernier_fixation_image_structure.md`
+- `fixation_statistics_by_stimulus/run_backimage_latent_information_screen.py`
+- `fixation_statistics_by_stimulus/posthoc_backimage_twin_stability_metric_audit.py`
+- `fixation_statistics_by_stimulus/summarize_backimage_twin_stability_metric_audit.py`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_pathfinder_fixall_n64_rel0125-05_rand8_delta/`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_pathfinder_gabor_realrand_n128_rel0125-05_rand8_nogrd/`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_twin_stability_metric_audit/`
+
+Purpose: review, patch, and rerun the BackImage latent-information branch after
+the Gabor/pyramid implementations looked suspicious; then audit whether the
+twin edge-parallel stability metric was dominated by response scale.
+
+Implementation updates:
+
+- Gabor local fields now include even, odd, and amplitude maps on the local
+  grid.
+- Pyramid local fields use the expanded local grid.
+- Model outputs are cropped back to the requested trace length before observer
+  construction.
+- Delta observers subtract the aligned static response for the same window.
+
+Post-fix latent results:
+
+- First pathfinder:
+  `backimage_latent_information_pathfinder_fixall_n64_rel0125-05_rand8_delta`.
+  At `0.125x` observed RMS, canonical 756-unit twin, `k=4`, rand8, Gabor
+  pose-blind delta gave real-minus-random `+9.02`
+  CI `[+1.56, +18.15]` and real-minus-edge `+11.58`
+  CI `[+1.59, +24.55]`.
+- Pyramid pose-blind delta was directionally similar but noisier:
+  real-minus-random `+10.28`, CI `[-0.53, +26.07]`; real-minus-edge
+  `+25.04`, CI `[-3.78, +73.38]`.
+- The apparent larger Gabor-only run,
+  `backimage_latent_information_pathfinder_gabor_realrand_n128_rel0125-05_rand8_nogrd`,
+  is not a clean post-fix replication. Its saved Gabor local field has shape
+  `(128, 384)`, while the fixed 8x8 even/odd/amplitude Gabor local field has
+  shape `(N, 4608)`, and it used absolute rather than delta observers.
+- The stage2 run included pyramid and scales up to `2x`, but it was still n=64,
+  used the older 4x4 feature dimensionality, and used absolute observers. A
+  larger clean fixed-Gabor/fixed-pyramid delta replication had not yet been run
+  at that point.
+- Clean n=128 canonical replication:
+  `backimage_latent_information_cleanrep_n128_rel0125-05_rand8_delta`.
+  This used canonical 756 units, fixed Gabor local fields `(128, 4608)`, fixed
+  pyramid local fields `(128, 3072)`, `pose_blind_delta_mean`, rand8, and
+  `0.125x/0.25x/0.5x` observed RMS. Primary Gabor `k=4`, `0.125x`:
+  real-minus-random `+3.31` CI `[-0.14, +8.57]`, p(delta<=0) `0.0396`;
+  real-minus-edge `-0.36` CI `[-2.25, +1.09]`; edge-minus-random `+3.67`
+  CI `[+0.08, +9.28]`. Larger relative scales produced several real-vs-edge
+  positives, including Gabor `k=4`, `0.5x` `+6.60` CI `[+1.53, +11.83]`,
+  pyramid `k=4`, `0.5x` `+7.26` CI `[+2.35, +12.08]`, and pyramid `k=8`,
+  `0.25x` `+8.57` CI `[+1.62, +20.85]`.
+
+Twin stability metric audit:
+
+- Endpoint cache:
+  `backimage_twin_stability_metric_audit/twin_endpoint_tail_vectors.npz`.
+- Signed edge-parallel stability was positive across pixel and twin metrics:
+  pixel session mean `+300.5` CI `[+172.8, +408.8]`; twin raw MSE
+  `+0.0004545` CI `[+0.0003716, +0.0005432]`; response-norm `+0.02456`
+  CI `[+0.01993, +0.02931]`; per-rate `+0.003688`
+  CI `[+0.002902, +0.004501]`; full-cov whitened `+0.1706`
+  CI `[+0.1511, +0.1890]`.
+- Pixel and twin signed advantages agree across windows: full-cov whitened
+  `r = +0.277` CI `[+0.168, +0.417]`; diagonal-whitened `r = +0.287`
+  CI `[+0.139, +0.419]`.
+- The old relative twin disruption score's wrong-direction trend is now treated
+  as metric-fragile; signed normalized disruption does not support a robust
+  wrong-direction claim.
+
+Status: `Open / local-preservation result strengthened; latent-information
+optimizer branch remains scale-dependent`.
+
+Current claim boundary:
+
+```text
+BackImage drift is not yet explained by global feature-information
+maximization. The defensible result is that edge-parallel small retinal motion
+preserves local pixel and V1-twin structure. The corrected Gabor/pyramid
+`I_z` branch is alive but not yet figure-settling: the clean n=128 run gives a
+primary small-scale Gabor real-vs-random signal, no primary real-vs-edge win at
+`0.125x`, and several real-vs-edge positives by `0.5x`.
+```
+
+Next gate:
+
+- Run a locked Gabor/pyramid scale sweep through `1x` observed RMS before
+  continuous trajectory optimization. Classify the `1x` outcome as
+  real-specific, edge-structured, generic-motion, edge-avoidance, or
+  no-feature-benefit.
+- Treat edge-parallel signed stability as the robust BackImage support result,
+  and raw edge geometry as the baseline any model objective must beat.
+
+### 2026-06-13: Active-Sensing Roadmap, Fixation-Regime, BackImage Image-Structure, and Input-Whitening Branch
+
+Primary locations:
+
+- `active_sensing_roadmap_after_vernier_fixation_image_structure.md`
+- `fixation_statistics_by_stimulus/`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_image_structure_reviewed_v2_screenfiltered/`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_twin_drift_geometry_pilot_twin_axis_only/`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_twin_drift_geometry_scaled_n256_twin_axis_only/`
+- `active_sensing_movie_information/run_input_whitening_optimum.py`
+- `active_sensing_movie_information/summarize_input_whitening_optimum.py`
+- `active_sensing_movie_information/run_rucci_powerlaw_whitening_audit.py`
+- `active_sensing_movie_information/summarize_fem_scale_tradeoff.py`
+- `outputs/active_sensing_movie_information/input_whitening/`
+- `outputs/active_sensing_movie_information/rucci_powerlaw_whitening_smoke_v2/`
+- `outputs/active_sensing_movie_information/fem_scale_tradeoff/`
+
+Purpose: update the active-sensing story after the Vernier hyperacuity branch,
+fixation-statistics-by-stimulus analysis, BackImage local image-structure
+analysis, scaled BackImage twin drift-geometry adjudication, and completed
+input-whitening analysis.
+
+Current synthesis:
+
+- FEMs are best framed as context-dependent retinal sampling whose utility
+  depends on local image geometry, movement scale, and observer coordinate frame.
+- Vernier results promote phase sampling under pose-aware readout, but demote
+  exact trace order and compact-aware pose-blind rescue.
+- The old pooled temporal-PSD whitening branch is superseded as a
+  Rucci-whitening test. It showed temporal power spreading with larger motion,
+  not spatial power-law compensation. The newer Rucci-style audit shows a
+  dissociation in smoke runs: total modulation power peaks at large motion, but
+  spatial power-law flattening peaks at small nonzero motion. Whitening still
+  does not set biological amplitude by itself; it has become a multi-objective
+  constraint rather than one scalar optimum.
+- The first cache-only tradeoff summary shows that adding covariance, acuity,
+  or generic diffusion costs can move the optimum away from the whitening upper
+  boundary, but not automatically back to biology. Pose-blind covariance and
+  diffusion costs tend to overshoot toward very small scales; a one-sided
+  above-biological window penalty can recover `D_scale=1` under strong weights,
+  but is not explanatory as written. The next concrete test is
+  Rucci-style spatial power-law whitening and V1 temporal-sensitivity-weighted
+  whitening.
+- Fixation statistics differ substantially across stimulus/behavioral regimes;
+  fixRSVP is a tight fixation-maintenance regime, not a universal FEM policy.
+- BackImage scalar local-image features do not robustly predict scalar FEM
+  metrics, but drift/fixation-cloud axes show modest local edge/spectral
+  alignment.
+- The scaled twin drift-geometry run did not show model-specific explanatory
+  power beyond raw edge geometry: `raw_edge_axis` session mean cos2 was
+  `+0.182`, while `optimized_PB` was `-0.019`, `optimized_PA` was `-0.008`,
+  and `optimized_Pareto_lambda_0.5` was `-0.010`. The paired
+  `optimized_PB - raw_edge_axis` delta was `-0.201`, CI
+  `[-0.348, -0.064]`.
+
+Status: `Open / scaled BackImage drift-geometry adjudication completed; input-whitening branch closed as useful negative`.
+Do not claim that the current V1-twin PA/PB/Pareto objectives predict drift
+geometry. The fair current claim is that observed BackImage drift is robustly
+edge-aligned, pure pose-aware response-modulation is the wrong objective, and
+the tested pose-blind/Pareto twin objectives do not add explanatory power
+beyond raw local edge geometry.
+Do not claim that input whitening predicts biological FEM amplitude. The fair
+claim is that retinal motion reformats natural-image input, but pooled
+temporal-power spreading and Rucci-style spatial power-law flattening have
+different scale optima and must be balanced by acuity, pose, covariance,
+stability, and motor constraints.
 
 ### 2026-06-12: Content-Routed Correct-Chart Alignment
 
@@ -170,8 +581,10 @@ First-pass result:
 Status: `Open / supportive for phase-cloud sampling`. The safe claim is that
 nearby phase-cloud sampling improves pose-aware Vernier information relative to
 a static center. Do not claim unique optimality of real FEM order. The
-component-scale run currently has partial caches but no completed manifest or
-summary, so treat it as incomplete.
+first-pass and component-scale summaries use `756` canonical units. The
+scale/pose sweep's main pose-aware rows also use `756` units, while its
+compact-aware controls use a `256`-unit `top_abs_fd` subset from the original
+756-unit space.
 
 ### 2026-06-12: Non-Circular FEM Information / Covariance-Aware Optimality
 
@@ -179,11 +592,15 @@ Primary locations:
 
 - `Non_circular_FEM_information_tests_prescription.md`
 - `Covariance_aware_FEM_optimality_analysis_prescription.md`
+- `active_sensing_unit_space_provenance.md`
 - `jake/twininfo/covariance_optimality.py`
 - `jake/twininfo/run_covariance_optimality.py`
 - `active_sensing_movie_information/summarize_covariance_optimality.py`
+- `active_sensing_movie_information/run_input_whitening_optimum.py`
+- `active_sensing_movie_information/summarize_input_whitening_optimum.py`
 - `outputs/twininfo/active-sensing-all-images-1crop-2fix2ms-16units-gpu/covariance_optimality/covopt_full_gpu1/`
 - `outputs/active_sensing_movie_information/covariance_optimality/covopt_full_gpu1/`
+- `outputs/active_sensing_movie_information/input_whitening/`
 
 Purpose: extend Figure 5 without making a circular "the twin proves FEM
 optimality" argument. The new direction separates input-level efficient-coding
@@ -199,6 +616,15 @@ Important ideas:
 - Covariance-aware model tests should compare independent/pose-aware,
   covariance-aware/pose-aware, and covariance-aware/pose-blind Fisher
   efficiency across movement scale.
+- The plausible geometry-aware ladder is
+  `cov_pose_aware >= cov_geometry_aware >= cov_pose_blind`, but this is still a
+  matched-response-space hypothesis. Current `covopt_full_gpu1` curves use the
+  16 center/session-matched biological twin channels from the natural-image
+  active-sensing run. The historical compact add-back/remove-out scaffold used
+  the canonical 756-channel Figure 4/TFTS basis, so it is not the middle rung
+  for these 16-channel covariance curves. See
+  `active_sensing_unit_space_provenance.md` before interpreting any
+  middle-observer result.
 - Empirical FEM scale can be overlaid as an operating-regime diagnostic, but
   not claimed as globally optimal unless non-tautological and gain/noise
   sensitivity checks survive.
@@ -230,18 +656,32 @@ Production result:
 - The main negative/discriminator case was
   `trajectory_order_shuffle_scaled / microsaccade`: peak at `D=0.125`, value
   `88.73`, empirical `D=1` value `66.40`, empirical fraction of peak `0.748`.
-- Pose-aware minus pose-blind covariance Fisher gaps at empirical `D=1` were
-  positive in all families: fixation gaps ranged `0.034-0.092`, microsaccade
-  gaps ranged `0.099-0.267` (`n=54` each).
+- Corrected pose-aware minus pose-blind covariance Fisher gaps at empirical
+  `D=1` were positive in all families: fixation gaps ranged `0.027-0.084`,
+  microsaccade gaps ranged `0.092-0.258` (`n=54` each). For measured real
+  motion specifically, fixation was `0.038 +/- 0.003` and microsaccade was
+  `0.195 +/- 0.016`.
 - Gain/noise sensitivity labels were stable in all tested grids: each
   family/kind label was unchanged across `9/9` gain/noise settings.
+- The original input-whitening run completed `1458` retinal movies and
+  `157464` metric rows, but is now interpreted narrowly: measured drift spreads
+  pooled temporal power relative to stabilization, and larger motion increases
+  the old temporal entropy/flatness metric. A newer Rucci-style audit asks the
+  spatial power-law question directly from frame-to-frame modulation spectra;
+  smoke runs show total modulation power increasing with motion but
+  spatial-flattening metrics peaking at small nonzero motion.
 
-Status: `Closed / supportive with guardrails`. The result supports an
-efficient operating-regime claim, not a unique optimum claim: empirical FEM
-scale generally lies on a high-efficiency plateau, and conditioning on retinal
-pose recovers information that pose-blind covariance accounting treats as
-nuisance. Do not phrase this as proof that biological FEM amplitude is exactly
-optimized.
+Status: `Closed / supportive with guardrails`. The covariance-aware result
+supports an efficient operating-regime claim, not a unique optimum claim:
+empirical FEM scale generally lies on a high-efficiency plateau, and
+conditioning on retinal pose recovers information that pose-blind covariance
+accounting treats as nuisance. The code-audited post-fix result removes the old
+`D=0` ridge artifact but does not change the main guardrail: random amplitude
+controls match or exceed real on the pose-gap metric. The whitening branch is a
+useful cleanup rather than a scale-setting answer: pooled temporal-power
+spreading, Rucci-style spatial flattening, and task/feature information have
+different scale optima. Do not phrase either branch as proof that biological
+FEM amplitude is exactly optimized.
 
 ### 2026-06-12: Structured Translation Decoders and Forward Denoising
 
@@ -755,6 +1195,7 @@ Use this section when you know the folder but not the date.
 | `active_sensing_movie_information/` | Figure 5 / active-sensing movie-information plans, figure generator, QC, and population checks. |
 | `compact_retinal_translation_geometry/` | Spec-facing compact translation-geometry panel builder, audits, metric validation, displacement decoding, structured/gain-orthogonal decoder work, and permissive Tejas-style decoder checks. |
 | `vernier_active_sensing/` | Controlled Vernier hyperacuity analysis package, renderer, model runner, and summary/figure helper. |
+| `fixation_statistics_by_stimulus/` | Fixation-regime statistics, BackImage local image-structure analyses, registration QC, random-location controls, and twin drift-geometry runner. |
 | `forward_twin_reafferent_denoising/` | Forward twin reafferent denoising runner for held-out recorded residual correction tests. |
 | `direct_recorded_derivative_twin_alignment/` | Supplemental recorded derivative vs twin tangent alignment runner and notes. |
 | `matched_twin_covariance_closure/` | Cache and finite-difference closure of recorded FEM covariance by fitted-twin tangents. |
@@ -781,6 +1222,7 @@ These threads overlap scientifically but are useful for navigation.
 | Thread | Current home | Historical/related files |
 | --- | --- | --- |
 | Active-sensing natural-image information | `active_sensing_movie_information/` | `Figure5_active_sensing_triage_plan.md`, `Figure5_random_amp_cloud_matched_control_spec.md`, `e1_active_sensing_efficiency_revised_handoff.md`, `Non_circular_FEM_information_tests_prescription.md` |
+| Active-sensing roadmap / BackImage image structure | `active_sensing_roadmap_after_vernier_fixation_image_structure.md`, `fixation_statistics_by_stimulus/` | `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/`, `vernier_active_sensing_analysis_plan.md` |
 | Vernier active sensing | `vernier_active_sensing/` | `vernier_active_sensing_analysis_plan.md`, `outputs/vernier_active_sensing_first_pass/` |
 | Covariance-aware FEM operating regime | `jake/twininfo/covariance_optimality.py`, `jake/twininfo/run_covariance_optimality.py` | `Covariance_aware_FEM_optimality_analysis_prescription.md`, `active_sensing_movie_information/summarize_covariance_optimality.py` |
 | Structured translation decoding | `compact_retinal_translation_geometry/run_windowed_siamese_relative_decoding.py` | `structured_translation_decoder_analysis.md`, `compact_retinal_translation_geometry/run_tejas_style_eyepos_decoder.py` |

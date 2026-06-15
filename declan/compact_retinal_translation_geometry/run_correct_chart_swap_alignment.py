@@ -94,6 +94,9 @@ class ChartSwapConfig:
     drift_speed_threshold_px: float
     drift_pair_delta_threshold_px: float
     run_pseudo_spike_control: bool
+    pseudo_control_modes: list[str]
+    pseudo_poisson_scales: list[float]
+    pseudo_injection_noise_sds: list[float]
     local_image_radius_px: int
     n_bootstrap: int
     seed: int
@@ -502,6 +505,16 @@ def build_chart_pair_dataset(
     )
 
 
+def _split_ids_for_folds(ids: np.ndarray, n_folds: int, seed: int) -> list[np.ndarray]:
+    ids = np.asarray(ids, dtype=np.int64)
+    if ids.size == 0:
+        return []
+    rng = np.random.default_rng(int(seed))
+    shuffled = ids.copy()
+    rng.shuffle(shuffled)
+    return [fold.astype(np.int64) for fold in np.array_split(shuffled, min(int(n_folds), ids.size)) if fold.size]
+
+
 def _chart_swap_splits(
     pairs: dict[str, np.ndarray],
     n_folds: int,
@@ -515,6 +528,20 @@ def _chart_swap_splits(
         )
     if str(split_mode) == "trial_disjoint":
         return _decode_splits(pairs, int(n_folds), int(seed), str(split_mode))
+    if str(split_mode) == "trial_disjoint_drift_test":
+        trial_a = np.asarray(pairs["trial_a"], dtype=np.int64)
+        trial_b = np.asarray(pairs["trial_b"], dtype=np.int64)
+        drift_mask = np.asarray(pairs["drift_mask"], dtype=bool)
+        trials = np.unique(np.concatenate([trial_a, trial_b])).astype(np.int64)
+        out: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+        for held_trials in _split_ids_for_folds(trials, int(n_folds), int(seed)):
+            a_test = np.isin(trial_a, held_trials)
+            b_test = np.isin(trial_b, held_trials)
+            test_mask = a_test & b_test & drift_mask
+            train_mask = (~a_test) & (~b_test)
+            if np.sum(train_mask) >= 5 and np.sum(test_mask) >= 1:
+                out.append((held_trials.astype(np.int64), train_mask, test_mask))
+        return out
     if str(split_mode) != "drift_trial_disjoint":
         raise ValueError(f"Unsupported split mode: {split_mode}")
 
@@ -802,6 +829,41 @@ def _compute_base_rates(
     return np.concatenate(preds, axis=0).astype(np.float64)
 
 
+def _parse_float_list(spec: str, *, allow_zero: bool = False) -> list[float]:
+    out: list[float] = []
+    for raw in parse_str_list(str(spec)):
+        try:
+            val = float(raw)
+        except ValueError:
+            continue
+        if np.isfinite(val) and (val > 0.0 or (allow_zero and val == 0.0)):
+            out.append(val)
+    return out
+
+
+def _chart_injection_delta_y(
+    *,
+    pairs: dict[str, np.ndarray],
+    charts: dict[int, np.ndarray],
+    n_units: int,
+    noise_sd: float,
+    seed: int,
+) -> np.ndarray:
+    delta_e = np.asarray(pairs["delta_e"], dtype=np.float64)
+    condition_ids = np.asarray(pairs["condition_id"], dtype=np.int64)
+    out = np.zeros((delta_e.shape[0], int(n_units)), dtype=np.float64)
+    for i, cond in enumerate(condition_ids):
+        chart = charts.get(int(cond))
+        if chart is None:
+            out[i] = np.nan
+        else:
+            out[i] = np.asarray(chart, dtype=np.float64) @ delta_e[i]
+    if float(noise_sd) > 0.0:
+        rng = np.random.default_rng(int(seed))
+        out = out + rng.normal(0.0, float(noise_sd), size=out.shape)
+    return out
+
+
 def _score_session(
     *,
     session: str,
@@ -888,10 +950,15 @@ def _score_session(
                 "n_shared_trial_pairs": int(len(shared_trial_pairs)),
                 "n_train_pairs": int(np.sum(train_mask)),
                 "n_test_pairs": int(np.sum(test_mask)),
-                "status": "fail" if (split_mode in {"trial_disjoint", "drift_trial_disjoint"} and shared_trials) or shared_trial_pairs else "pass",
+                "status": (
+                    "fail"
+                    if (split_mode in {"trial_disjoint", "trial_disjoint_drift_test", "drift_trial_disjoint"} and shared_trials)
+                    or shared_trial_pairs
+                    else "pass"
+                ),
             }
         )
-        if str(split_mode) in {"trial_disjoint", "drift_trial_disjoint"}:
+        if str(split_mode) in {"trial_disjoint", "trial_disjoint_drift_test", "drift_trial_disjoint"}:
             train_sample_mask = ~np.isin(samples.trial_ids, held_ids)
         else:
             train_sample_mask = np.isin(labels, list(train_conditions))
@@ -903,6 +970,15 @@ def _score_session(
         )
         if len(charts) < 2:
             continue
+        fold_delta_y = delta_y
+        if str(pairs.get("delta_y_mode", "")) == "linear_chart_injection":
+            fold_delta_y = _chart_injection_delta_y(
+                pairs=pairs,
+                charts=charts,
+                n_units=delta_y.shape[1],
+                noise_sd=float(pairs.get("linear_chart_injection_noise_sd", 0.0)),
+                seed=int(seed) + int(fold_idx) * 17011,
+            )
 
         test_indices = np.flatnonzero(test_mask)
         rng_base = np.random.default_rng(int(seed) + int(fold_idx) * 10007)
@@ -913,7 +989,7 @@ def _score_session(
         for projection_i, projection_control in enumerate(projection_controls):
             modes = _projection_modes(str(projection_control), target_cov)
             projection = _projection_complement(delta_y.shape[1], modes)
-            var = _diag_whitener(delta_y, train_mask, projection)
+            var = _diag_whitener(fold_delta_y, train_mask, projection)
             gain_axis = projection @ gain_axis_raw
             basis_cache: dict[int, tuple[np.ndarray, int]] = {}
             for k in sorted(set([int(primary_k), *[int(v) for v in k_list]])):
@@ -944,7 +1020,7 @@ def _score_session(
                     if cond not in charts:
                         continue
                     de = delta_e[pair_i]
-                    dy = projection @ delta_y[pair_i]
+                    dy = projection @ fold_delta_y[pair_i]
                     q_true_raw = charts[cond] @ de
                     true_vecs = _project_chart_vector(
                         q_true_raw,
@@ -1109,7 +1185,7 @@ def _summarize_pair_rows(rows: list[dict[str, Any]], *, seed: int, n_bootstrap: 
         vals = vals[np.isfinite(vals)]
         return int(np.nanmedian(vals)) if vals.size else 0
 
-    groups: dict[tuple[str, str, int, str, str, str, str, bool], list[dict[str, Any]]] = {}
+    groups: dict[tuple[str, str, int, str, str, str, str, str, float, float, bool], list[dict[str, Any]]] = {}
     for row in rows:
         for drift_only in (False, True):
             if drift_only and not bool(row.get("drift_mask", False)):
@@ -1122,10 +1198,25 @@ def _summarize_pair_rows(rows: list[dict[str, Any]], *, seed: int, n_bootstrap: 
                 str(row.get("unit_score_subset", "all_units")),
                 str(row.get("wrong_chart_pool", "unknown")),
                 str(row.get("wrong_chart_match_features", "norm_only")),
+                str(row.get("pseudo_control_mode", "recorded")),
+                float(row.get("pseudo_control_scale", 1.0)),
+                float(row.get("pseudo_injection_noise_sd", 0.0)),
                 drift_only,
             )
             groups.setdefault(key, []).append(row)
-    for (session, projection, k, chart_space, unit_subset, wrong_pool, wrong_match, drift_only), block in sorted(groups.items()):
+    for (
+        session,
+        projection,
+        k,
+        chart_space,
+        unit_subset,
+        wrong_pool,
+        wrong_match,
+        pseudo_mode,
+        pseudo_scale,
+        pseudo_noise_sd,
+        drift_only,
+    ), block in sorted(groups.items()):
         base = {
             "session": session,
             "projection_control": projection,
@@ -1134,6 +1225,9 @@ def _summarize_pair_rows(rows: list[dict[str, Any]], *, seed: int, n_bootstrap: 
             "unit_score_subset": unit_subset,
             "wrong_chart_pool": wrong_pool,
             "wrong_chart_match_features": wrong_match,
+            "pseudo_control_mode": pseudo_mode,
+            "pseudo_control_scale": float(pseudo_scale),
+            "pseudo_injection_noise_sd": float(pseudo_noise_sd),
             "n_unit_score_subset": median_subset_count(block),
             "sample_set": "drift_only" if drift_only else "all",
             "n_pairs": int(len(block)),
@@ -1149,7 +1243,7 @@ def _summarize_pair_rows(rows: list[dict[str, Any]], *, seed: int, n_bootstrap: 
 
     boot_rows: list[dict[str, Any]] = []
     rng = np.random.default_rng(int(seed))
-    summary_groups: dict[tuple[str, int, str, str, str, str, str], list[dict[str, Any]]] = {}
+    summary_groups: dict[tuple[str, int, str, str, str, str, str, float, float, str], list[dict[str, Any]]] = {}
     for row in session_rows:
         key = (
             str(row["projection_control"]),
@@ -1158,10 +1252,24 @@ def _summarize_pair_rows(rows: list[dict[str, Any]], *, seed: int, n_bootstrap: 
             str(row.get("unit_score_subset", "all_units")),
             str(row.get("wrong_chart_pool", "unknown")),
             str(row.get("wrong_chart_match_features", "norm_only")),
+            str(row.get("pseudo_control_mode", "recorded")),
+            float(row.get("pseudo_control_scale", 1.0)),
+            float(row.get("pseudo_injection_noise_sd", 0.0)),
             str(row["sample_set"]),
         )
         summary_groups.setdefault(key, []).append(row)
-    for (projection, k, chart_space, unit_subset, wrong_pool, wrong_match, sample_set), block in sorted(summary_groups.items()):
+    for (
+        projection,
+        k,
+        chart_space,
+        unit_subset,
+        wrong_pool,
+        wrong_match,
+        pseudo_mode,
+        pseudo_scale,
+        pseudo_noise_sd,
+        sample_set,
+    ), block in sorted(summary_groups.items()):
         for name in metric_names:
             vals = np.asarray([float(r.get(f"mean_{name}", np.nan)) for r in block], dtype=np.float64)
             vals = vals[np.isfinite(vals)]
@@ -1174,6 +1282,9 @@ def _summarize_pair_rows(rows: list[dict[str, Any]], *, seed: int, n_bootstrap: 
                     "unit_score_subset": unit_subset,
                     "wrong_chart_pool": wrong_pool,
                     "wrong_chart_match_features": wrong_match,
+                    "pseudo_control_mode": pseudo_mode,
+                    "pseudo_control_scale": float(pseudo_scale),
+                    "pseudo_injection_noise_sd": float(pseudo_noise_sd),
                     "n_unit_score_subset": median_subset_count(block),
                     "sample_set": sample_set,
                     "metric": name,
@@ -1387,7 +1498,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--context-bin-size", type=int, default=10)
     p.add_argument("--min-repeats-per-condition", type=int, default=3)
     p.add_argument("--max-pairs-per-condition", type=int, default=100)
-    p.add_argument("--split-mode", choices=["trial_disjoint", "drift_trial_disjoint"], default="trial_disjoint")
+    p.add_argument(
+        "--split-mode",
+        choices=["trial_disjoint", "trial_disjoint_drift_test", "drift_trial_disjoint"],
+        default="trial_disjoint",
+    )
     p.add_argument("--n-folds", type=int, default=5)
     p.add_argument("--min-train-samples-per-chart", type=int, default=2)
     p.add_argument(
@@ -1423,6 +1538,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--rf-null-bin-features", type=str, default="rf_xy,tangent_norm,mean_rate,ccnorm")
     p.add_argument("--rf-null-session-yaml-dir", type=Path, default=Path("experiments") / "dataset_configs" / "sessions")
     p.add_argument("--run-pseudo-spike-control", action="store_true")
+    p.add_argument(
+        "--pseudo-control-modes",
+        type=str,
+        default="poisson",
+        help="Comma-separated pseudo controls: poisson,poisson_scaled,rate_delta,linear_chart_injection.",
+    )
+    p.add_argument("--pseudo-poisson-scales", type=str, default="2,5,10")
+    p.add_argument(
+        "--pseudo-injection-noise-sd",
+        type=str,
+        default="0",
+        help="Single value or comma-separated noise SDs for split-aware linear_chart_injection.",
+    )
     p.add_argument("--local-image-radius-px", type=int, default=8)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--verbose-model-load", action="store_true")
@@ -1436,6 +1564,9 @@ def run_analysis(args: argparse.Namespace) -> None:
     projection_controls = parse_str_list(args.projection_controls)
     k_list = parse_int_list(args.k_list)
     wrong_chart_match_features = _wrong_chart_match_features(str(args.wrong_chart_match))
+    pseudo_control_modes = parse_str_list(args.pseudo_control_modes)
+    pseudo_poisson_scales = _parse_float_list(str(args.pseudo_poisson_scales))
+    pseudo_injection_noise_sds = _parse_float_list(str(args.pseudo_injection_noise_sd), allow_zero=True)
     fig3_rows = _load_pickle(Path(args.fig3_cache))
     fig2_rows = _load_pickle(Path(args.fig2_cache))
     fig2 = _fig2_by_session(fig2_rows)
@@ -1467,6 +1598,9 @@ def run_analysis(args: argparse.Namespace) -> None:
         drift_speed_threshold_px=float(args.drift_speed_threshold_px),
         drift_pair_delta_threshold_px=float(args.drift_pair_delta_threshold_px),
         run_pseudo_spike_control=bool(args.run_pseudo_spike_control),
+        pseudo_control_modes=pseudo_control_modes,
+        pseudo_poisson_scales=pseudo_poisson_scales,
+        pseudo_injection_noise_sds=pseudo_injection_noise_sds,
         local_image_radius_px=int(args.local_image_radius_px),
         n_bootstrap=int(args.n_bootstrap),
         seed=int(args.seed),
@@ -1677,7 +1811,7 @@ def run_analysis(args: argparse.Namespace) -> None:
             score_status = "ok_no_scored_rows"
 
         if bool(args.run_pseudo_spike_control):
-            print(f"[chart-swap] session {session}: running pseudo-spike positive control", flush=True)
+            print(f"[chart-swap] session {session}: running pseudo positive controls", flush=True)
             rates = _compute_base_rates(
                 model=model,
                 dset=dset,
@@ -1689,35 +1823,68 @@ def run_analysis(args: argparse.Namespace) -> None:
                 args=args,
             )
             rng = np.random.default_rng(int(args.seed) + dataset_idx * 4441)
-            pseudo = rng.poisson(np.clip(rates, 0.0, 1e6)).astype(np.float64)
-            pseudo_pairs = dict(pairs)
-            pseudo_pairs["delta_y"] = pseudo[pairs["sample_a"]] - pseudo[pairs["sample_b"]]
-            p_rows, _ = _score_session(
-                session=session,
-                subject=str(sr.get("subject", "")),
-                pairs=pseudo_pairs,
-                labels=labels,
-                condition_meta=condition_meta,
-                samples=samples,
-                j=j,
-                target_cov=target,
-                projection_controls=projection_controls,
-                k_list=[int(args.primary_k)],
-                primary_k=int(args.primary_k),
-                rf_bins=rf_meta.bins,
-                split_mode=str(args.split_mode),
-                n_folds=int(args.n_folds),
-                min_train_samples_per_chart=int(args.min_train_samples_per_chart),
-                wrong_chart_pool=str(args.wrong_chart_pool),
-                condition_features=condition_features,
-                wrong_chart_match_features=wrong_chart_match_features,
-                wrong_chart_match_scales=wrong_chart_match_scales,
-                score_mode=str(args.score_mode),
-                unit_score_subsets=unit_score_subsets,
-                seed=int(args.seed) + dataset_idx * 7703,
-            )
-            for row in p_rows:
-                pseudo_rows.append(row)
+            pseudo_specs: list[tuple[str, float, float, np.ndarray]] = []
+            if "poisson" in pseudo_control_modes:
+                pseudo = rng.poisson(np.clip(rates, 0.0, 1e6)).astype(np.float64)
+                pseudo_specs.append(("poisson", 1.0, 0.0, pseudo[pairs["sample_a"]] - pseudo[pairs["sample_b"]]))
+            if "poisson_scaled" in pseudo_control_modes:
+                for scale in pseudo_poisson_scales:
+                    pseudo = rng.poisson(np.clip(rates * float(scale), 0.0, 1e6)).astype(np.float64) / float(scale)
+                    pseudo_specs.append(
+                        (
+                            f"poisson_scaled_{float(scale):g}x",
+                            float(scale),
+                            0.0,
+                            pseudo[pairs["sample_a"]] - pseudo[pairs["sample_b"]],
+                        )
+                    )
+            if "rate_delta" in pseudo_control_modes:
+                pseudo_specs.append(("rate_delta", 1.0, 0.0, rates[pairs["sample_a"]] - rates[pairs["sample_b"]]))
+            if "linear_chart_injection" in pseudo_control_modes:
+                for noise_i, noise_sd in enumerate(pseudo_injection_noise_sds):
+                    pseudo_specs.append(
+                        (
+                            "linear_chart_injection",
+                            1.0,
+                            float(noise_sd),
+                            np.asarray(pairs["delta_y"], dtype=np.float64),
+                        )
+                    )
+            for pseudo_i, (pseudo_mode, pseudo_scale, pseudo_noise_sd, pseudo_delta_y) in enumerate(pseudo_specs):
+                pseudo_pairs = dict(pairs)
+                pseudo_pairs["delta_y"] = np.asarray(pseudo_delta_y, dtype=np.float64)
+                if pseudo_mode == "linear_chart_injection":
+                    pseudo_pairs["delta_y_mode"] = "linear_chart_injection"
+                    pseudo_pairs["linear_chart_injection_noise_sd"] = float(pseudo_noise_sd)
+                p_rows, _ = _score_session(
+                    session=session,
+                    subject=str(sr.get("subject", "")),
+                    pairs=pseudo_pairs,
+                    labels=labels,
+                    condition_meta=condition_meta,
+                    samples=samples,
+                    j=j,
+                    target_cov=target,
+                    projection_controls=projection_controls,
+                    k_list=[int(args.primary_k)],
+                    primary_k=int(args.primary_k),
+                    rf_bins=rf_meta.bins,
+                    split_mode=str(args.split_mode),
+                    n_folds=int(args.n_folds),
+                    min_train_samples_per_chart=int(args.min_train_samples_per_chart),
+                    wrong_chart_pool=str(args.wrong_chart_pool),
+                    condition_features=condition_features,
+                    wrong_chart_match_features=wrong_chart_match_features,
+                    wrong_chart_match_scales=wrong_chart_match_scales,
+                    score_mode=str(args.score_mode),
+                    unit_score_subsets=unit_score_subsets,
+                    seed=int(args.seed) + dataset_idx * 7703 + pseudo_i * 101,
+                )
+                for row in p_rows:
+                    row["pseudo_control_mode"] = pseudo_mode
+                    row["pseudo_control_scale"] = float(pseudo_scale)
+                    row["pseudo_injection_noise_sd"] = float(pseudo_noise_sd)
+                    pseudo_rows.append(row)
         session_rows.append(
             {
                 "session": session,

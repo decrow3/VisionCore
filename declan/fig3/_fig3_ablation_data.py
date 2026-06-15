@@ -25,6 +25,7 @@ import numpy as np
 import dill
 
 from VisionCore.paths import VISIONCORE_ROOT, CACHE_DIR
+from VisionCore.covariance import rate_variance_components
 
 from _fig3_data import (
     DT, VALID_TIME_BINS, MIN_FIX_DUR, MIN_TOTAL_SPIKES, CCMAX_THRESHOLD,
@@ -46,6 +47,7 @@ COND_LABEL = {"intact": "intact", "zeroed": "zeroed", "permuted": "permuted"}
 
 PERM_SEED = 42
 CCMAX_N_SPLITS = 200
+MIN_TRIALS_PER_PHASE = 10
 
 
 def build_modifiers(dset, trials, trial_inds, fixation, NT, seed=PERM_SEED):
@@ -87,6 +89,21 @@ def build_modifiers(dset, trials, trial_inds, fixation, NT, seed=PERM_SEED):
 
 def _var_explained(pred, true, axis=None):
     return 1 - np.nanvar(pred - true, axis=axis) / np.nanvar(true, axis=axis)
+
+
+def _compute_model_one_minus_alpha_by_condition(rhat_rs, dfs):
+    """Per-neuron model 1-alpha for each behavior condition."""
+    n_neurons = dfs.shape[2]
+    out = {c: np.full(n_neurons, np.nan, dtype=float) for c in CONDS}
+    for c, rates in rhat_rs.items():
+        for ni in range(n_neurons):
+            comp = rate_variance_components(
+                rates[:, :, ni],
+                valid=dfs[:, :, ni] != 0,
+                min_trials_per_phase=MIN_TRIALS_PER_PHASE,
+            )
+            out[c][ni] = comp["one_minus_alpha"]
+    return out
 
 
 def _run_inference():
@@ -205,6 +222,7 @@ def _run_inference():
             rhat_m[c][dfs == 0] = np.nan
 
         ve = {c: _var_explained(rhat_m[c], robs_m, axis=(0, 1)) for c in CONDS}
+        model_one_minus_alpha = _compute_model_one_minus_alpha_by_condition(rhat_rs, dfs)
 
         rbar = np.zeros_like(robs_m)
         for i in range(n_trials):
@@ -260,6 +278,7 @@ def _run_inference():
             "session": session_name, "subject": subject,
             "neuron_mask": neuron_mask, "n_neurons": n_neurons,
             "ve": ve, "ve_psth": ve_psth, "ccmax": ccmax, "alpha": alpha,
+            "model_one_minus_alpha": model_one_minus_alpha,
             "example": example,
         })
 
@@ -273,15 +292,22 @@ def _run_inference():
 def aggregate(results):
     """Flatten per-cell arrays across sessions; `good` = ccmax > threshold."""
     ve = {c: [] for c in CONDS}
+    model_one_minus_alpha = {c: [] for c in CONDS}
     ve_psth, ccmax, alpha, subjects = [], [], [], []
     for r in results:
         for c in CONDS:
             ve[c].append(r["ve"][c])
+            if "model_one_minus_alpha" in r:
+                model_one_minus_alpha[c].append(r["model_one_minus_alpha"][c])
         ve_psth.append(r["ve_psth"])
         ccmax.append(r["ccmax"])
         alpha.append(r["alpha"])
         subjects.extend([r["subject"]] * r["n_neurons"])
     agg = {"ve": {c: np.concatenate(ve[c]) for c in CONDS}}
+    if all(model_one_minus_alpha[c] for c in CONDS):
+        agg["model_one_minus_alpha"] = {
+            c: np.concatenate(model_one_minus_alpha[c]) for c in CONDS
+        }
     agg["ve_psth"] = np.concatenate(ve_psth)
     agg["ccmax"] = np.concatenate(ccmax)
     agg["alpha"] = np.concatenate(alpha)

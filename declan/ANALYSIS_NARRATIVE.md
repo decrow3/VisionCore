@@ -1,6 +1,6 @@
 # declan Analysis Narrative
 
-Last curated: 2026-06-12.
+Last curated: 2026-06-15.
 
 Companion to `MANIFEST.md`. The manifest answers "where is it?" This file
 answers "why did we do it, what happened, and how did later work change the
@@ -42,19 +42,39 @@ The story has moved through four broad phases:
    whitening, covariance-aware pose-aware/pose-blind penalties, and recorded
    cortex anchors. The first production covariance-aware operating-regime run
    landed as supportive but not a unique-optimum result: empirical FEM scale is
-   usually on a high-efficiency plateau, while pose-aware covariance accounting
-   consistently recovers information discarded by pose-blind accounting. The
-   first cache-based recorded pose-aware GLM ladder landed as a controlled null
+   usually on a high-efficiency plateau, while corrected pose-aware covariance
+   accounting consistently recovers information discarded by pose-blind
+   accounting. A 2026-06-13 code audit fixed a small ridge-path mismatch in the
+   pose-aware/pose-blind comparison; the corrected gaps remain positive but are
+   slightly smaller than the first summary. The first cache-based recorded
+   pose-aware GLM ladder landed as a controlled null
    rather than a positive bridge. The first corrected Figure 4 structured
    decoder also landed as a controlled null: the compact chart did not recover
    gain-orthogonal displacement beyond rank-1 gain or chart-shuffle controls.
-   A newer content-routed correct-chart analysis found a narrow positive in
-   gain-bottom compact units, but the all-unit primary remains diagnostic/null,
-   so it is not yet a promoted bridge. Forward-twin residual correction remains
-   a useful but unpromoted Figure 4 extension. A new Vernier branch now provides
-   a cleaner hyperacuity-style Figure 5 test: phase-cloud motion beats a static
-   center, real and order-shuffled motion roughly match the phase-cloud control,
-   and half-scale real motion was strongest in the first pass.
+   A newer content-routed correct-chart analysis validated the chart-swap
+   machinery with strong pseudo controls and found a targeted gain-bottom hint,
+   but the recorded effect is split- and session-sensitive and is now best
+   treated as a diagnostic branch rather than a bridge-rescue path. Forward-twin
+   residual correction remains a useful but unpromoted Figure 4 extension. A new
+   Vernier branch now provides a cleaner hyperacuity-style Figure 5 test:
+   phase-cloud motion beats a static center, real and order-shuffled motion
+   roughly match the phase-cloud control, and reduced real motion was strongest
+   in the first pass. The newest active-sensing synthesis is now centered on
+   coordinate-frame dependence, task-specific motion scale, regime-dependent FEM
+   statistics, local image geometry, and a Pareto-style tradeoff rather than
+   exact trace optimality. The original pooled temporal-PSD input-whitening run
+   is now superseded as a Rucci-style whitening test: it showed that larger
+   motion spreads temporal power, not that spatial power-law whitening favors
+   larger-than-biological motion. The newer Rucci-style audit asks the spatial
+   modulation question directly and shows, in smoke runs, that total modulation
+   power grows with motion while spatial power-law flattening peaks at small
+   nonzero motion. Whitening therefore remains an important input-statistics
+   constraint, but not a standalone scale-setting answer. The latest BackImage
+   local Gabor/pyramid screen now supports a regime-dependent small-scale
+   real-vs-random `I_z` signal, strongest near `0.25x` observed RMS, but not a
+   clean global or `1x` infomax claim. This has motivated a separate aggregate
+   natural-image FEM information plan that tests distributional adaptation over
+   image and trace ensembles instead of exact per-fixation axis optimality.
 
 Numerical audit update, 2026-06-12:
 
@@ -71,23 +91,345 @@ Numerical audit update, 2026-06-12:
 - The current recorded pose-aware GLM ladder and gain-orthogonal structured
   decoder are controlled nulls, not rescue routes for those older functional
   interpretations.
-- The current correct-chart swap alignment is a specific-positive diagnostic,
-  not a broad positive: the gain-bottom compact subset passes controls, but the
-  all-unit primary row does not.
+- The current correct-chart swap alignment is a diagnostic branch, not a
+  promoted bridge: pseudo controls pass clearly, the all-unit recorded effect is
+  not robust, and the gain-bottom positive does not yet survive the fold/session
+  sensitivity work as a preregistered targeted result.
+
+## 2026-06-13: Active-Sensing Roadmap After Vernier, Fixation Regime, Image Structure, and Input Whitening
+
+Status: `Open / organized synthesis with scaled BackImage twin drift-geometry adjudication and completed input-whitening negative result`.
+
+Primary docs, code, and outputs:
+
+- `active_sensing_roadmap_after_vernier_fixation_image_structure.md`
+- `active_sensing_unit_space_provenance.md`
+- `vernier_active_sensing_analysis_plan.md`
+- `fixation_statistics_by_stimulus/`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_twin_drift_geometry_pilot_twin_axis_only/`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_twin_drift_geometry_scaled_n256_twin_axis_only/`
+- `outputs/active_sensing_movie_information/input_whitening/`
+- `outputs/active_sensing_movie_information/fem_scale_tradeoff/`
+
+Motivation:
+
+The active-sensing branch now has four important constraints: Vernier motion is
+useful mainly under pose-aware readout and prefers reduced scale; fixation
+statistics differ strongly across stimulus/behavioral regimes; BackImage local
+image features weakly predict scalar FEM metrics but show robust local
+edge-axis alignment; and the scaled BackImage twin drift-geometry run does not
+show model-specific explanatory power beyond raw edge geometry. A fifth
+constraint comes from the input-whitening cleanup: the old pooled temporal-PSD
+metric showed temporal power spreading with larger motion, while the newer
+Rucci-style spatial modulation audit points to small nonzero scales for
+power-law flattening. The updated roadmap reframes the twin as a tool
+for predicting local useful/harmful motion geometry and tradeoff surfaces, not
+as an oracle proving that measured eye traces are globally optimal.
+
+Current synthesis:
+
+```text
+Fixational eye movements create structured, phase-dependent input to foveal V1.
+This structure can be useful when retinal pose is known, costly when pose is
+hidden, and shaped by behavioral regime and local image geometry. FEMs also
+reformat natural-image input, but pooled temporal-power spreading and
+Rucci-style spatial power-law flattening have different scale optima.
+```
+
+Input-whitening result, superseded as a Rucci-style whitening test:
+
+- The completed run evaluated `1458` retinal movies and `157464` metric rows
+  under measured-drift, Brownian, and OU motion families.
+- Estimated biological fixation drift was `D = 0.00110667 deg^2/s`
+  (`3.984 arcmin^2/s`), with fit `R2 = 0.916`.
+- In the primary `4-40 cpd`, `1-30 Hz` passband, measured biological drift
+  moved the PSD slope from `-4.207` under stabilization to `-1.047`, spectral
+  entropy from `0.194` to `0.579`, and spectral flatness from `0.006` to
+  `0.345`.
+- But the old no-cost temporal entropy/flatness objective usually kept
+  improving to the top of the tested grid: `956 / 972` passband-metric optima
+  chose `D_scale = 3`; all entropy and flatness optima chose `D_scale = 3`.
+- A newer Rucci-style spatial audit shows this was not the correct whitening
+  question. In smoke runs, total frame-to-frame modulation power still peaks at
+  large motion, but spatial power-law flattening and derivative-transfer checks
+  peak at small nonzero motion.
+- The paired image/crop bootstrap was not computed by this runner, so the
+  whitening result is currently a deterministic/SEM summary with passband
+  sensitivity, not a bootstrap-resampled uncertainty claim.
+
+Interpretation:
+
+```text
+The old pooled temporal-PSD metric measures temporal power spreading, not
+Rucci-style power-law whitening. Spatial power-law flattening, total modulation
+amount, and task/feature information must be treated as separate objectives.
+```
+
+This closes off the simplest ecological account:
+
+```text
+Biological FEM amplitude is not explained by either the old pooled temporal-PSD
+metric or the first Rucci-style spatial flattening smoke by itself.
+```
+
+That cleanup is useful because it forces the active-sensing story into a
+tradeoff framework. Pooled temporal modulation amount pushes motion scale
+upward; Rucci-style spatial flattening, Vernier acuity, and pose-blind
+covariance costs push toward smaller or more constrained motion; behavioral
+regime and local image geometry determine where that tradeoff is expressed.
+
+First cache-only tradeoff extension:
+
+- `summarize_fem_scale_tradeoff.py` combines the completed input-whitening,
+  covariance-optimality, and Vernier component-scale summaries without rerunning
+  movies or the twin.
+- The main conclusion is not "we found the missing cost." It is that the
+  ingredients point in sensible directions, but a generic scalar tradeoff does
+  not yet explain biological scale.
+- `whitening_minus_pose_blind_covariance_cost` moves the optimum away from the
+  upper whitening boundary, but in this first normalization it overshoots to
+  small scale once the covariance penalty is strong enough. Median `D_opt` over
+  the tested weights was `0.125`.
+- `whitening_plus_vernier_acuity` is limited by the Vernier scale support
+  (`0.25-1.5`) and tends to prefer `D=0.25`, consistent with the fine-acuity
+  branch favoring reduced motion.
+- Generic diffusion cost also overshoots to small scale. A one-sided
+  above-biological window penalty is the only simple proxy in the first pass
+  that recovers `D_scale = 1` under strong weights, but this is partly by
+  construction because the penalty explicitly makes above-biological motion
+  costly.
+
+Interpretation:
+
+```text
+Adding costs can counter the whitening boundary, but the first simple cost
+proxies do not automatically recover biological scale. Biological-scale recovery
+requires a more specific and measurable constraint, such as fixation-window
+loss, stability, blur, pose precision, usable temporal band, or motor cost.
+```
+
+Claim boundary:
+
+This tradeoff pass is diagnostic only. The weights are not fitted, the motion
+costs are analytic proxies, the Vernier term has limited scale support, and
+independent normalization can move optima toward extremes depending on scale,
+sign, and grid density. Its value is in ranking follow-up objective families,
+not in claiming that a biological utility function has been identified.
+
+Next non-circular tests:
+
+The Rucci-style spatial power-law audit should be completed at larger trace and
+image/crop scale with trace-level and image-level uncertainty, tiny-power
+exclusion, and derivative-limit sanity checks. V1 temporal-sensitivity-weighted
+whitening remains complementary: raw retinal temporal power asks whether the
+temporal spectrum is flat, but foveal V1 does not use all temporal frequencies
+equally. The better question is whether drift places natural-image temporal
+modulations into the frequencies V1 can encode. Candidate weightings include
+model-derived temporal sensitivity from drifting gratings or filtered natural
+movies, output modulation spectra, derivative-weighted sensitivity
+`|d mu / d s_f|^2`, or noise-normalized response gain.
+
+BackImage image-structure result:
+
+- Scalar local-image features do not robustly predict RMS radius, diffusion,
+  speed, path length, anisotropy, return-to-center strength, or high-frequency
+  FEM fraction over controls.
+- The surviving result is directional: drift/fixation-cloud orientation tends to
+  align modestly with local edge and spectral axes, especially in reliable-axis
+  subsets.
+- Same-image random-location controls suggest actual fixation locations are
+  somewhat contrast-biased, but not uniformly higher across all information
+  metrics.
+
+Scaled BackImage twin drift-geometry adjudication:
+
+- The scaled run used corrected eye-coordinate order, a `270 px` full-image
+  support margin for `540 px` BackImage patches, an axis-only grid, `256`
+  windows, `29` sessions, `5000` candidate-grid axis nulls, `5000`
+  predicted-axis shuffles, and `5000` session bootstraps. Provenance audit:
+  the folder's `n256` label is `max_windows=256`, while saved run metadata
+  reports `twin_population_n=64`; this is a sampled-population diagnostic, not
+  a full 756-channel canonical-population run.
+- `raw_edge_axis` was the strongest biological baseline: session mean cos2
+  `+0.182`, weighted `+0.218`, `23/29` positive sessions, random-axis
+  `p_ge = 0.0004`.
+- `optimized_PB` failed to beat raw edge: session mean cos2 `-0.019`,
+  weighted `+0.008`; paired delta versus raw edge `-0.201`, CI
+  `[-0.348, -0.064]`, with `5/29` positive sessions.
+- `optimized_PA` was near zero/negative: session mean cos2 `-0.008`, weighted
+  `-0.002`; paired delta versus raw edge `-0.190`, CI `[-0.389, +0.007]`.
+- `optimized_Pareto_lambda_0.5` was also below raw edge: session mean cos2
+  `-0.010`, weighted `+0.004`; paired delta versus raw edge `-0.193`, CI
+  `[-0.357, -0.020]`.
+- `adversarial_Pareto_lambda_0.5` was positive (`+0.167`) but not cleanly above
+  predicted-axis shuffle nulls, so it is best treated as objective-landscape or
+  image-geometry structure rather than biological optimized-axis evidence.
+
+Interpretation:
+
+```text
+Observed BackImage drift is modestly and robustly aligned with local edge
+geometry. The current V1-twin PA/PB/Pareto axis objectives do not outperform raw
+edge orientation.
+```
+
+Post-fix Gabor/pyramid latent-information branch:
+
+- The latent-feature implementation was patched after review. Gabor local
+  fields now include even, odd, and amplitude maps on the local grid; pyramid
+  local fields use the expanded local grid; model responses are trace-aligned
+  before observer construction; and delta observers subtract the matched static
+  response.
+- First post-fix pathfinder:
+  `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_pathfinder_fixall_n64_rel0125-05_rand8_delta`.
+  At `0.125x` observed RMS, canonical 756-unit twin, `k=4`, and rand8, Gabor
+  pose-blind delta gave real-minus-random `+9.02`
+  CI `[+1.56, +18.15]` and real-minus-edge `+11.58`
+  CI `[+1.59, +24.55]`.
+- Pyramid pose-blind delta pointed the same way but was noisier:
+  real-minus-random `+10.28`, CI `[-0.53, +26.07]`;
+  real-minus-edge `+25.04`, CI `[-3.78, +73.38]`.
+- The apparent larger Gabor-only run,
+  `backimage_latent_information_pathfinder_gabor_realrand_n128_rel0125-05_rand8_nogrd`,
+  is not a clean post-fix replication. Its saved Gabor local field has shape
+  `(128, 384)`, while the fixed 8x8 even/odd/amplitude Gabor local field has
+  shape `(N, 4608)`, and it used absolute rather than delta observers.
+- The stage2 run included pyramid and scales up to `2x`, but it was still n=64,
+  used the older 4x4 feature dimensionality, and used absolute observers. We
+  therefore do not treat it as a clean larger replication.
+- Clean n=128 canonical replication:
+  `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_cleanrep_n128_rel0125-05_rand8_delta`.
+  This run used canonical 756 units, fixed Gabor local fields `(128, 4608)`,
+  fixed pyramid local fields `(128, 3072)`, `pose_blind_delta_mean`, rand8, and
+  scales `0.125x`, `0.25x`, and `0.5x` observed RMS.
+- Primary Gabor `k=4`, `0.125x`: real-minus-random `+3.31`,
+  CI `[-0.14, +8.57]`, p(delta<=0) `0.0396`; real-minus-edge `-0.36`,
+  CI `[-2.25, +1.09]`; edge-minus-random `+3.67`,
+  CI `[+0.08, +9.28]`.
+- Secondary scale rows argue against dismissing larger relative scales:
+  Gabor `k=4`, `0.5x` real-minus-edge `+6.60`,
+  CI `[+1.53, +11.83]`; pyramid `k=4`, `0.5x` real-minus-edge `+7.26`,
+  CI `[+2.35, +12.08]`; pyramid `k=8`, `0.25x` real-minus-edge `+8.57`,
+  CI `[+1.62, +20.85]`, with real-minus-random `+2.60`,
+  CI `[-0.05, +6.27]`.
+- Completed n=256 locked scale sweep:
+  `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_scalesweep_n256_rel0125-2_rand8_delta`.
+  This used canonical 756 units, fixed local fields, `pose_blind_delta_mean`,
+  rand8, and scales `0.125x`, `0.25x`, `0.5x`, `1x`, and `2x`.
+  The cheap effective-scale audit lives at
+  `posthoc_real_random_audit_summary.md`.
+- The most stable real-vs-random positives are small scale:
+  Gabor `k=4`, `0.25x` `+3.48`, CI `[+0.75, +6.87]`, with the unclipped
+  subset still positive at `+2.85`, CI `[+0.21, +6.25]`;
+  pyramid `k=8`, `0.25x` `+2.19`, CI `[+0.62, +4.18]`, unclipped
+  `+1.86`, CI `[+0.45, +3.67]`.
+- The `1x` results are alive but guarded: Gabor `k=4`, `1x` is `+2.59` with
+  CI crossing zero; pyramid `k=8`, `1x` is weak globally, though the unclipped
+  subset is `+1.40`, CI `[+0.05, +2.71]`.
+- Clipping is substantial by large nominal scales: `18.8%` at `1x` and
+  `40.2%` at `2x`, so large-scale positives must be interpreted by effective
+  RMS rather than nominal labels.
+- Subsampling from the n=256 output explains the mixed n=64/n=128 pathfinders:
+  n=64 Gabor `k=4`, `1x` subsamples can be negative, while n=128 Gabor `k=4`,
+  `0.25x` and pyramid `k=8`, `0.25x` are much more often positive.
+- An optimized seed-dependence replication is running at
+  `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_scalesweep_n256_rel0125-2_rand8_delta_seed1_manifest_optimized_tb2`.
+  It replays the same physical windows via `--window-manifest`, changes only
+  the random-axis seed, and uses the patched canonical trace-batching path with
+  `--check-trace-batch-equivalence`. The initial trace-batch-8 attempt OOMed
+  during preflight; the active run uses trace batches of 2 and twin batches of
+  48.
+- New aggregate plan:
+  `backimage_aggregate_fem_information_plan.md`. This shifts the figure-level
+  question from exact local axis optimality to distributional adaptation:
+  whether empirical FEM motion distributions improve ensemble natural-image
+  representation over static and matched Brownian/OU/shuffled controls.
+
+Edge-parallel stability and twin metric audit:
+
+- Endpoint-cache audit:
+  `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_twin_stability_metric_audit`.
+- The old relative twin disruption score had a weak wrong-direction controlled
+  trend, but signed normalized disruption did not. Signed edge-parallel
+  stability was first-order positive across pixel and twin metrics.
+- Cheap synthesis:
+  `backimage_twin_stability_metric_audit/cheap_synthesis/cheap_synthesis_report.md`.
+  Session means and CIs: pixel `+300.5` `[+172.8, +408.8]`;
+  twin raw MSE `+0.0004545` `[+0.0003716, +0.0005432]`;
+  response-norm `+0.02456` `[+0.01993, +0.02931]`;
+  per-rate `+0.003688` `[+0.002902, +0.004501]`;
+  full-cov whitened `+0.1706` `[+0.1511, +0.1890]`.
+- Pixel and twin signed advantages agree across windows: full-cov whitened
+  `r = +0.277`, CI `[+0.168, +0.417]`; diagonal-whitened
+  `r = +0.287`, CI `[+0.139, +0.419]`. Session-mean correlations remain noisy.
+
+Updated BackImage claim boundary:
+
+```text
+Real drift is not yet explained by a global feature-information maximizing
+objective. The credible result is local preservation: edge-parallel motion
+disrupts pixels and V1-twin responses less than edge-orthogonal motion. The
+corrected Gabor/pyramid branch now has stable small-scale support at `0.25x`,
+especially for Gabor `k=4` and pyramid `k=8`, but it is not a clean `1x` or
+global infomax result. Treat it as regime-dependent exploratory support unless
+the same-window seed replication confirms the random-baseline stability.
+```
+
+Claim boundary:
+
+Do not claim that the current V1-twin objectives predict drift geometry. The
+fair current claim is narrower: observed drift is robustly edge-aligned,
+edge-parallel motion preserves local pixel/twin structure, pure pose-aware
+response-modulation is the wrong objective, and the tested 64-sampled-unit
+pose-blind/Pareto twin objectives do not add explanatory power beyond raw image
+edge geometry.
+
+Do not claim that input whitening predicts biological FEM amplitude. The fair
+claim is that drift has a strong whitening benefit over stabilization, but
+unconstrained whitening is incomplete as a scale-setting objective.
+
+Practical next gates:
+
+- Keep corrected coordinate order and the `270 px` full-image patch margin fixed.
+- Promote raw edge geometry to the baseline that any local active-sensing model
+  must beat.
+- Build edge-parallel versus edge-orthogonal candidate traces and test whether
+  raw image geometry and signed preservation explain the observed drift-axis
+  bias.
+- Use the twin next for revised objectives: sliding along edges, minimizing
+  retinal change, V1 temporal-band whitening, pose precision, or constrained
+  stability.
+- Finish the optimized same-window seed replication. If the `0.25x`
+  real-vs-random positives survive, treat the local `I_z` branch as
+  regime-dependent support; if not, demote it behind edge-parallel preservation.
+- Build the aggregate BackImage FEM information runner and summarizer. The next
+  figure-level question is ensemble distributional adaptation over natural
+  images and traces, with static, scaled empirical, Brownian, OU, and shuffled
+  controls, not exact local axis optimality.
+- When rerunning revised free-viewing objectives, prefer a full canonical
+  population or at least a larger sampled population. Keep 16-channel or
+  smaller sampled variants as transfer checks, not discovery space.
+- Run rotated Vernier controls before interpreting the current Vernier motion-axis
+  result as stimulus-geometry-specific.
 
 ## 2026-06-12: Content-Routed Correct-Chart Alignment
 
-Status: `Diagnostic / narrow positive, not yet promoted`.
+Status: `Diagnostic / machinery validated, recorded effect fragile`.
 
 Primary docs, code, and outputs:
 
 - `content_routed_retinal_registration_analysis_plan.md`
 - `compact_retinal_translation_geometry/run_correct_chart_swap_alignment.py`
 - `compact_retinal_translation_geometry/summarize_correct_chart_swap_alignment.py`
-- `outputs/compact_retinal_translation_geometry/gainbottom_match_rate_norm_structure_unitdot_v1/`
-- `outputs/compact_retinal_translation_geometry/gainbottom_match_rate_norm_unitdot_v1/`
-- `outputs/compact_retinal_translation_geometry/gainbottom_pool_same_image_wrong_time_unitdot_v1/`
-- `outputs/compact_retinal_translation_geometry/gainbottom_pool_same_time_unitdot_v1/`
+- `compact_retinal_translation_geometry/audit_chart_swap_fold_availability.py`
+- `compact_retinal_translation_geometry/diagnose_chart_swap_alignment.py`
+- `outputs/compact_retinal_translation_geometry/all_sessions_nfold5_gainbottom_unitdot_v1/`
+- `outputs/compact_retinal_translation_geometry/all_sessions_nfold50_gainbottom_unitdot_v1/`
+- `outputs/compact_retinal_translation_geometry/all_sessions_trialdisjoint_drifttest_nfold3_gainbottom_unitdot_v1/`
+- `outputs/compact_retinal_translation_geometry/all_sessions_trialdisjoint_drifttest_nfold5_gainbottom_unitdot_v1/`
+- `outputs/compact_retinal_translation_geometry/chart_swap_fold_availability_audit_v1/`
+- `outputs/compact_retinal_translation_geometry/chart_swap_diagnostics_v1/`
 
 Motivation:
 
@@ -111,59 +453,85 @@ translation chart, and compares true-chart alignment to matched wrong-chart and
 subspace controls. It includes leakage audits, drift masks, compact/full chart
 spaces, unit subsets, pseudo-spike positive controls, latency/history sweeps,
 wrong-chart matching variants, and stratifications by prediction norm and image
-structure.
+structure. Follow-up work added fold-availability auditing across split rules,
+trial-first drift-test variants, pseudo positive-control modes based on
+split-aware linear chart injection, and a dedicated diagnostic atlas for
+per-session effects and pair composition.
 
 Current result:
 
-The strict all-unit primary remains diagnostic/null. In
-`gainbottom_match_rate_norm_structure_unitdot_v1`, the primary compact all-unit
-row under `global_rate` had:
+The machinery works; the recorded effect is the fragile part.
 
-- `true_minus_wrong` session mean `0.0118`, CI `[-0.1148, 0.1182]`,
-  `3/5` positive sessions.
-- Required controls failed because several control CIs crossed zero.
-- Leakage failures were `0`.
+Positive controls are clear. Split-aware linear chart injection is positive
+across the tested variants, including the more difficult fold regimes, so the
+pipeline can detect chart-aligned retinal-displacement structure when it is
+present.
 
-However, a targeted gain-bottom compact subset was specifically positive:
+The cleanest recorded positive is narrow:
 
-- Variant: `global_rate | gain_bottom50`, compact `k=10`, `57` units.
-- `true_minus_wrong` mean `0.0927`, CI `[0.0253, 0.1717]`, `5/5` positive
-  sessions.
-- All required control CI lows were above zero; weakest control CI low was
-  `0.0040`.
-- Same result held under the drift-only sample set in the summary table.
+- In `all_sessions_nfold5_gainbottom_unitdot_v1`, the compact
+  `global_rate | gain_bottom50 | k=10` row had `true_minus_wrong` mean
+  `0.0746`, CI `[0.0449, 0.1034]`, `5/5` positive scored sessions, and the
+  weakest control CI low was `0.0092`.
+- But this is effectively an Allen-only result: Logan had `ok_no_valid_folds`
+  under `drift_trial_disjoint n=5`.
 
-Other variants clarify the boundary:
+Once the fold rule is changed to include Logan or to rebalance held-out trials,
+the aggregate recorded effect is no longer robust:
 
-- Matching wrong charts only on rate/response norm improved the all-unit primary
-  mean to `0.0614`, but the CI still crossed zero and controls failed.
-- Same-image/wrong-time wrong charts produced a positive all-unit
-  `true_minus_wrong` mean `0.1860`, CI `[0.0143, 0.4416]`, but control CIs
-  failed.
-- Same-time/different-image wrong charts were null/negative on the all-unit
-  primary.
+- In `all_sessions_nfold50_gainbottom_unitdot_v1`, the same gain-bottom compact
+  row was `0.0272`, CI `[-0.0418, 0.1182]`, `3/6` positive sessions, and
+  required controls failed.
+- In `all_sessions_trialdisjoint_drifttest_n5_gainbottom_unitdot_v1`, the
+  gain-bottom compact row was `-0.0487`, CI `[-0.2421, 0.1447]`, `2/5`
+  positive sessions.
+- In `all_sessions_trialdisjoint_drifttest_n3_gainbottom_unitdot_v1`, all six
+  sessions scored, but the gain-bottom compact row was `0.1268` with a very
+  wide CI `[-0.1387, 0.5795]` and only `2/6` positive sessions.
+
+The per-session atlas and pair-composition audit explain why this is not yet a
+stable targeted claim:
+
+- Allen_2022-03-02 can swing the aggregate under sparse regimes. In the
+  trial-first `n=3` run it contributed only `10` gain-bottom pairs with a
+  session CI width of about `2.24`, yet a large positive mean.
+- Logan re-enters cleanly at larger `n_folds` or under trial-first testing, but
+  its sign is not stably positive across those rules.
+- The baseline `drift_trial_disjoint n=5` result is not obviously driven by one
+  fold, but pair composition is concentrated in particular time/image bins,
+  especially for sparse sessions.
 
 Interpretation:
 
-This is the first recorded-data hint that the correct content-routed compact
-chart can matter, but it is not yet a general bridge. The effect lives in a
-selected gain-bottom unit subset and depends on the stricter wrong-chart
-matching/control framing. Treat it as:
+This branch changed roles during implementation. It is no longer best thought of
+as "find the recorded displacement decoder." It is now a constraint-shaping
+diagnostic that asks whether any apparent chart advantage is biological or an
+artifact of fold/session composition.
+
+The safe statement is:
 
 ```text
-content-routed compact translation geometry has a specific positive diagnostic,
-but the all-unit recorded chart-alignment claim is not yet promoted.
+Compact chart geometry is recoverable under positive controls, but recorded
+single-trial chart alignment is weak, subset-dependent, and highly sensitive to
+fold/session composition.
 ```
+
+At present, that means:
+
+- The all-unit recorded bridge is not promoted.
+- The gain-bottom positive is a targeted hint, not a stable claim.
+- Covariance closure remains the promoted Figure 4 recorded bridge.
 
 Next gates:
 
-- Reproduce the gain-bottom positive under a pre-registered unit-selection rule.
-- Confirm the pseudo-spike positive control and SNR scaling are not selecting a
-  trivial score artifact.
-- Test whether latency/window choices move the all-unit row toward the targeted
-  positive.
-- Keep covariance closure as the promoted structural Figure 4 result until the
-  all-unit or pre-registered subset result survives controls.
+- Treat further chart-swap work as forensics, not broad optimization.
+- Use `chart_swap_diagnostics_v1` to inspect per-session leverage and
+  pair-composition concentration before any additional rerun.
+- If this branch continues, make only one preregistered targeted rerun:
+  define the subset rule from training/session metadata only, choose the fold
+  rule up front, include Allen and Logan, and stop based on that result.
+- If the preregistered targeted rerun does not survive, close this branch as a
+  useful negative/fragile boundary result rather than a rescue path.
 
 ## 2026-06-12: Vernier Active-Sensing Hyperacuity Branch
 
@@ -261,7 +629,7 @@ paired with non-circular input statistics or recorded-data anchors.
 
 ## 2026-06-12: Non-Circular FEM Information and Covariance-Aware Optimality
 
-Status: `Closed / supportive with guardrails`.
+Status: `Closed / supportive with guardrails; input-whitening branch closed as useful negative`.
 
 Primary docs and code:
 
@@ -270,8 +638,11 @@ Primary docs and code:
 - `jake/twininfo/covariance_optimality.py`
 - `jake/twininfo/run_covariance_optimality.py`
 - `active_sensing_movie_information/summarize_covariance_optimality.py`
+- `active_sensing_movie_information/run_input_whitening_optimum.py`
+- `active_sensing_movie_information/summarize_input_whitening_optimum.py`
 - `outputs/twininfo/active-sensing-all-images-1crop-2fix2ms-16units-gpu/covariance_optimality/covopt_full_gpu1/`
 - `outputs/active_sensing_movie_information/covariance_optimality/covopt_full_gpu1/`
+- `outputs/active_sensing_movie_information/input_whitening/`
 
 Motivation:
 
@@ -284,10 +655,10 @@ New interpretation:
 
 There are now three distinct claims, with different evidentiary burdens:
 
-- `Input whitening`: biological drift scale may sit near the scale that
-  decorrelates natural retinal input across a V1-relevant band. This should be
-  computed from image statistics and drift kinematics, not from the fitted
-  twin.
+- `Input whitening`: biological drift should be tested from image statistics
+  and drift kinematics, not from the fitted twin. The completed run shows that
+  drift whitens input relative to stabilization, but no-cost whitening does not
+  select biological scale.
 - `Recorded pose-aware information`: recorded V1 spikes may be more
   informative about stimulus labels when retinal pose or recent eye history is
   known. This is the direct cortex anchor.
@@ -305,10 +676,20 @@ derivatives, estimates movement-induced covariance, and summarizes independent,
 covariance-aware, and pose-blind Fisher efficiency curves with gain/noise
 sensitivity.
 
+The input-whitening path also completed. It renders retinal natural-image
+movies from production crops and selected fixation traces, sweeps measured,
+Brownian, and OU motion families over scale, and computes temporal PSD slope,
+spectral entropy, spectral flatness, autocorrelation time, and passband power
+without using twin responses as the optimality endpoint.
+
 The full GPU run completed `3888 / 3888` rate rows across `108` image/trace
 pairs, four scaled trajectory families, and nine movement scales. The summary
 tables and figures live under
 `outputs/active_sensing_movie_information/covariance_optimality/covopt_full_gpu1/`.
+
+The input-whitening run completed `1458` retinal movies and `157464` metric rows.
+The summary tables and figures live under
+`outputs/active_sensing_movie_information/input_whitening/`.
 
 Outcome:
 
@@ -343,22 +724,61 @@ Peak/plateau calls for the covariance-aware pose-aware metric:
   `D=0.125`, value `88.73`; empirical fraction `0.748`; label
   `resolved_nonempirical_peak`.
 
-Pose-aware minus pose-blind covariance Fisher gaps at empirical `D=1` were
-positive in every family and larger for microsaccade traces:
+Code audit and corrected covariance gaps:
 
-- `random_amp_cloud_matched_scaled`: fixation `0.0618 +/- 0.0051`,
-  microsaccade `0.2666 +/- 0.0187`.
-- `random_amp_scaled`: fixation `0.0923 +/- 0.0065`, microsaccade
-  `0.2556 +/- 0.0217`.
-- `scaled_real`: fixation `0.0445 +/- 0.0034`, microsaccade
-  `0.2027 +/- 0.0165`.
-- `trajectory_order_shuffle_scaled`: fixation `0.0344 +/- 0.0026`,
-  microsaccade `0.0995 +/- 0.0087`.
+On 2026-06-13 we inspected the implementation rather than trusting the
+generated summaries. The first implementation had `cov_pose_aware = f_ind`,
+while `cov_pose_blind` used the covariance-Fisher path with ridge
+regularization. This made the independent and pose-aware rows identical and
+introduced a small nonzero pose gap at `D=0`. The runner now computes
+`cov_pose_aware` through the same covariance-Fisher path with no extra movement
+covariance. After refreshing core result tables, the `D=0` pose-aware and
+pose-blind rows match exactly.
+
+Corrected pose-aware minus pose-blind covariance Fisher gaps at empirical
+`D=1` remain positive in every family and larger for microsaccade traces:
+
+- `random_amp_cloud_matched_scaled`: fixation `0.0541 +/- 0.0047`,
+  microsaccade `0.2582 +/- 0.0185`.
+- `random_amp_scaled`: fixation `0.0842 +/- 0.0063`, microsaccade
+  `0.2472 +/- 0.0215`.
+- `scaled_real`: fixation `0.0382 +/- 0.0032`, microsaccade
+  `0.1952 +/- 0.0163`.
+- `trajectory_order_shuffle_scaled`: fixation `0.0275 +/- 0.0024`,
+  microsaccade `0.0925 +/- 0.0085`.
+
+This preserves the qualitative read but sharpens it: measured real motion has a
+clear pose-blind covariance cost, especially in microsaccade windows, yet
+random amplitude controls match or exceed real. The branch supports
+pose-relevant reafferent covariance, not unique optimality of measured FEM
+trajectories.
 
 The gain/noise sensitivity grid was stable: all eight family-by-kind labels
 were unchanged across `9/9` tested gain/noise settings. This makes the
 plateau/near-empirical language robust to the tested covariance-gain and noise
 floor assumptions.
+
+Input-whitening outcome:
+
+The clean one-sentence result is:
+
+```text
+The old pooled temporal-PSD metric shows that larger retinal motion spreads
+temporal power; the newer Rucci-style spatial audit shows that power-law
+flattening peaks at small nonzero motion in smoke runs.
+```
+
+In the primary `4-40 cpd`, `1-30 Hz` passband, measured biological drift moved
+PSD slope from `-4.207` to `-1.047`, entropy from `0.194` to `0.579`, and
+flatness from `0.006` to `0.345`. The largest tested scale, `D_scale = 3`, then
+improved these to slope `-0.810`, entropy `0.834`, and flatness `0.662` for the
+measured-drift family. Across the full passband grid, `956 / 972` optima chose
+`D_scale = 3`; the only exceptions were `16` measured-drift abs-slope rows at
+`D_scale = 0.125` for higher temporal lower-bound passbands.
+
+The whitening summary manifest reports `bootstrap_status = not_computed`; do
+not cite bootstrap uncertainty for this branch until a dedicated image/crop
+resampling implementation is added.
 
 Claim boundary:
 
@@ -369,6 +789,14 @@ valid evidence that retinal pose matters and that empirical FEM amplitude sits
 near an efficient operating range in the twin. It is not proof that biological
 FEM amplitude is exactly optimized, and it is weaker than a non-circular input
 whitening optimum or a positive recorded-cortex pose-aware information result.
+
+The input-whitening wording should also stay disciplined. It is a useful
+negative result, not a failure. It shows that stabilization is bad for input
+statistics and that biological drift helps, but it rules out raw input
+whitening as a single-objective explanation of biological FEM scale. The right
+next framing is a tradeoff frontier that combines whitening benefit with
+pose-aware information, pose-blind covariance cost, Vernier acuity, V1 temporal
+sensitivity, motor cost, and fixation-window constraints.
 
 ## 2026-06-12: Recorded Pose-Aware Prediction GLM
 
@@ -766,6 +1194,12 @@ Open follow-ups:
   population coding, pose-aware recoverability, and amplitude/diffusion sweeps.
 - Compact add-back/remove-out should wait until the compact basis is
   dimension-compatible with the natural-image center-channel response space.
+- Response-space accounting matters here. The natural-image Checks 5-9 and the
+  current covariance-optimality run use 16 center/session-matched biological
+  twin channels; the historical compact-geometry add-back scaffold used the
+  canonical 756-channel Figure 4/TFTS basis. The tempting hierarchy
+  `cov_pose_aware >= cov_geometry_aware >= cov_pose_blind` is plausible, but it
+  is not yet an implemented matched comparison in this natural-image branch.
 
 ## 2026-06-09 / 2026-06-08: Compact Retinal-Translation Geometry
 

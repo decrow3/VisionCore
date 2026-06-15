@@ -2,7 +2,7 @@
 
 ## One-sentence goal
 
-Test whether FEM-like retinal motion improves the V1 digital twin's recoverable sensitivity to a tiny Vernier offset, using a simple, interpretable hyperacuity task with fair static controls, motion-axis controls, explicit pose-aware and pose-blind readouts, and strict rendering/provenance audits.
+Test how FEM-like retinal motion changes the V1 digital twin's recoverable sensitivity to a tiny Vernier offset, using a simple, interpretable hyperacuity task with fair static controls, motion-axis controls, explicit pose-aware and pose-blind readouts, and strict rendering/provenance audits.
 
 ## Core scientific question
 
@@ -10,9 +10,9 @@ A Vernier stimulus consists of two nearly aligned line segments separated by a s
 
 The analysis asks:
 
-> Does small retinal motion, in the range generated during fixation, improve the V1 population's sensitivity to a fine spatial misalignment?
+> Does small retinal motion, in the range generated during fixation, improve or impair the V1 population's recoverable sensitivity to a fine spatial misalignment, and how does that depend on retinal-pose knowledge?
 
-This is intended to be a clean active-sensing test. It should not be framed as a strong temporal-coding analysis. The main hypothesis is that FEM-like motion samples multiple nearby retinal phases, which can improve fine-position information in the population response. Any temporal accumulation should be performed by the analysis/readout, not assumed to occur inside the ConvGRU.
+This is intended to be a clean active-sensing test. It should not be framed as a strong temporal-coding analysis. The main hypothesis is that FEM-like motion samples multiple nearby retinal phases, which can expose fine-position information in the population response when pose is known but can also create nuisance covariance when pose is hidden. Any temporal accumulation should be performed by the analysis/readout, not assumed to occur inside the ConvGRU.
 
 ## Why Vernier rather than the previous E-optotype tests?
 
@@ -36,15 +36,23 @@ The desired positive result is not:
 
 > Real FEM trajectories are uniquely optimal.
 
-The desired positive result is:
+Nor is the useful first-pass claim simply:
 
-> FEM-like retinal motion improves or stabilizes recoverable information about fine spatial misalignment in the V1 twin by sampling a useful cloud of nearby retinal phases, under matched time and spike budget.
+> Real FEM improves Vernier acuity.
 
-The load-bearing comparison is motion through a phase cloud versus appropriate static phase-cloud baselines, not only motion versus one repeated phase. If the repeated phase is a random cloud draw, the main benefit may appear as reduced across-trial variability or improved reliability rather than a higher mean Fisher value.
+The useful first-pass claim is a coordinate-frame boundary:
+
+> Vernier information is available in the phase-dependent V1 response, but it is only useful if the observer has sufficiently good retinal-pose information.
+
+The bounded active-sensing claim is therefore:
+
+> Motion helps a pose-aware observer and strongly burdens a pose-blind observer.
+
+The load-bearing comparison is motion through a phase cloud versus appropriate static phase-cloud baselines, not only motion versus one repeated phase. If the repeated phase is a random cloud draw, the main benefit may appear as reduced across-trial variability or improved reliability rather than a higher mean Fisher value. A real-FEM advantage should not be claimed unless it beats a phase-cloud baseline matched to the same retinal-position distribution and remains recoverable under a stated pose-knowledge assumption.
 
 A stronger secondary result would be:
 
-> The benefit is axis-specific, motion-scale dependent, visible under both pose-aware and pose-blind readouts, and bounded by optimized and adversarial trajectory controls.
+> The benefit is axis-specific, motion-scale dependent, robust to modest pose uncertainty, and bounded by optimized and adversarial trajectory controls.
 
 ## Important claim boundaries
 
@@ -65,6 +73,65 @@ Do claim, if supported:
 - The benefit is about phase diversity, reliability, and fine spatial sensitivity, unless order-shuffle controls prove otherwise.
 - Real or FEM-like traces can sit within a useful operating range without being uniquely optimal.
 - Real, random amplitude-matched, order-shuffled, and phase-cloud-like outcomes can be positive if they corroborate the broader trajectory-agnostic claim.
+
+---
+
+# Current first-pass interpretation
+
+The key first-pass result is not a naive real-FEM Vernier-acuity improvement. It is the coordinate-frame boundary:
+
+> Vernier information is available in the phase-dependent V1 response, but it is only useful if the observer has sufficiently good retinal-pose information.
+
+Pose-aware readout says phase diversity contains Vernier information. Pose-blind readout says that same phase diversity becomes a large nuisance covariance when pose is hidden. The bounded claim is therefore:
+
+> Motion helps a pose-aware observer and strongly burdens a pose-blind observer.
+
+Using `static_center` as a diagnostic single-phase reference:
+
+| condition | FD step | PA/static | PB/static |
+|---|---:|---:|---:|
+| `matched_phase_cloud` | 0.25 | 1.56 | 0.11 |
+| `real_fem` | 0.25 | 1.53 | 0.09 |
+| `scaled_real_0.5` | 0.25 | 1.88 | 0.13 |
+| `matched_phase_cloud` | 0.5 | 1.40 | 0.09 |
+| `real_fem` | 0.5 | 1.44 | 0.08 |
+| `scaled_real_0.5` | 0.5 | 1.81 | 0.13 |
+
+Interpretation hierarchy:
+
+1. `static_center`: diagnostic single phase, not the primary biological baseline.
+2. `matched_phase_cloud`: primary static biological-position baseline.
+3. `real_fem`: biological untuned fixation motion.
+4. `scaled_real_0.5`: candidate task-tuned motion scale.
+
+Current conclusion:
+
+- Real FEM does not improve mean Fisher over matched phase cloud.
+- `scaled_real_0.5` does improve mean Fisher over matched phase cloud in this first pass.
+- All phase-variable conditions are heavily penalized by pose-blind readout.
+- Before treating `scaled_real_0.5` as a true motion advantage, verify that its matched phase-cloud baseline is matched to the half-scaled positions, not to the full real-FEM cloud.
+
+The first drift/microsaccade component-scale pass with Jake's microsaccade labels is a useful follow-up diagnostic, not yet the primary claim. It suggests reduced drift scale and microsaccade-containing components can be informative, but it should be folded into the next full scale-specific matched-control pass before any biological interpretation.
+
+## Next-pass priorities
+
+1. Run a full motion-scale sweep: `D = [0, 0.125, 0.25, 0.5, 0.75, 1, 1.5, 2, 3]`, with scale-specific matched phase-cloud and order-shuffled controls.
+2. Add a pose-uncertainty sweep between pose-aware and pose-blind:
+   \[
+   \sigma_{\mathrm{pose}} = [0, 0.25, 0.5, 1, 2, 4] \text{ arcmin}.
+   \]
+   The main question is: how accurate must retinal-pose knowledge be for FEM-like motion, especially reduced-amplitude motion, to beat static or matched phase-cloud baselines?
+3. Add a secondary compact-aware pose-blind analysis to ask whether low-rank FEM/phase covariance makes pose-hidden Vernier information partially recoverable.
+4. Add FD steps `[0.125, 0.25, 0.5, 1.0] arcmin` and decide whether the endpoint is local Fisher or finite-offset sign discrimination. Do not mix these interpretations.
+5. Run axis and rotated-stimulus controls before making any task-axis claim.
+6. Report reliability and lower-tail Fisher relative to matched phase-cloud baselines.
+7. Finish rendering controls: pixel-level Fisher, centroid/template baselines, and renderer-resolution sweep.
+8. Run or extend the drift/microsaccade component-scale analysis when GPU is available, using Jake-label-compatible event definitions and scale-specific matched controls.
+9. Only then run optimized/adversarial trajectories; expect Vernier-optimized motion to be smaller/slower or axis-biased, not identical to natural fixation traces.
+
+Suggested paper-facing interpretation if replicated:
+
+> In a virtual Vernier task, retinal phase strongly shaped the V1 twin's sensitivity to fine spatial offset. When retinal pose was known, FEM-like phase sampling exposed substantially more Vernier information than a single centered static phase. However, the same phase variability became strongly information-limiting for a pose-blind observer. Real fixation traces did not outperform matched phase-cloud controls, consistent with the view that exact steady-fixation trajectories are not optimized for this task. Instead, reduced-amplitude real trajectories produced the highest first-pass Vernier information, suggesting that fine-acuity tasks may favor smaller, task-tuned motion within the broader FEM regime.
 
 ---
 
@@ -230,7 +297,7 @@ For each stimulus and offset, render retinal movies under these conditions:
 
 13. `scaled_real`
    - Real traces scaled by diffusion/amplitude factors, for example:
-     - `D = [0, 0.125, 0.25, 0.5, 1, 1.5, 2, 3]`
+     - `D = [0, 0.125, 0.25, 0.5, 0.75, 1, 1.5, 2, 3]`
 
 ## Optional gradient-derived conditions
 
@@ -385,7 +452,11 @@ These are co-primary because FEM-like motion may stabilize recoverable informati
 
 Because the digital twin is deterministic, all information estimates need an assumed observation model.
 
-Run at least these, with pose-aware and pose-blind variants in the first pass:
+Run at least these, with pose-aware and pose-blind variants in the first pass. Then add an intermediate pose-uncertainty sweep so the result is not only a two-point comparison between perfect pose knowledge and no pose knowledge:
+
+\[
+\sigma_{\mathrm{pose}} = [0, 0.25, 0.5, 1, 2, 4] \text{ arcmin}.
+\]
 
 ## 1. Pose-aware readout
 
@@ -403,7 +474,59 @@ The observer does not get the exact retinal phase or trajectory label. Motion-in
 
 The pose-aware/pose-blind contrast is not optional: it is the main guard against mistaking phase diversity for downstream recoverability.
 
-## 3. Diagonal Poisson
+Current implementation note:
+
+- `pose_blind_diagonal_count_plus_marginal` is the current first-pass pose-blind metric.
+- It uses expected count noise plus the diagonal of the across-phase/across-trajectory marginal variance.
+- It is not a full covariance inverse and should not be labeled `pose_blind_full_cov_optimal`.
+- If a full covariance inverse is added, label it `pose_blind_full_cov_optimal`; this is the optimal linear covariance-aware pose-blind observer under the estimated covariance and shrinkage.
+
+## 3. Compact-aware pose-blind readouts
+
+Secondary goal:
+
+> Test whether low-rank FEM/phase covariance makes pose-hidden Vernier information partially recoverable.
+
+This is a bridge between the pose-aware and ordinary pose-blind endpoints. The question is whether the nuisance covariance induced by hidden retinal phase is compact enough that an observer can discount or remove it while preserving part of the Vernier signal direction.
+
+Estimate leading nuisance modes \(U_k\) from phase/trajectory covariance. Candidate subspace sources:
+
+- Vernier phase covariance.
+- Real FEM trajectory covariance.
+- Natural-image/translation covariance, if available from the compact translation-geometry analyses.
+- Random orthonormal subspace control.
+
+Use at least:
+
+- \(k = [1, 2, 5, 10]\)
+- \(\alpha = [0, 0.25, 0.5, 0.75, 1]\)
+
+Hard projection:
+
+\[
+P_\perp = I - U_k U_k^\top
+\]
+
+Compute Fisher after projecting the response derivative and covariance into the orthogonal complement of the top nuisance modes. Report as `pose_blind_compact_project_k`.
+
+Soft discounting:
+
+Reduce the weight of the top nuisance modes rather than deleting them. Let \(\alpha = 1\) recover ordinary pose-blind covariance and \(\alpha = 0\) strongly discount the top nuisance subspace. Report as `pose_blind_compact_discount_k_alpha`.
+
+Required plots:
+
+- Fisher/static-center ratio versus \(k\).
+- Fisher/static-center ratio versus \(\alpha\).
+- Pose-aware and ordinary pose-blind reference lines.
+- Separate curves or facets for Vernier phase covariance, real FEM trajectory covariance, natural-image/translation covariance if available, and random orthonormal controls.
+
+Interpretation:
+
+- If compact-aware sits between pose-aware and ordinary pose-blind, compact geometry partially rescues pose-hidden Vernier information.
+- If compact-aware \(\approx\) ordinary pose-blind, compactness identifies the nuisance but does not recover the active-sampling benefit.
+- If results depend strongly on arbitrary \(k\), shrinkage, or subspace source, keep this as an internal control rather than a paper claim.
+
+## 4. Diagonal Poisson
 
 \[
 \Sigma = \operatorname{diag}(\mu + \epsilon).
@@ -411,7 +534,7 @@ The pose-aware/pose-blind contrast is not optional: it is the main guard against
 
 Use the predicted rates/counts for the corresponding condition.
 
-## 4. Overdispersed diagonal
+## 5. Overdispersed diagonal
 
 \[
 \Sigma = \phi \operatorname{diag}(\mu + \epsilon)
@@ -419,11 +542,11 @@ Use the predicted rates/counts for the corresponding condition.
 
 with `phi` values such as `[1, 2, 4]`.
 
-## 5. Fixed diagonal from baseline
+## 6. Fixed diagonal from baseline
 
 Use a fixed diagonal covariance estimated from the average response over offsets or from a reference condition. This prevents differences in \(\Sigma\) from dominating.
 
-## 6. Recorded residual covariance, optional
+## 7. Recorded residual covariance, optional
 
 If available and easy, use a shrinkage version of recorded residual covariance:
 
@@ -461,7 +584,7 @@ Practical implementation options for the pose-aware calculation:
    \]
    if time bins are treated as conditionally independent.
 
-This block-diagonal calculation is explicitly pose-aware. Under this assumption, motion through a cloud of phases and static sampling from the same phase cloud should match in expectation if responses are memoryless and time bins are conditionally independent. Any apparent FEM advantage over one repeated phase should therefore be interpreted as phase-cloud sampling or reliability unless it also beats the phase-cloud baselines or survives the pose-blind readout.
+This block-diagonal calculation is explicitly pose-aware. Under this assumption, motion through a cloud of phases and static sampling from the same phase cloud should match in expectation if responses are memoryless and time bins are conditionally independent. Any apparent FEM advantage over one repeated phase should therefore be interpreted as phase-cloud sampling or reliability unless it also beats scale-specific phase-cloud baselines and remains recoverable under a stated pose-uncertainty model.
 
 Also run a response-history control if feasible:
 
@@ -717,6 +840,9 @@ vernier_dprime_summary.csv
 spike_count_audit.csv
 noise_model_sensitivity.csv
 pose_readout_sensitivity.csv
+pose_blind_full_cov_summary.csv
+compact_aware_pose_blind_summary.csv
+nuisance_subspace_summary.csv
 reliability_variance_summary.csv
 axis_control_summary.csv
 motion_scale_summary.csv
@@ -742,6 +868,8 @@ fig_motion_scale_curve.png
 fig_static_phase_cloud_control.png
 fig_spike_count_audit.png
 fig_order_shuffle_control.png
+fig_compact_aware_pose_blind_k_sweep.png
+fig_compact_aware_pose_blind_alpha_sweep.png
 ```
 
 Optional later:
@@ -770,10 +898,12 @@ Use a smoke test before full production.
   - `random_amp_matched`
   - `axis_horizontal`
   - `axis_vertical`
-  - `scaled_real`, with `D = [0, 0.25, 0.5, 1, 2, 3]`
+  - `scaled_real`, with `D = [0, 0.125, 0.25, 0.5, 0.75, 1, 1.5, 2, 3]`
 - readout/noise model:
   - pose-aware diagonal Poisson
   - pose-blind diagonal or marginal covariance
+  - pose-blind full covariance with shrinkage, if sample support is adequate
+  - compact-aware pose-blind hard projection and soft discounting
   - pose-aware fixed diagonal
   - pose-blind fixed or marginal covariance
 - duration:
@@ -871,14 +1001,14 @@ Criteria:
 - real or FEM-like motion improves Fisher or \(d'^2\), or improves lower-tail reliability, versus static phase-cloud baselines,
 - threshold-proxy ratio versus phase cloud is below 1 or reliability improves,
 - improvement survives per-spike normalization,
-- results are stable across pose-aware and pose-blind readouts,
+- recoverability survives a specified, biologically plausible level of pose uncertainty,
 - horizontal motion beats vertical motion for vertical Vernier,
 - effect strongest near small offsets,
 - rendering and pixel-level controls do not explain the effect.
 
 Interpretation:
 
-> FEM-like motion improves fine positional sensitivity in the V1 twin beyond matched static phase-cloud sampling, with recoverable information under the stated pose assumptions.
+> FEM-like motion improves fine positional sensitivity in the V1 twin beyond matched static phase-cloud sampling, with recoverable information under explicitly stated pose-knowledge assumptions.
 
 ## Corroborating phase-coverage positive
 
@@ -904,13 +1034,42 @@ Interpretation:
 
 > The sampled phases contain Vernier information, but downstream recoverability depends on knowing or estimating retinal pose. Frame this as a pose-aware phase-sampling result, not a full active-sensing gain.
 
+## Coordinate-frame boundary result
+
+Criteria:
+
+- phase-variable conditions beat `static_center` under pose-aware Fisher,
+- the same phase-variable conditions are strongly penalized under pose-blind readout,
+- real FEM does not beat a matched phase-cloud baseline, or only does so after changing the motion scale,
+- scale-specific matched phase-cloud controls are needed before claiming a tuned-motion advantage.
+
+Interpretation:
+
+> Motion helps a pose-aware observer and strongly burdens a pose-blind observer. The result identifies a retinal-pose requirement for using phase-dependent Vernier information rather than proving that natural fixation traces are optimized for Vernier acuity.
+
+## Compact-aware pose-blind rescue
+
+Criteria:
+
+- ordinary pose-blind readout is strongly below pose-aware readout,
+- leading nuisance modes explain a compact share of phase/trajectory covariance,
+- hard projection or soft discounting raises Fisher/static-center ratios above ordinary pose-blind without approaching a pose-aware oracle,
+- the improvement is stronger for Vernier/FEM-derived nuisance subspaces than for random orthonormal controls,
+- conclusions are stable over reasonable \(k\), \(\alpha\), and shrinkage choices.
+
+Interpretation:
+
+> Compact geometry partially rescues pose-hidden Vernier information: the nuisance covariance is structured enough that a covariance-aware observer can discount it, but explicit or estimated retinal pose remains valuable.
+
+If compact-aware \(\approx\) ordinary pose-blind, interpret the compact subspace as identifying the nuisance without recovering the active-sampling benefit. If results are fragile to \(k\), shrinkage, or subspace source, keep the analysis as an internal control rather than a paper claim.
+
 ## Trajectory-specific or temporal-order effect
 
 Criteria:
 
 - real ordered traces beat random matched and order-shuffled controls,
 - `movie_mode` beats `framewise_or_reset_mode`,
-- effect survives pose-blind analysis.
+- effect survives the stated pose-uncertainty analysis.
 
 Interpretation:
 
@@ -989,4 +1148,4 @@ Motion and static conditions must use the same duration and should be summarized
 
 If the analysis works, the paper-facing result should read something like:
 
-> In a virtual Vernier acuity task, FEM-like retinal motion sampled retinal phases that carried recoverable information about tiny spatial misalignments in the V1 twin. Relative to matched static phase-cloud and repeated-phase baselines, the effect was evaluated under both pose-aware and pose-blind readouts, with spike-count normalization and rendering controls. A positive result would support the narrower claim that fixation-scale motion can place the stimulus in useful retinal phases for fine-position sensitivity, without implying that real trajectories are uniquely optimal or that the ConvGRU performs long-memory temporal integration.
+> In a virtual Vernier acuity task, retinal phase strongly shaped the V1 twin's sensitivity to tiny spatial misalignments. When retinal pose was known, phase-variable sampling exposed more Vernier information than a single centered static phase. When retinal pose was hidden, the same phase variability became a nuisance covariance that strongly reduced recoverable information. The result should therefore be framed as a pose-dependent phase-sampling effect, not as a naive claim that natural fixation traces improve Vernier acuity. If reduced-amplitude or otherwise task-tuned trajectories beat scale-specific matched phase-cloud baselines after rendering, axis, reliability, and pose-uncertainty controls, they can support the narrower claim that fine-acuity tasks favor a smaller or more structured subset of the broader FEM regime.

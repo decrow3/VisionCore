@@ -1,14 +1,16 @@
-"""Simplified Figure 3: digital twin mechanism plus compact reafferent geometry.
+"""Combined Figure 3: digital twin mechanism plus compact reafferent geometry.
 
-This compositor keeps only the main-text mechanism chain:
+This compositor collapses the current digital-twin validation figure and the
+compact retinal-translation geometry figure into one mechanism figure:
 
-  A  Retinal-input digital twin schematic
-  B  Empirical vs model FEM modulation
-  C  Extraretinal-pathway zeroing control
-  D  No universal translation axis
-  E  Compact translation-tangent subspace
-  F  Image-disjoint generalization
-  G  Translation-predicted recorded FEM covariance
+  A  Digital twin schematic
+  B  Example neuron PSTH overlay
+  C  Held-out response validation
+  D  Extraretinal-pathway zeroing control
+  E  Empirical vs model FEM modulation
+  F  Image-specific local translation directions
+  G  Compact, image-generalizing translation-tangent subspace
+  H  Translation-predicted recorded FEM covariance
 
 The older full figures remain useful as source/supplemental figures. This file
 only selects the panels needed for the combined main-text story.
@@ -19,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import dill
 import json
 import sys
 from pathlib import Path
@@ -26,7 +29,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
-from matplotlib.text import Annotation
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
@@ -36,6 +38,8 @@ from VisionCore.paths import VISIONCORE_ROOT
 from _fig3_data import FIG_DIR, configure_matplotlib, load_fig3_data
 from _fig3_ablation_data import CACHE_PATH as ABLATION_CACHE_PATH
 from _fig3_ablation_data import load_ablation_data
+from _fig3_helpers import select_example_neuron
+from generate_fig3b import plot_panel_b as plot_example_psth
 from generate_fig3d import compute_model_one_minus_alpha
 
 
@@ -48,6 +52,9 @@ import generate_covTFTS_figure as geom  # noqa: E402
 
 POOLED_COLOR = "0.25"
 POOLED_FILL = "0.55"
+BEHAVIOR_COLOR = "#d62728"
+ZEROED_COLOR = "#1f77b4"
+WITHIN_MODEL_CACHE = VISIONCORE_ROOT / "outputs" / "cache" / "behavior_vs_vision_within_model.pkl"
 PANEL_LETTER_SIZE = 11
 PANEL_TITLE_SIZE = 9.0
 
@@ -68,20 +75,12 @@ def _clear_panel_heading(ax):
                 txt.remove()
 
 
-def _standard_panel_heading(
-    ax,
-    letter: str,
-    title: str,
-    *,
-    y: float = 1.045,
-    title_x: float = 0.08,
-    title_size: float = PANEL_TITLE_SIZE,
-):
+def _standard_panel_heading(ax, letter: str, title: str):
     """Place a consistent panel letter/title just above the axes."""
     _clear_panel_heading(ax)
     ax.text(
         -0.035,
-        y,
+        1.045,
         letter,
         transform=ax.transAxes,
         ha="left",
@@ -92,47 +91,17 @@ def _standard_panel_heading(
         clip_on=False,
     )
     ax.text(
-        title_x,
-        y,
+        0.08,
+        1.045,
         title,
         transform=ax.transAxes,
-        ha="left",
-        va="bottom",
-        fontsize=title_size,
-        fontweight="bold",
-        color="#202124",
-        linespacing=0.9,
-        clip_on=False,
-    )
-
-
-def _standard_group_heading(fig, axes, letter: str, title: str):
-    """Place one heading over a multi-axis panel."""
-    for ax in axes:
-        _clear_panel_heading(ax)
-    boxes = [ax.get_position() for ax in axes]
-    x0 = min(b.x0 for b in boxes)
-    y1 = max(b.y1 for b in boxes)
-    fig.text(
-        x0 - 0.010,
-        y1 + 0.018,
-        letter,
-        ha="left",
-        va="bottom",
-        fontsize=PANEL_LETTER_SIZE,
-        fontweight="bold",
-        color="#202124",
-    )
-    fig.text(
-        x0 + 0.030,
-        y1 + 0.018,
-        title,
         ha="left",
         va="bottom",
         fontsize=PANEL_TITLE_SIZE,
         fontweight="bold",
         color="#202124",
         linespacing=0.9,
+        clip_on=False,
     )
 
 
@@ -191,17 +160,18 @@ def _plot_twin_mechanism_schematic(ax):
          fc="#fbf8fd", ec=geom.BRIDGE, color=geom.BRIDGE)
     _arrow(ax, (0.45, 0.16), (0.45, 0.35), color=geom.BRIDGE, lw=1.1)
 
+    ax.text(0.06, 0.83, "A", fontweight="bold", fontsize=11,
+            ha="left", va="top")
+    ax.text(0.10, 0.83,
+            "retinal-input twin links response prediction to reafferent geometry",
+            fontsize=9.2, fontweight="bold", ha="left", va="top",
+            color="#202124")
     ax.text(0.94, 0.50, "recorded\nspikes", fontsize=7.1, color="#555555",
             ha="left", va="center")
-    ax.text(
-        0.06,
-        0.82,
-        "counterfactual engine for retinal stabilization, eye-state ablation, and translation probes",
-        fontsize=7.3,
-        color="#555555",
-        ha="left",
-        va="center",
-    )
+    ax.text(0.06, 0.25,
+            "FEMs move the image on the retina; the behavior pathway is tested as a separate route.",
+            fontsize=7.1, color="#555555", ha="left", va="center")
+
 
 def _plot_existing_schematic(ax, schematic_image: Path | None):
     """Use the existing draft schematic when available."""
@@ -280,9 +250,196 @@ def _plot_validation_panel_pooled(ax, data, *, letter: str = "C"):
     ax.set_title(f"{letter}  Held-out responses", loc="left",
                  fontweight="bold", fontsize=10, pad=4)
     print(
-        f"Panel {letter} — pooled (N={len(vals)}): median ccnorm={med:.2f}, "
+        f"Panel C — pooled (N={len(vals)}): median ccnorm={med:.2f}, "
         f"IQR=[{q25:.2f}, {q75:.2f}]"
     )
+
+
+def _plot_example_psth_intact_vs_zeroed(ax, abl_data, *, fallback_data, fallback_example):
+    """Example PSTH with behavior-input and zeroed-behavior predictions."""
+    ex = None if abl_data is None else abl_data.get("example")
+    if ex is None:
+        plot_example_psth(
+            ax=ax,
+            data=fallback_data,
+            example=fallback_example,
+            legend_fontsize=6.0,
+            show_ccnorm_title=False,
+        )
+        if len(ax.lines) >= 2:
+            ax.lines[1].set_label("Intact")
+            ax.lines[1].set_color(BEHAVIOR_COLOR)
+            ax.legend(frameon=False, fontsize=6.0)
+        return
+
+    obs = np.nanmean(ex["obs_rate"], axis=0)
+    intact = np.nanmean(ex["rate"]["intact"], axis=0)
+    zeroed = np.nanmean(ex["rate"]["zeroed"], axis=0)
+    t = np.linspace(0, float(ex["window_s"]), obs.size, endpoint=False)
+    ax.plot(t, obs, color="k", lw=1.0, label="Observed")
+    ax.plot(t, intact, color=BEHAVIOR_COLOR, lw=1.0, label="Intact")
+    ax.plot(t, zeroed, color=ZEROED_COLOR, lw=1.0, label="Zeroed")
+    ax.set_xlim(0, float(ex["window_s"]))
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Rate (sp/s)")
+    ax.legend(frameon=False, fontsize=5.8, loc="upper right")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+
+def _load_within_model_ccnorm(data):
+    """Load matched intact-vs-zeroed ccnorm arrays from the within-model cache."""
+    if not WITHIN_MODEL_CACHE.exists():
+        return None
+    with open(WITHIN_MODEL_CACHE, "rb") as f:
+        rows = dill.load(f)
+
+    intact = np.concatenate([np.asarray(r["cc_norm"]["beh_intact"], dtype=float) for r in rows])
+    zeroed = np.concatenate([np.asarray(r["cc_norm"]["beh_zeroed"], dtype=float) for r in rows])
+    ccmax = np.concatenate([np.asarray(r["cc_max"]["beh_intact"], dtype=float) for r in rows])
+    good = ccmax > 0.85
+    return {"intact": intact, "zeroed": zeroed, "good": good}
+
+
+def _plot_ccnorm_hist_intact_vs_zeroed(ax, data, *, letter: str = "C"):
+    """Overlaid normalized-correlation histograms for intact and zeroed inputs."""
+    matched = _load_within_model_ccnorm(data)
+    if matched is None:
+        intact = data["ccnorm"]
+        zeroed = None
+        good = np.asarray(data["good"], dtype=bool)
+    else:
+        intact = matched["intact"]
+        zeroed = matched["zeroed"]
+        good = matched["good"]
+
+    m_intact = good & np.isfinite(intact)
+    bins = np.linspace(0, 1, 21)
+    ax.hist(intact[m_intact], bins=bins, color=BEHAVIOR_COLOR, alpha=0.32,
+            edgecolor="none", label="Intact")
+    ax.axvline(float(np.nanmedian(intact[m_intact])), color=BEHAVIOR_COLOR, lw=1.4)
+
+    if zeroed is not None and len(zeroed) == len(intact):
+        both = good & np.isfinite(intact) & np.isfinite(zeroed)
+        ax.hist(zeroed[both], bins=bins, color=ZEROED_COLOR, alpha=0.32,
+                edgecolor="none", label="Zeroed")
+        ax.axvline(float(np.nanmedian(zeroed[both])), color=ZEROED_COLOR, lw=1.4)
+        note = f"median Δ={np.nanmedian(zeroed[both] - intact[both]):+.3f}"
+        print(f"Panel {letter} — intact/zeroed ccnorm (N={both.sum()}): {note}")
+    else:
+        note = "zeroed ccnorm\nnot cached"
+        ax.text(0.97, 0.92, note, transform=ax.transAxes,
+                ha="right", va="top", fontsize=6.0, color=ZEROED_COLOR)
+        print(f"Panel {letter} — intact ccnorm only; zeroed ccnorm not cached")
+
+    ax.set_xlim(0, 1)
+    ax.set_xlabel("Normalized correlation (ccnorm)")
+    ax.set_ylabel("Count")
+    ax.legend(frameon=False, fontsize=5.8, loc="upper left")
+    ax.text(0.97, 0.08,
+            f"intact median {np.nanmedian(intact[m_intact]):.2f}"
+            if zeroed is None else note,
+            transform=ax.transAxes, ha="right", va="bottom",
+            fontsize=6.0, color="0.25")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.set_title(f"{letter}  Held-out responses", loc="left",
+                 fontweight="bold", fontsize=10, pad=4)
+
+
+def _plot_prediction_similarity_panel(ax, abl_data, *, cond: str = "zeroed", letter: str = "C"):
+    """Held-out prediction: intact vs zeroed single-trial performance."""
+    if abl_data is None:
+        ax.set_axis_off()
+        ax.text(0.5, 0.5, "ablation cache\nnot found", transform=ax.transAxes,
+                ha="center", va="center", fontsize=8, color=geom.ACCENT)
+        return
+    x = abl_data["ve"]["intact"]
+    y = abl_data["ve"][cond]
+    good = abl_data["good"]
+    m = good & np.isfinite(x) & np.isfinite(y)
+    ax.scatter(x[m], y[m], s=5, alpha=0.38, color=POOLED_COLOR)
+    lims = [0, 0.35]
+    ax.plot(lims, lims, "k--", lw=0.5, alpha=0.5)
+    ax.set_xlim(lims)
+    ax.set_ylim(lims)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_box_aspect(1)
+    ax.set_xlabel("Single-trial $r^2$\n(intact)")
+    ax.set_ylabel("Single-trial $r^2$\n(zeroed)")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    d = y[m] - x[m]
+    med_delta = float(np.nanmedian(d))
+    pct = 100.0 * med_delta / float(np.nanmedian(x[m]))
+    ax.text(0.97, 0.08,
+            f"{pct:+.0f}% of intact median\nmedian Δ$r^2$={med_delta:+.3f}",
+            transform=ax.transAxes, ha="right", va="bottom",
+            fontsize=6.4, color="0.25")
+    ax.set_title(f"{letter}  Held-out prediction", loc="left",
+                 fontweight="bold", fontsize=10, pad=4)
+    print(f"Panel {letter} — intact vs zeroed r² (N={m.sum()}): "
+          f"median Δr²={med_delta:+.4f}")
+
+
+def _plot_fem_prediction_by_route(
+    ax,
+    abl_data,
+    fig3_data,
+    *,
+    cond: str = "zeroed",
+    letter: str = "D",
+):
+    """Prediction performance across empirical FEM modulation for intact and zeroed inputs."""
+    if abl_data is None:
+        ax.set_axis_off()
+        ax.text(0.5, 0.5, "ablation cache\nnot found", transform=ax.transAxes,
+                ha="center", va="center", fontsize=8, color=geom.ACCENT)
+        return
+    alpha = fig3_data["alpha"]
+    fem = 1.0 - alpha
+    y_intact = abl_data["ve"]["intact"]
+    y_zeroed = abl_data["ve"][cond]
+    good = abl_data["good"] & fig3_data["good"]
+    base = good & np.isfinite(fem) & np.isfinite(y_intact) & np.isfinite(y_zeroed)
+    x = fem[base]
+    intact = y_intact[base]
+    zeroed = y_zeroed[base]
+
+    ax.scatter(x, intact, s=4, alpha=0.16, color=BEHAVIOR_COLOR, linewidths=0)
+    ax.scatter(x, zeroed, s=4, alpha=0.16, color=ZEROED_COLOR, linewidths=0)
+    if x.size >= 20:
+        edges = np.quantile(x, np.linspace(0, 1, 7))
+        edges[0] -= 1e-9
+        edges[-1] += 1e-9
+        bx, b_intact, b_zeroed = [], [], []
+        bin_id = np.digitize(x, edges) - 1
+        for b in range(6):
+            sel = bin_id == b
+            if sel.sum() >= 5:
+                bx.append(float(np.nanmedian(x[sel])))
+                b_intact.append(float(np.nanmedian(intact[sel])))
+                b_zeroed.append(float(np.nanmedian(zeroed[sel])))
+        ax.plot(bx, b_intact, "o-", color=BEHAVIOR_COLOR, lw=1.4, ms=3.6,
+                label="Intact")
+        ax.plot(bx, b_zeroed, "o-", color=ZEROED_COLOR, lw=1.4, ms=3.6,
+                label="Zeroed")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 0.35)
+    ax.set_xlabel(r"Empirical FEM modulation ($1-\alpha$)")
+    ax.set_ylabel("Single-trial $r^2$")
+    if len(ax.lines) >= 2:
+        ax.legend(frameon=False, fontsize=5.8, loc="upper left")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    med = float(np.nanmedian(zeroed - intact))
+    ax.text(0.97, 0.08, f"median Δ$r^2$={med:+.3f}",
+            transform=ax.transAxes, ha="right", va="bottom",
+            fontsize=6.4, color="0.25")
+    ax.set_title(f"{letter}  FEM modulation", loc="left",
+                 fontweight="bold", fontsize=10, pad=4)
+    print(f"Panel {letter} — intact/zeroed prediction across FEM modulation "
+          f"(N={x.size}): median Δr²={med:+.4f}")
 
 
 def _plot_fem_modulation_pooled(ax, data, *, letter: str = "D"):
@@ -302,6 +459,7 @@ def _plot_fem_modulation_pooled(ax, data, *, letter: str = "D"):
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.set_aspect("equal", adjustable="box")
+    ax.set_box_aspect(1)
     ax.set_xlabel(r"Empirical $1-\alpha$")
     ax.set_ylabel(r"Model $1-\alpha$")
     ax.spines["top"].set_visible(False)
@@ -309,6 +467,110 @@ def _plot_fem_modulation_pooled(ax, data, *, letter: str = "D"):
     ax.set_title(f"{letter}  FEM modulation", loc="left",
                  fontweight="bold", fontsize=10, pad=4)
     print(f"Panel {letter} — pooled (N={len(x)}): Spearman ρ={rho:.3f}")
+
+
+def _load_within_model_fem_covariance_metrics():
+    """Return session-level FEM covariance metrics for intact and zeroed inputs."""
+    if not WITHIN_MODEL_CACHE.exists():
+        return None
+    with open(WITHIN_MODEL_CACHE, "rb") as f:
+        rows = dill.load(f)
+
+    out = []
+    for r in rows:
+        em = r.get("empirical", {})
+        metrics = em.get("metrics", {})
+        mi = metrics.get("beh_intact")
+        mz = metrics.get("beh_zeroed")
+        if mi is None or mz is None:
+            continue
+        out.append({
+            "session": r.get("session"),
+            "subject": r.get("subject"),
+            "n_common_cells": r.get("n_common_cells"),
+            "intact_trace_ratio": float(mi.get("tr_ratio", np.nan)),
+            "zeroed_trace_ratio": float(mz.get("tr_ratio", np.nan)),
+            "intact_overlap_k": float(mi.get("overlap_k", np.nan)),
+            "zeroed_overlap_k": float(mz.get("overlap_k", np.nan)),
+        })
+    return out
+
+
+def _plot_fem_modulation_intact_vs_zeroed(ax, fig3_data, abl_data=None, *, letter: str = "D"):
+    """Paired per-cell model 1-alpha clouds for intact and zeroed inputs."""
+    model_oma = None if abl_data is None else abl_data.get("model_one_minus_alpha")
+    if not model_oma:
+        _plot_fem_modulation_pooled(ax, fig3_data, letter=letter)
+        return
+
+    emp = 1.0 - np.asarray(abl_data["alpha"], dtype=float)
+    intact = np.asarray(model_oma["intact"], dtype=float)
+    zeroed = np.asarray(model_oma["zeroed"], dtype=float)
+    good = np.asarray(abl_data["good"], dtype=bool)
+    ok = good & np.isfinite(emp) & np.isfinite(intact) & np.isfinite(zeroed)
+    emp = emp[ok]
+    intact = intact[ok]
+    zeroed = zeroed[ok]
+
+    if emp.size == 0:
+        _plot_fem_modulation_pooled(ax, fig3_data, letter=letter)
+        return
+
+    order = np.argsort(emp)
+    for i in order[::2]:
+        ax.plot([emp[i], emp[i]], [intact[i], zeroed[i]],
+                color="0.72", lw=0.38, alpha=0.32, zorder=1)
+    ax.scatter(
+        emp,
+        intact,
+        s=5,
+        color=BEHAVIOR_COLOR,
+        alpha=0.32,
+        linewidths=0,
+        zorder=2,
+        label="Intact",
+    )
+    ax.scatter(
+        emp,
+        zeroed,
+        s=5,
+        color=ZEROED_COLOR,
+        alpha=0.30,
+        linewidths=0,
+        zorder=2,
+        label="Zeroed",
+    )
+    delta = zeroed - intact
+    med_delta = float(np.nanmedian(delta))
+    rho_i = spearmanr(emp, intact).correlation
+    rho_z = spearmanr(emp, zeroed).correlation
+    ax.plot([0, 1], [0, 1], "k--", lw=0.5, alpha=0.5, zorder=0)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_box_aspect(1)
+    ax.set_xlabel(r"Empirical $1-\alpha$")
+    ax.set_ylabel(r"Model $1-\alpha$")
+    ax.legend(frameon=False, fontsize=5.8, loc="upper left")
+    ax.text(
+        0.97,
+        0.08,
+        f"Δ={med_delta:+.3f}\nρ {rho_i:.2f}/{rho_z:.2f}",
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=6.4,
+        color="0.25",
+    )
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.set_title(f"{letter}  FEM modulation", loc="left",
+                 fontweight="bold", fontsize=10, pad=4)
+    print(
+        f"Panel {letter} — intact/zeroed model 1-alpha (N={emp.size}): "
+        f"median Δ={med_delta:+.4f}, "
+        f"Spearman intact={rho_i:.3f}, zeroed={rho_z:.3f}"
+    )
 
 
 def _plot_ablation_r2_pooled(ax, data, *, cond: str = "zeroed", letter: str = "E"):
@@ -377,7 +639,7 @@ def _load_ablation_cache():
 
 def _plot_ablation_placeholder(ax):
     ax.set_axis_off()
-    ax.set_title("C  Extraretinal-pathway zeroing control", loc="left",
+    ax.set_title("D  Extraretinal-pathway zeroing control", loc="left",
                  fontweight="bold", fontsize=10, pad=4)
     ax.text(0.5, 0.58, "ablation cache not found",
             transform=ax.transAxes, ha="center", va="center",
@@ -387,66 +649,6 @@ def _plot_ablation_placeholder(ax):
             fontsize=7.0, color="0.45")
 
 
-def _plot_translation_cosine_panel(ax, tangent_data: dict | None, *, letter: str = "D"):
-    """Compact main-text version of the local translation direction result."""
-    geom.panel_label(ax, letter, "No universal translation axis")
-    if tangent_data is None:
-        ax.text(0.5, 0.52, "tangent maps\nnot found",
-                transform=ax.transAxes, ha="center", va="center",
-                color=geom.ACCENT, fontsize=8)
-        geom.clean_axes(ax, grid=True)
-        return
-
-    bx = np.asarray(tangent_data["bx"], dtype=np.float64)
-    by = np.asarray(tangent_data["by"], dtype=np.float64)
-    cos_xx = geom._sampled_pairwise_cosines(bx, seed=13)
-    cos_yy = geom._sampled_pairwise_cosines(by, seed=17)
-    bins = np.linspace(-1.0, 1.0, 29)
-
-    if cos_xx.size:
-        ax.hist(
-            cos_xx,
-            bins=bins,
-            density=True,
-            histtype="step",
-            color=geom.MODEL,
-            lw=1.9,
-            label=r"$b_x(I), b_x(J)$",
-        )
-        ax.axvline(float(np.median(cos_xx)), color=geom.MODEL, lw=1.0, alpha=0.85)
-    if cos_yy.size:
-        ax.hist(
-            cos_yy,
-            bins=bins,
-            density=True,
-            histtype="step",
-            color=geom.BRIDGE,
-            lw=1.9,
-            label=r"$b_y(I), b_y(J)$",
-        )
-        ax.axvline(float(np.median(cos_yy)), color=geom.BRIDGE, lw=1.0, alpha=0.85)
-
-    ax.axvline(0, color="0.45", lw=0.8, ls=":")
-    ax.set_xlim(-1.0, 1.0)
-    ax.set_xlabel("Cross-image cosine")
-    ax.set_ylabel("Density")
-    ax.text(
-        0.05,
-        0.88,
-        "same-axis\nacross images",
-        transform=ax.transAxes,
-        ha="left",
-        va="top",
-        fontsize=5.8,
-        color="0.35",
-    )
-    ax.text(0.96, 0.91, r"$b_x$", transform=ax.transAxes,
-            ha="right", va="top", fontsize=6.0, color=geom.MODEL, fontweight="bold")
-    ax.text(0.96, 0.82, r"$b_y$", transform=ax.transAxes,
-            ha="right", va="top", fontsize=6.0, color=geom.BRIDGE, fontweight="bold")
-    geom.clean_axes(ax, grid=True)
-
-
 def _plot_covariance_closure_subset(
     ax,
     closure_summary: pd.DataFrame | None,
@@ -454,8 +656,9 @@ def _plot_covariance_closure_subset(
     *,
     letter: str = "I",
 ):
-    """Two-control horizontal version of geometry Figure 4E."""
+    """Two-control version of geometry Figure 4E."""
     geom.panel_label(ax, letter, "Translation-predicted\nFEM covariance")
+    ax.set_ylabel("Excess capture\nover unit-shuffle null")
 
     if closure_summary is None or closure_metrics is None or len(closure_summary) == 0:
         ax.text(0.5, 0.52, "finite-difference closure\nnot found",
@@ -468,8 +671,7 @@ def _plot_covariance_closure_subset(
     target = "psd"
     k = 2
     controls = ["none", "global_rate+target_pc1"]
-    labels = ["none", "global + PC1\nremoved"]
-    ypos = np.array([1.0, 0.0])
+    labels = ["none", "global\n+ PC1"]
 
     s = closure_summary[
         (closure_summary["target_variant"].astype(str) == target)
@@ -492,6 +694,7 @@ def _plot_covariance_closure_subset(
         if len(sr) == 0 or len(mr) == 0:
             continue
 
+        capture = float(sr["capture_mean"].iloc[0])
         mean = float(sr["effect_unit_mean"].iloc[0])
         lo = float(sr["effect_unit_boot_ci_low"].iloc[0])
         hi = float(sr["effect_unit_boot_ci_high"].iloc[0])
@@ -501,33 +704,34 @@ def _plot_covariance_closure_subset(
         finite_vals.extend([mean, lo, hi, *vals])
 
         jitter = rng.uniform(-0.08, 0.08, size=vals.size)
-        ax.scatter(vals, np.full(vals.size, ypos[i]) + jitter,
+        ax.scatter(np.full(vals.size, i) + jitter, vals,
                    s=13, color="0.25", alpha=0.24, linewidths=0, zorder=2)
-        ax.errorbar(mean, ypos[i],
-                    xerr=[[max(mean - lo, 0.0)], [max(hi - mean, 0.0)]],
+        ax.errorbar(i, mean,
+                    yerr=[[max(mean - lo, 0.0)], [max(hi - mean, 0.0)]],
                     fmt="o", color=geom.BRIDGE, ecolor=geom.BRIDGE,
                     elinewidth=1.5, capsize=3.4, markersize=6.0,
                     markeredgecolor="white", markeredgewidth=0.7, zorder=4)
-        rows.append((control, mean, lo, hi, vals.size,
+        rows.append((control, capture, mean, lo, hi, vals.size,
                      int(sr["n_effect_positive"].iloc[0])))
 
-    ax.axvline(0, color="0.48", lw=0.75, ls=":", zorder=1)
-    ax.set_yticks(ypos)
-    ax.set_yticklabels(labels)
+    ax.axhline(0, color="0.48", lw=0.75, ls=":", zorder=1)
+    ax.set_xticks(np.arange(len(controls)))
+    ax.set_xticklabels(labels)
     finite = np.asarray(finite_vals, dtype=float)
     finite = finite[np.isfinite(finite)]
-    xmax = max(0.46, float(np.nanmax(finite)) + 0.065) if finite.size else 0.46
-    ax.set_xlim(-0.04, xmax)
-    ax.set_ylim(-0.55, 1.55)
-    ax.set_xlabel("Excess capture over shuffle")
+    ymax = max(0.46, float(np.nanmax(finite)) + 0.045) if finite.size else 0.46
+    ax.set_ylim(-0.05, ymax)
     geom.clean_axes(ax, grid=True)
 
-    controlled = next((r for r in rows if r[0] == "global_rate+target_pc1"), None)
-    if controlled is not None:
-        _, mean, lo, hi, n, n_pos = controlled
-        ax.text(0.97, 0.16,
-                f"global+PC1 removed:\n+{mean:.3f} [{lo:.3f}, {hi:.3f}]\n{n_pos}/{n} sessions",
-                transform=ax.transAxes, ha="right", va="bottom", fontsize=6.0,
+    full = next((r for r in rows if r[0] == "none"), None)
+    if full is not None:
+        _, capture, mean, lo, hi, _n, _n_pos = full
+        ax.text(0.04, 0.96,
+                "Translation subspace predicts\n"
+                "recorded FEM covariance\n"
+                f"{100 * capture:.0f}% total; excess\n"
+                f"+{mean:.3f} [{lo:.3f}, {hi:.3f}]",
+                transform=ax.transAxes, ha="left", va="top", fontsize=5.15,
                 color=geom.BRIDGE, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.23", fc="white",
                           ec=geom.BRIDGE_L, lw=0.7, alpha=0.96))
@@ -540,12 +744,6 @@ def _shift_axes_y(axes, dy: float):
         ax.set_position([pos.x0, pos.y0 + dy, pos.width, pos.height])
 
 
-def _shift_axis_x(ax, dx: float, dw: float = 0.0):
-    """Translate one axis horizontally in figure coordinates."""
-    pos = ax.get_position()
-    ax.set_position([pos.x0 + dx, pos.y0, pos.width + dw, pos.height])
-
-
 def _pad_axis_limits(ax, *, xfrac: float = 0.05, yfrac: float = 0.05):
     x0, x1 = ax.get_xlim()
     y0, y1 = ax.get_ylim()
@@ -555,10 +753,26 @@ def _pad_axis_limits(ax, *, xfrac: float = 0.05, yfrac: float = 0.05):
     ax.set_ylim(y0 - dy, y1 + dy)
 
 
+def _move_first_inset_axes(ax, bounds):
+    """Move the first inset axes using parent-axes-relative bounds."""
+    if not getattr(ax, "child_axes", None):
+        return
+    inset = ax.child_axes[0]
+    parent = ax.get_position()
+    x, y, w, h = bounds
+    inset.set_axes_locator(None)
+    inset.set_position([
+        parent.x0 + x * parent.width,
+        parent.y0 + y * parent.height,
+        w * parent.width,
+        h * parent.height,
+    ])
+
+
 def _write_sidecars(out_dir: Path, paths: geom.DataPaths, manifest: dict):
     caption = """Figure 3. A retinal-input digital twin reveals a compact reafferent geometry underlying FEM-linked V1 variability.
 
-(A) Minimal schematic of the gaze-contingent digital twin: measured FEMs render a retinal movie, the movie drives an image-computable twin, and a separate eye-state pathway can be zeroed. (B) The twin recapitulates each cell's empirical FEM modulation, measured as \\(1-\\alpha\\), pooling Allen and Logan cells and linking the model to the covariance decomposition in Figure 2. (C) Single-trial prediction is nearly unchanged when the separate extraretinal eye-state pathway is zeroed, pooled across Allen and Logan, supporting a retinal-input route for FEM-linked variability. (D) Same-axis local translation vectors have low cross-image cosine similarity, showing that FEM translations do not correspond to a universal signed population axis. (E) Pooling local retinal-translation tangents reveals a compact translation subspace. (F) An image-disjoint basis captures held-out translation tangent variance above unit-shuffled controls. (G) Finite-difference fitted-twin translation covariances capture the recorded FEM covariance component above a unit-shuffled source-basis null, shown for no projection control and after removing both global-rate and target-PC1 components.
+(A) Gaze-contingent digital twin architecture. The model receives the retinal stimulus history and optional extraretinal behavior inputs, then predicts simultaneously recorded V1 responses. (B) Observed PSTH for an example reliable neuron, overlaid with predictions from the intact behavior-input twin and the same twin with the separate behavior input zeroed. (C) Held-out stimulus-locked response prediction across pooled Allen and Logan cells, shown by normalized correlation distributions for intact and behavior-zeroed predictions from the same twin. (D) Single-trial prediction is nearly unchanged when the separate extraretinal eye-state pathway is zeroed, pooled across Allen and Logan, supporting a retinal-input route for FEM-linked variability. (E) The twin recapitulates each cell's empirical FEM modulation, measured as \\(1-\\alpha\\), pooling Allen and Logan cells and linking the model to the covariance decomposition in Figure 2. (F) Small retinal translations induce image-specific local response directions rather than a universal signed x/y population axis. (G) Pooling those local tangents reveals a compact translation subspace. (H) An image-disjoint basis captures held-out translation tangent variance above unit-shuffled controls. (I) Finite-difference fitted-twin translation covariances capture the recorded FEM covariance component above a unit-shuffled source-basis null, shown for no projection control and after removing both global-rate and target-PC1 components.
 """
     (out_dir / "fig3_combined_mechanism_caption.md").write_text(caption, encoding="utf-8")
     (out_dir / "fig3_combined_mechanism_caption.txt").write_text(caption, encoding="utf-8")
@@ -567,14 +781,15 @@ def _write_sidecars(out_dir: Path, paths: geom.DataPaths, manifest: dict):
 
 Generated by `declan/fig3/generate_figure3_combined.py`.
 
-This is the simplified merged digital-twin/mechanism figure. It keeps the old
-Figure 3 and covTFTS Figure 4 scripts as source and supplemental material, but
-promotes only the panels needed for the main-text mechanism chain:
+This is the merged digital-twin/mechanism figure. It keeps the old Figure 3 and
+covTFTS Figure 4 scripts as source and supplemental material, but promotes only
+the panels needed for the main-text mechanism chain:
 
-retinal-input twin schematic -> FEM modulation capture -> extraretinal route
-control -> no universal translation axis -> compact tangent geometry ->
-image-disjoint generalization -> translation-predicted recorded FEM covariance
-closure.
+digital twin schematic -> intact-vs-zeroed example PSTH -> held-out response
+validation -> extraretinal route control -> FEM modulation capture ->
+image-specific translations -> compact
+image-generalizing tangent geometry -> translation-predicted recorded FEM
+covariance closure.
 
 ## Outputs
 - `fig3_combined_mechanism.png`
@@ -614,6 +829,7 @@ def compose(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     data = load_fig3_data(recompute=recompute)
+    example = select_example_neuron(data)
     abl = _load_ablation_cache()
 
     if tfts_root is None:
@@ -624,121 +840,113 @@ def compose(
     if schematic_image is None:
         schematic_image = out_dir / "panel_a_schematic_draft.png"
 
-    fig = plt.figure(figsize=(8.4, 9.0), constrained_layout=False)
+    fig = plt.figure(figsize=(13.2, 10.6), constrained_layout=False)
     gs = GridSpec(
-        3, 4,
+        3, 1,
         figure=fig,
-        left=0.090,
+        left=0.055,
         right=0.985,
-        bottom=0.070,
-        top=0.925,
-        height_ratios=[0.68, 1.0, 0.92],
-        wspace=0.62,
-        hspace=0.58,
+        bottom=0.06,
+        top=0.92,
+        # Panel A is 2.659:1. Give its row the same vertical budget as the
+        # combined two-row block below, so that A sets the horizontal frame.
+        height_ratios=[2.25, 1.0, 1.35],
+        hspace=0.24,
     )
 
-    # Row 1. Model object.
-    ax_a = fig.add_subplot(gs[0, :])
-    _plot_twin_mechanism_schematic(ax_a)
-    used_existing_schematic = False
-    _standard_panel_heading(ax_a, "A", "Retinal-input twin")
+    # Row 1. Model schematic.
+    ax_a = fig.add_subplot(gs[0, 0])
+    used_existing_schematic = _plot_existing_schematic(ax_a, schematic_image)
 
-    # Row 2. Model relevance and retinal route.
-    ax_b = fig.add_subplot(gs[1, 0:2])
-    _plot_fem_modulation_pooled(ax_b, data, letter="B")
-    _standard_panel_heading(ax_b, "B", "FEM modulation")
+    # Row 2. Digital-twin example, validation, ablation control, and FEM modulation.
+    gs_mid = gs[1, 0].subgridspec(
+        1,
+        6,
+        width_ratios=[0.15, 1.0, 1.0, 1.0, 1.0, 0.15],
+        wspace=0.36,
+    )
+    ax_b = fig.add_subplot(gs_mid[0, 1])
+    _plot_example_psth_intact_vs_zeroed(
+        ax_b,
+        abl,
+        fallback_data=data,
+        fallback_example=example,
+    )
+    _standard_panel_heading(ax_b, "B", "Example PSTH")
 
-    ax_c = fig.add_subplot(gs[1, 2:4])
+    ax_c = fig.add_subplot(gs_mid[0, 2])
+    _plot_ccnorm_hist_intact_vs_zeroed(ax_c, data, letter="C")
+    _standard_panel_heading(ax_c, "C", "Held-out responses")
+
+    ax_d = fig.add_subplot(gs_mid[0, 3])
     if abl is not None:
-        _plot_ablation_r2_pooled(ax_c, abl, cond="zeroed", letter="C")
+        _plot_ablation_r2_pooled(ax_d, abl, cond="zeroed", letter="D")
     else:
-        _plot_ablation_placeholder(ax_c)
-    _standard_panel_heading(ax_c, "C", "Eye-state zeroing")
+        _plot_ablation_placeholder(ax_d)
+    _standard_panel_heading(ax_d, "D", "Eye-state zeroing")
 
-    # Row 3. Translation geometry and recorded covariance closure.
-    ax_d = fig.add_subplot(gs[2, 0])
-    _plot_translation_cosine_panel(ax_d, g["tangent_data"], letter="D")
-    _standard_panel_heading(
-        ax_d, "D", "No universal\ntranslation axis",
-        y=1.060, title_x=0.11, title_size=8.2,
+    ax_e = fig.add_subplot(gs_mid[0, 4])
+    _plot_fem_modulation_intact_vs_zeroed(ax_e, data, abl, letter="E")
+    _standard_panel_heading(ax_e, "E", "FEM modulation")
+    _shift_axes_y([ax_b, ax_c, ax_d, ax_e], 0.035)
+
+    # Row 3. Reafferent geometry.
+    gs_bottom = gs[2, 0].subgridspec(
+        1,
+        6,
+        width_ratios=[0.14, 1.45, 1.35, 1.35, 0.70, 0.46],
+        wspace=0.58,
     )
+    ax_f = fig.add_subplot(gs_bottom[0, 1])
+    if g["tangent_data"] is not None:
+        geom.plot_panel_b(ax_f, g["tangent_data"], n_show=18, letter="F")
+        for txt in list(ax_f.texts):
+            if "charts in response PCA" in txt.get_text() or "local charts shown" in txt.get_text():
+                txt.remove()
+        _pad_axis_limits(ax_f, xfrac=0.04, yfrac=0.06)
+        _move_first_inset_axes(ax_f, [0.055, 0.735, 0.25, 0.25])
+    else:
+        ax_f.text(0.5, 0.5, "tangent maps\nnot found", transform=ax_f.transAxes,
+                  ha="center", va="center", color=geom.ACCENT, fontsize=8)
+        geom.panel_label(ax_f, "F", "Local translation directions\nare image-specific")
+        geom.clean_axes(ax_f)
+    _standard_panel_heading(ax_f, "F", "Image-specific directions")
 
-    ax_e = fig.add_subplot(gs[2, 1])
+    ax_g1 = fig.add_subplot(gs_bottom[0, 2])
     geom.plot_panel_c(
-        ax_e,
+        ax_g1,
         g["spec_df"],
         g["union_df"],
         null_spec_df=g["null_spec_df"],
-        letter="E",
-    )
-    _replace_panel_label_text(ax_e, "Pooled translation", "Compact\nsubspace")
-    leg = ax_e.get_legend()
-    if leg is not None:
-        leg.remove()
-    for artist in list(ax_e.texts):
-        if isinstance(artist, Annotation) and "PR =" in artist.get_text():
-            artist.remove()
-    ax_e.text(
-        0.42,
-        0.22,
-        "PR 9.0\nnull ~31",
-        transform=ax_e.transAxes,
-        ha="left",
-        va="center",
-        fontsize=6.1,
-        color=geom.MODEL,
-        bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="0.85", lw=0.55, alpha=0.94),
-    )
-    ax_e.set_xlabel("Rank")
-    ax_e.set_ylabel("Cum. variance")
-    ax_e.tick_params(labelsize=7)
-    _standard_panel_heading(
-        ax_e, "E", "Compact\nsubspace",
-        y=1.060, title_x=0.11, title_size=8.2,
-    )
-
-    ax_f = fig.add_subplot(gs[2, 2])
-    geom.plot_panel_e(ax_f, g["basis_df"], paths.basis_source_label, letter="F")
-    _replace_panel_label_text(ax_f, "Compactness", "Image-disjoint\ngeneralization")
-    leg = ax_f.get_legend()
-    if leg is not None:
-        leg.remove()
-    for artist in list(ax_f.texts):
-        if isinstance(artist, Annotation) and "k=" in artist.get_text():
-            artist.remove()
-    ax_f.text(
-        0.50,
-        0.20,
-        "k=10: 0.50\nnull 0.11",
-        transform=ax_f.transAxes,
-        ha="left",
-        va="center",
-        fontsize=6.3,
-        color="#202124",
-        bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="0.85", lw=0.55, alpha=0.94),
-    )
-    ax_f.set_ylabel("Held-out variance")
-    ax_f.set_xlabel("Basis k")
-    ax_f.tick_params(labelsize=7)
-    _standard_panel_heading(
-        ax_f, "F", "Image-disjoint\ngeneralization",
-        y=1.060, title_x=0.11, title_size=8.2,
-    )
-
-    ax_g = fig.add_subplot(gs[2, 3])
-    _plot_covariance_closure_subset(
-        ax_g,
-        g["closure_summary_df"],
-        g["closure_metrics_df"],
         letter="G",
     )
-    leg = ax_g.get_legend()
+    _replace_panel_label_text(ax_g1, "Pooled translation", "Compact\nsubspace")
+    leg = ax_g1.get_legend()
     if leg is not None:
         leg.remove()
-    _standard_panel_heading(
-        ax_g, "G", "Predicted FEM\ncovariance",
-        y=1.060, title_x=0.11, title_size=8.2,
+    _standard_panel_heading(ax_g1, "G", "Compact subspace")
+    ax_g2 = fig.add_subplot(gs_bottom[0, 3])
+    geom.plot_panel_e(ax_g2, g["basis_df"], paths.basis_source_label, letter="H")
+    _replace_panel_label_text(ax_g2, "Compactness", "Cross-image\ngeneralization")
+    for txt in list(ax_g2.texts):
+        if "0% image-ID leakage" in txt.get_text():
+            txt.set_text(txt.get_text().replace("\n0% image-ID leakage", ""))
+    leg = ax_g2.get_legend()
+    if leg is not None:
+        leg.remove()
+    _standard_panel_heading(ax_g2, "H", "Cross-image\ngeneralization")
+
+    ax_h = fig.add_subplot(gs_bottom[0, 4])
+    _plot_covariance_closure_subset(
+        ax_h,
+        g["closure_summary_df"],
+        g["closure_metrics_df"],
+        letter="I",
     )
+    leg = ax_h.get_legend()
+    if leg is not None:
+        leg.remove()
+    _standard_panel_heading(ax_h, "I", "Predicted FEM\ncovariance")
 
     for ext in ("png", "pdf", "svg"):
         fig.savefig(out_dir / f"fig3_combined_mechanism.{ext}",
@@ -766,18 +974,15 @@ def compose(
             "panel_f_closure_audit_file": str(paths.panel_f_closure_audit_file),
         },
         "panel_mapping": {
-            "A": "minimal retinal-input digital twin schematic",
-            "B": "current Figure 3D empirical vs model 1-alpha",
-            "C": "current Figure 3I zeroed extraretinal input vs intact single-trial r2",
-            "D": "same-axis cross-image cosine histograms from current geometry Figure 4A tangent data",
-            "E": "current geometry Figure 4B compact translation-tangent subspace",
-            "F": "current geometry Figure 4C image-disjoint generalization",
-            "G": "current geometry Figure 4E covariance closure subset (none and global_rate+target_pc1)",
-            "moved_to_extended": [
-                "current Figure 3B example reliable-neuron PSTH",
-                "current Figure 3C held-out response validation histogram",
-                "full architecture schematic raster",
-            ],
+            "A": "current Figure 3A schematic",
+            "B": "example reliable-neuron PSTH with behavior-input and zeroed-behavior predictions",
+            "C": "intact and behavior-zeroed ccnorm histograms from behavior_vs_vision_within_model cache",
+            "D": "current Figure 3I zeroed extraretinal input vs intact single-trial r2",
+            "E": "current Figure 3D empirical vs model 1-alpha",
+            "F": "current geometry Figure 4A local translation charts",
+            "G": "current geometry Figure 4B compact translation-tangent subspace",
+            "H": "current geometry Figure 4C image-disjoint generalization",
+            "I": "current geometry Figure 4E covariance closure subset (none and global_rate+target_pc1)",
         },
     }
     _write_sidecars(out_dir, paths, manifest)

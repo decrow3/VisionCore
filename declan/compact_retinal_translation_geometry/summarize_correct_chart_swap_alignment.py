@@ -207,7 +207,7 @@ def _pseudo_bootstrap_rows(session_rows: list[dict[str, Any]], *, seed: int, n_b
         "true_minus_rf_readout",
         "true_minus_shuffled_eye",
     ]
-    groups: dict[tuple[str, int, str, str, str, str, str], list[dict[str, Any]]] = {}
+    groups: dict[tuple[str, int, str, str, str, str, str, float, float, str], list[dict[str, Any]]] = {}
     for row in session_rows:
         if "mean_true_minus_wrong" not in row:
             continue
@@ -218,13 +218,27 @@ def _pseudo_bootstrap_rows(session_rows: list[dict[str, Any]], *, seed: int, n_b
             str(row.get("unit_score_subset", "all_units")),
             str(row.get("wrong_chart_pool", "unknown")),
             str(row.get("wrong_chart_match_features", "norm_only")),
+            str(row.get("pseudo_control_mode", "poisson")),
+            float(row.get("pseudo_control_scale", 1.0)),
+            float(row.get("pseudo_injection_noise_sd", 0.0)),
             str(row.get("sample_set")),
         )
         groups.setdefault(key, []).append(row)
 
     rng = np.random.default_rng(int(seed))
     out: list[dict[str, Any]] = []
-    for (projection, k, chart_space, unit_subset, wrong_pool, wrong_match, sample_set), rows in sorted(groups.items()):
+    for (
+        projection,
+        k,
+        chart_space,
+        unit_subset,
+        wrong_pool,
+        wrong_match,
+        pseudo_mode,
+        pseudo_scale,
+        pseudo_noise_sd,
+        sample_set,
+    ), rows in sorted(groups.items()):
         for metric in metrics:
             vals = np.asarray([float(r.get(f"mean_{metric}", float("nan"))) for r in rows], dtype=np.float64)
             vals = vals[np.isfinite(vals)]
@@ -237,6 +251,9 @@ def _pseudo_bootstrap_rows(session_rows: list[dict[str, Any]], *, seed: int, n_b
                     "unit_score_subset": unit_subset,
                     "wrong_chart_pool": wrong_pool,
                     "wrong_chart_match_features": wrong_match,
+                    "pseudo_control_mode": pseudo_mode,
+                    "pseudo_control_scale": float(pseudo_scale),
+                    "pseudo_injection_noise_sd": float(pseudo_noise_sd),
                     "sample_set": sample_set,
                     "metric": metric,
                     "n_sessions": int(vals.size),

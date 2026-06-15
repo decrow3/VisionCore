@@ -24,10 +24,12 @@ from .covariance_optimality import (
     CovarianceEstimate,
     alignment_rows,
     coding_covariance_from_j,
+    covariance_residual_after_subspace,
     counts_and_derivatives_from_shifted_rates,
     covariance_fisher_by_time,
     covariance_spectrum_row,
     fisher_metric_row,
+    geometry_covariance_rows,
     independent_fisher_by_time,
     movement_covariance_pooled_residual,
     movement_covariance_within_pair,
@@ -38,12 +40,14 @@ from .covariance_optimality import (
     scaled_condition_name,
     sensitivity_metric_rows,
     signal_covariance_from_pair_means,
+    top_eigenvectors,
     trajectories_for_scaled_family,
     write_csv_rows,
 )
 from .image_selection import load_natural_images
 from .lagcube_information import finite_difference_shift_set, run_shifted_lag_cube_rates
 from .pipeline import _example_seed
+from .population import build_analysis_population
 from .retinal_examples import model_lag_cubes_from_image_trace
 
 
@@ -51,10 +55,18 @@ from .retinal_examples import model_lag_cubes_from_image_trace
 class CovOptConfig:
     from_run_dir: Path
     run_name: str = "covopt"
+    device: str | None = None
     scales: tuple[float, ...] = DEFAULT_SCALES
     condition_families: tuple[str, ...] = ("scaled_real",)
     max_pairs: int = 0
+    population_source: str = "metadata"
     population_mode: str = "sampled_units"
+    analysis_population_size: int = 0
+    analysis_population_selection: str = "top_performance"
+    analysis_grid_position_mode: str = "center"
+    analysis_grid_stride: int = 1
+    analysis_performance_metric: str = "ccnorm"
+    analysis_deduplicate_units: bool = True
     center_rate_cache_dir: Path | None = Path("outputs/active_sensing_movie_information/figure5_natural_image_population_checks_5_to_9")
     use_center_rate_cache: bool = True
     batch_size: int | None = None
@@ -63,7 +75,10 @@ class CovOptConfig:
     rate_gains: tuple[float, ...] = DEFAULT_RATE_GAINS
     noise_floor_multipliers: tuple[float, ...] = DEFAULT_NOISE_FLOOR_MULTIPLIERS
     k_list: tuple[int, ...] = DEFAULT_K_LIST
+    geometry_k_list: tuple[int, ...] = DEFAULT_K_LIST
     recompute: bool = False
+    refresh_results: bool = False
+    skip_sensitivity: bool = False
 
 
 def _as_int(row: dict[str, Any], key: str, default: int = 0) -> int:
@@ -181,6 +196,39 @@ def _population_from_metadata_rows(model: Any, rows: list[dict[str, str]], *, mo
     )
 
 
+def _build_covopt_population(
+    *,
+    config: CovOptConfig,
+    model: Any,
+    population_rows: list[dict[str, str]],
+    seed: int,
+    out_dir: Path,
+):
+    """Build the response population for covariance-optimality rates."""
+    source = str(config.population_source)
+    if source == "metadata":
+        population = _population_from_metadata_rows(model, population_rows, mode=config.population_mode)
+        write_csv_rows(out_dir / "metadata" / "covopt_population_units.csv", _population_metadata_subset(population_rows, config.population_mode))
+        return population
+    if source != "analysis":
+        raise ValueError("population_source must be 'metadata' or 'analysis'.")
+    n = int(config.analysis_population_size)
+    if n <= 0:
+        raise ValueError("--analysis-population-size must be positive when --population-source=analysis.")
+    population, rows = build_analysis_population(
+        model,
+        N=n,
+        rng=np.random.default_rng(int(seed)),
+        selection=str(config.analysis_population_selection),
+        performance_metric=str(config.analysis_performance_metric),
+        grid_position_mode=str(config.analysis_grid_position_mode),
+        grid_stride=int(config.analysis_grid_stride),
+        deduplicate_units=bool(config.analysis_deduplicate_units),
+    )
+    write_csv_rows(out_dir / "metadata" / "covopt_population_units.csv", rows)
+    return population
+
+
 def _pair_records(run_dir: Path, *, max_pairs: int = 0) -> list[dict[str, Any]]:
     """Return unique paired image/crop/trace records covered by Figure 5 outputs."""
     rows = read_csv_rows(run_dir / "metadata" / "05_information_series_records.csv")
@@ -224,7 +272,9 @@ def _row_cache_id(record: dict[str, Any]) -> str:
         f"{record['example_id']}__{record.get('kind', '')}__image{int(record['image_index']):03d}"
         f"__crop{int(record['crop_rank']):02d}__{record['family']}__D{scale_label(float(record['scale_D']))}"
         f"__step{scale_label(float(record.get('fisher_step_arcmin', 0.0)))}"
-        f"__pop{record.get('population_mode', 'unknown')}_N{int(record.get('population_n', 0))}"
+        f"__pop{record.get('population_source', 'metadata')}_{record.get('population_mode', 'unknown')}"
+        f"_{record.get('population_selection', '')}_{record.get('grid_position_mode', '')}"
+        f"_N{int(record.get('population_n', 0))}"
     )
 
 
@@ -397,7 +447,10 @@ def _compute_mu_j_cache(
                     "crop_center_offset_x_px": crop_offset[0],
                     "crop_center_offset_y_px": crop_offset[1],
                     "fisher_step_arcmin": float(fisher_step_arcmin),
+                    "population_source": str(config.population_source),
                     "population_mode": str(config.population_mode),
+                    "population_selection": str(config.analysis_population_selection),
+                    "grid_position_mode": str(config.analysis_grid_position_mode),
                     "population_n": int(population.N),
                     "t_max": int(t_max),
                 }
@@ -500,6 +553,10 @@ def _compute_results(
     for i, row in enumerate(records):
         key = (str(row["family"]), float(row["scale_D"]), str(row.get("kind", "")))
         by_group.setdefault(key, []).append(i)
+    print(
+        f"Computing covariance/Fisher results for {len(records)} rows across {len(by_group)} groups",
+        flush=True,
+    )
 
     signal_reference: dict[tuple[str, str], tuple[float, np.ndarray]] = {}
     for family in sorted({key[0] for key in by_group}):
@@ -556,7 +613,14 @@ def _compute_results(
     row_metrics: list[dict[str, Any]] = []
     sensitivity_rows: list[dict[str, Any]] = []
     alignment: list[dict[str, Any]] = []
-    for (family, scale, kind), ix in by_group.items():
+    geometry_rows: list[dict[str, Any]] = []
+    group_items = list(by_group.items())
+    for group_idx, ((family, scale, kind), ix) in enumerate(group_items, start=1):
+        print(
+            f"[results {group_idx}/{len(group_items)}] family={family} kind={kind} "
+            f"D={scale:g} rows={len(ix)}",
+            flush=True,
+        )
         primary_cov = covariance_estimates[(family, scale, kind, "pooled_residual")].covariance
         coding_cov = coding_covariance_from_j(j_all[ix])
         if (family, kind) in signal_reference:
@@ -576,16 +640,47 @@ def _compute_results(
         for row in group_alignment:
             row["signal_reference_scale_D"] = float(reference_scale)
         alignment.extend(group_alignment)
+        group_geometry_rows = geometry_covariance_rows(
+            family=family,
+            scale=scale,
+            kind=kind,
+            sigma_fem=primary_cov,
+            coding_cov=coding_cov,
+            signal_cov=signal_cov,
+            k_list=config.geometry_k_list,
+        )
+        for row in group_geometry_rows:
+            row["signal_reference_scale_D"] = float(reference_scale)
+        geometry_rows.extend(group_geometry_rows)
+        geometry_residuals: dict[int, np.ndarray] = {}
+        for k in config.geometry_k_list:
+            basis = top_eigenvectors(primary_cov, int(k))
+            _compact_cov, residual_cov = covariance_residual_after_subspace(primary_cov, basis)
+            geometry_residuals[int(k)] = residual_cov
         for i in ix:
             row = records[i]
             f_ind = independent_fisher_by_time(mu_all[i], j_all[i])
-            f_cov_pose = f_ind.copy()
+            f_cov_pose = covariance_fisher_by_time(
+                mu_all[i],
+                j_all[i],
+                None,
+                ridge_frac=float(config.ridge_frac),
+            )
             f_cov_blind = covariance_fisher_by_time(
                 mu_all[i],
                 j_all[i],
                 primary_cov,
                 ridge_frac=float(config.ridge_frac),
             )
+            f_geometry_by_k = {
+                int(k): covariance_fisher_by_time(
+                    mu_all[i],
+                    j_all[i],
+                    residual_cov,
+                    ridge_frac=float(config.ridge_frac),
+                )
+                for k, residual_cov in geometry_residuals.items()
+            }
             row_metrics.append(
                 fisher_metric_row(
                     row_id=i,
@@ -597,6 +692,19 @@ def _compute_results(
                     expected_spikes_t=expected_all[i],
                 )
             )
+            for k, f_geom in sorted(f_geometry_by_k.items()):
+                geom_row = fisher_metric_row(
+                    row_id=i,
+                    record=row,
+                    family=family,
+                    scale=scale,
+                    regime=f"cov_geometry_aware_k{k}",
+                    f_by_time=f_geom,
+                    expected_spikes_t=expected_all[i],
+                )
+                geom_row["geometry_k"] = int(k)
+                geom_row["geometry_mode"] = "movement_covariance_top_eigen_residual"
+                row_metrics.append(geom_row)
             row_metrics.append(
                 fisher_metric_row(
                     row_id=i,
@@ -619,33 +727,43 @@ def _compute_results(
                     expected_spikes_t=expected_all[i],
                 )
             )
-            sensitivity_rows.extend(
-                sensitivity_metric_rows(
-                    row_id=i,
-                    record=row,
-                    family=family,
-                    scale=scale,
-                    mu_tn=mu_all[i],
-                    j_tnd=j_all[i],
-                    sigma_extra=primary_cov,
-                    rate_gains=config.rate_gains,
-                    noise_floor_multipliers=config.noise_floor_multipliers,
-                    ridge_frac=float(config.ridge_frac),
+            if not config.skip_sensitivity:
+                sensitivity_rows.extend(
+                    sensitivity_metric_rows(
+                        row_id=i,
+                        record=row,
+                        family=family,
+                        scale=scale,
+                        mu_tn=mu_all[i],
+                        j_tnd=j_all[i],
+                        sigma_extra=primary_cov,
+                        rate_gains=config.rate_gains,
+                        noise_floor_multipliers=config.noise_floor_multipliers,
+                        ridge_frac=float(config.ridge_frac),
+                    )
                 )
-            )
+        print(
+            f"[results {group_idx}/{len(group_items)}] done family={family} kind={kind} D={scale:g}",
+            flush=True,
+        )
 
     out_dir.joinpath("cache").mkdir(parents=True, exist_ok=True)
     out_dir.joinpath("results").mkdir(parents=True, exist_ok=True)
+    print("Writing covariance/Fisher result tables", flush=True)
+    sensitivity_path = out_dir / "results" / "covopt_sensitivity_row_metrics.csv"
     np.savez_compressed(out_dir / "cache" / "covopt_covariances.npz", **cov_arrays)
     write_csv_rows(out_dir / "results" / "covopt_covariance_spectra.csv", cov_rows)
     write_csv_rows(out_dir / "results" / "covopt_alignment_diagnostics.csv", alignment)
+    write_csv_rows(out_dir / "results" / "covopt_geometry_diagnostics.csv", geometry_rows)
     write_csv_rows(out_dir / "results" / "covopt_row_metrics.csv", row_metrics)
-    write_csv_rows(out_dir / "results" / "covopt_sensitivity_row_metrics.csv", sensitivity_rows)
+    if not config.skip_sensitivity or not sensitivity_path.exists():
+        write_csv_rows(sensitivity_path, sensitivity_rows)
     return {
         "row_metrics": str(out_dir / "results" / "covopt_row_metrics.csv"),
         "sensitivity_row_metrics": str(out_dir / "results" / "covopt_sensitivity_row_metrics.csv"),
         "covariance_spectra": str(out_dir / "results" / "covopt_covariance_spectra.csv"),
         "alignment_diagnostics": str(out_dir / "results" / "covopt_alignment_diagnostics.csv"),
+        "geometry_diagnostics": str(out_dir / "results" / "covopt_geometry_diagnostics.csv"),
         "mu_j_cache": str(out_dir / "cache" / "covopt_mu_j.npz"),
         "covariance_cache": str(out_dir / "cache" / "covopt_covariances.npz"),
     }
@@ -662,7 +780,7 @@ def run_covariance_optimality(config: CovOptConfig) -> dict[str, Any]:
     config = CovOptConfig(**{**asdict(config), "from_run_dir": from_run_dir})
     out_dir = _output_dir(config)
     summary_path = out_dir / "metadata" / "covopt_run_summary.json"
-    if summary_path.exists() and not config.recompute:
+    if summary_path.exists() and not config.recompute and not config.refresh_results:
         return _load_json(summary_path)
 
     out_dir.joinpath("metadata").mkdir(parents=True, exist_ok=True)
@@ -676,23 +794,44 @@ def run_covariance_optimality(config: CovOptConfig) -> dict[str, Any]:
     population_rows = read_csv_rows(from_run_dir / "metadata" / "00_population_units.csv")
     pair_records = _pair_records(from_run_dir, max_pairs=config.max_pairs)
 
-    write_json(out_dir / "metadata" / "covopt_run_config.json", {
+    run_config_payload = {
         **asdict(config),
         "from_run_dir": str(from_run_dir),
+        "device": config.device,
+        "effective_model_device": None,
         "t_max": t_max,
         "seed": seed,
         "batch_size": batch_size,
         "fisher_step_arcmin": fisher_step_arcmin,
         "n_pairs": len(pair_records),
+        "population_source": config.population_source,
         "population_mode": config.population_mode,
+        "analysis_population_size": int(config.analysis_population_size),
+        "analysis_population_selection": str(config.analysis_population_selection),
+        "analysis_grid_position_mode": str(config.analysis_grid_position_mode),
+        "analysis_grid_stride": int(config.analysis_grid_stride),
+        "analysis_performance_metric": str(config.analysis_performance_metric),
+        "analysis_deduplicate_units": bool(config.analysis_deduplicate_units),
+        "geometry_k_list": list(config.geometry_k_list),
         "center_rate_cache_dir": None if config.center_rate_cache_dir is None else str(config.center_rate_cache_dir),
         "use_center_rate_cache": bool(config.use_center_rate_cache),
-    })
+    }
+    write_json(out_dir / "metadata" / "covopt_run_config.json", run_config_payload)
 
     existing = None if config.recompute else _load_existing_arrays(out_dir)
     if existing is None:
-        model, _model_info, device = load_digital_twin()
-        population = _population_from_metadata_rows(model, population_rows, mode=config.population_mode)
+        model, _model_info, device = load_digital_twin(device=config.device)
+        effective_model_device = str(next(model.model.parameters()).device)
+        print(f"CovOpt requested device={config.device!r}; effective model device={effective_model_device}")
+        run_config_payload["effective_model_device"] = effective_model_device
+        write_json(out_dir / "metadata" / "covopt_run_config.json", run_config_payload)
+        population = _build_covopt_population(
+            config=config,
+            model=model,
+            population_rows=population_rows,
+            seed=seed,
+            out_dir=out_dir,
+        )
         trace_by_id = _load_trace_examples_from_metadata(from_run_dir, model, t_max=t_max)
         image_by_index = _load_images_for_crops(crop_rows)
         records, arrays = _compute_mu_j_cache(
@@ -721,6 +860,9 @@ def run_covariance_optimality(config: CovOptConfig) -> dict[str, Any]:
         "n_pairs": len(pair_records),
         "scales": list(config.scales),
         "condition_families": list(config.condition_families),
+        "population_source": str(config.population_source),
+        "population_mode": str(config.population_mode),
+        "geometry_k_list": list(config.geometry_k_list),
         "outputs": outputs,
     }
     write_json(summary_path, summary)
@@ -731,10 +873,18 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--from-run-dir", required=True, type=Path)
     parser.add_argument("--run-name", default="covopt")
+    parser.add_argument("--device", default=None)
     parser.add_argument("--scales", default=",".join(str(v) for v in DEFAULT_SCALES))
     parser.add_argument("--condition-families", default="scaled_real")
     parser.add_argument("--max-pairs", type=int, default=0)
+    parser.add_argument("--population-source", choices=("metadata", "analysis"), default="metadata")
     parser.add_argument("--population-mode", choices=("sampled_units", "metadata_all"), default="sampled_units")
+    parser.add_argument("--analysis-population-size", type=int, default=0)
+    parser.add_argument("--analysis-population-selection", choices=("top_performance", "random_reliable"), default="top_performance")
+    parser.add_argument("--analysis-grid-position-mode", choices=("random", "center", "full_grid"), default="center")
+    parser.add_argument("--analysis-grid-stride", type=int, default=1)
+    parser.add_argument("--analysis-performance-metric", default="ccnorm")
+    parser.add_argument("--analysis-deduplicate-units", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--center-rate-cache-dir", type=Path, default=CovOptConfig.center_rate_cache_dir)
     parser.add_argument("--use-center-rate-cache", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--batch-size", type=int, default=None)
@@ -743,7 +893,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rate-gains", default=",".join(str(v) for v in DEFAULT_RATE_GAINS))
     parser.add_argument("--noise-floor-multipliers", default=",".join(str(v) for v in DEFAULT_NOISE_FLOOR_MULTIPLIERS))
     parser.add_argument("--k-list", default=",".join(str(v) for v in DEFAULT_K_LIST))
+    parser.add_argument("--geometry-k-list", default=",".join(str(v) for v in DEFAULT_K_LIST))
     parser.add_argument("--recompute", action="store_true")
+    parser.add_argument(
+        "--refresh-results",
+        action="store_true",
+        help="Recompute result tables from the saved mu/J cache without rerendering rate rows.",
+    )
+    parser.add_argument(
+        "--skip-sensitivity",
+        action="store_true",
+        help="Preserve an existing sensitivity table instead of recomputing the gain/noise sweep.",
+    )
     return parser.parse_args()
 
 
@@ -757,10 +918,18 @@ def main() -> None:
         CovOptConfig(
             from_run_dir=args.from_run_dir,
             run_name=args.run_name,
+            device=args.device,
             scales=tuple(parse_float_list(args.scales)),
             condition_families=families,
             max_pairs=int(args.max_pairs),
+            population_source=str(args.population_source),
             population_mode=str(args.population_mode),
+            analysis_population_size=int(args.analysis_population_size),
+            analysis_population_selection=str(args.analysis_population_selection),
+            analysis_grid_position_mode=str(args.analysis_grid_position_mode),
+            analysis_grid_stride=int(args.analysis_grid_stride),
+            analysis_performance_metric=str(args.analysis_performance_metric),
+            analysis_deduplicate_units=bool(args.analysis_deduplicate_units),
             center_rate_cache_dir=args.center_rate_cache_dir,
             use_center_rate_cache=bool(args.use_center_rate_cache),
             batch_size=args.batch_size,
@@ -769,7 +938,10 @@ def main() -> None:
             rate_gains=tuple(parse_float_list(args.rate_gains)),
             noise_floor_multipliers=tuple(parse_float_list(args.noise_floor_multipliers)),
             k_list=tuple(int(v) for v in parse_float_list(args.k_list)),
+            geometry_k_list=tuple(int(v) for v in parse_float_list(args.geometry_k_list)),
             recompute=bool(args.recompute),
+            refresh_results=bool(args.refresh_results),
+            skip_sensitivity=bool(args.skip_sensitivity),
         )
     )
     print(json.dumps(summary, indent=2, sort_keys=True))

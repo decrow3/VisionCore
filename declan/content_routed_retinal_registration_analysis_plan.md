@@ -95,6 +95,31 @@ and unit-shuffled geometry, but not shuffled-eye compact. This supports a
 compact-channel effect but does not establish trial-specific eye-trace
 prediction.
 
+### Current A2 Status After Implementation
+
+The A2 chart-swap branch is now implemented and materially constrained by the
+result.
+
+What is established:
+
+- The chart-swap machinery can detect chart-aligned retinal-displacement
+  structure when it is present: pseudo-spike and split-aware linear chart
+  injection controls pass clearly.
+- The broad all-unit recorded effect is not robust under the tested split rules.
+- The cleanest recorded positive lives in a targeted subset,
+  `gain_bottom50`, under the Allen-dominated `drift_trial_disjoint n=5`
+  baseline.
+
+What is not established:
+
+- A stable all-session recorded bridge from correct chart to held-out response
+  differences.
+- A preregistered targeted-subset claim that survives fold/session sensitivity.
+
+The practical implication is that A2 should now be treated as a diagnostic
+branch, not a main-claim rescue path, unless a single preregistered rerun
+survives with both Allen and Logan included.
+
 ## Claim Discipline
 
 ### Safe Claim
@@ -103,7 +128,7 @@ Fixational eye movements introduce a reafferent component into V1 activity that
 is compact and image-general: displacement-induced covariance is concentrated in
 a shared low-dimensional subspace whose coordinate meaning is image-specific.
 
-### Stronger Claim If This Plan Lands
+### Stronger Claim If A Preregistered Targeted Rerun Lands
 
 The correct image-dependent translation chart explains recorded response
 differences better than wrong charts and gain-only controls. This would show
@@ -134,8 +159,9 @@ A4: contrastive information lower bound
 A5: task-conditioned denoising, only after a task is defined
 ```
 
-The next concrete deliverable is `A2`. `A0` and `A1` are required guardrails.
-`A3` and `A4` are stretch analyses. `A5` should wait.
+The next concrete deliverable was `A2`, and it has now been implemented. `A0`
+and `A1` remain required guardrails. `A3` and `A4` should stay stretch
+analyses unless a preregistered targeted A2 rerun survives. `A5` should wait.
 
 ## A0: Twin Pseudo-Spike Positive Control
 
@@ -456,6 +482,13 @@ effect is stronger or cleaner in drift-only windows
 leakage audits pass
 ```
 
+For a paper-facing targeted positive, add two stricter requirements:
+
+```text
+subset rule is defined without using held-out response outcomes
+result survives a split rule that includes both Allen and Logan
+```
+
 ### Interpretation
 
 Positive:
@@ -465,11 +498,22 @@ Positive:
 > This supports the view that the compact translation geometry is
 > content-routed, not merely global gain or generic low-dimensional covariance.
 
+Current status note:
+
+> The implemented branch does not yet meet this standard. The closest result is
+> a gain-bottom compact positive under `drift_trial_disjoint n=5`, but Logan
+> drops out there and the effect becomes unstable under split rules that restore
+> broader session coverage.
+
 Null:
 
 > The compact geometry predicts recorded covariance, but this pairwise test does
 > not show that the correct image-specific routing matrix explains held-out
 > response differences at the sample level.
+
+Current status note:
+
+> This is the present default interpretation for the all-unit recorded effect.
 
 True chart beats random/unit-shuffle but not wrong chart:
 
@@ -480,6 +524,11 @@ True chart beats wrong chart only before gain controls:
 
 > The effect may be dominated by gain-like or baseline response structure; do
 > not promote as content-routing evidence.
+
+Current status note:
+
+> The implemented branch lands closest to a mix of this regime and the null
+> regime once fold/session sensitivity is taken seriously.
 
 ## A3: Conditional Pose-Ranking Observer
 
@@ -838,6 +887,10 @@ Interpretation:
 > The compact translation geometry is content-routed. The image-specific chart
 > matters for explaining recorded response differences.
 
+Status after implementation:
+
+> Not reached.
+
 ### Partial Positive
 
 ```text
@@ -849,6 +902,11 @@ Interpretation:
 
 > Compact geometry matters, but this test does not resolve image-specific
 > routing.
+
+Status after implementation:
+
+> This is the most generous read of the targeted gain-bottom hint, but it is
+> not yet stable enough to promote.
 
 ### Gain-Dominated
 
@@ -863,6 +921,11 @@ Interpretation:
 > The apparent chart effect is likely dominated by gain or baseline response
 > structure.
 
+Status after implementation:
+
+> Some early variants lived here before stricter controls and fold diagnostics
+> were added.
+
 ### Null
 
 ```text
@@ -874,10 +937,16 @@ Interpretation:
 > The compact geometry predicts covariance but does not explain held-out
 > pairwise response directions at the current SNR/model precision.
 
+Status after implementation:
+
+> This is the conservative current read for the all-unit recorded branch, with
+> the caveat that a targeted subset hint remains diagnostically interesting.
+
 ## What Not To Spend More Time On
 
 Do not prioritize:
 
+- more broad chart-swap split/variant sweeps,
 - another content-blind pose-aware GLM,
 - a 24-session production sweep of the failed GLM ladder,
 - more unconstrained eye-position decoders,
@@ -885,6 +954,14 @@ Do not prioritize:
 - fixed-alpha forward denoising,
 - generic "project out `U_trans`" denoising without a task direction,
 - claims about real FEM optimality.
+
+Do prioritize, if the branch continues at all:
+
+- per-session effect atlases,
+- pair-composition audits for the clean baseline,
+- one preregistered targeted subset rerun with fixed fold rule and Allen+Logan
+  coverage,
+- stopping the branch cleanly if that rerun fails.
 
 ## Paper-Facing Interpretation
 
@@ -896,10 +973,16 @@ The analysis program should support this framing:
 > makes the reafferent structure identifiable and potentially discountable,
 > while making exact retinal-pose interpretation image-dependent.
 
-The main new analysis tests the second sentence directly:
+The main new analysis tested the second sentence directly:
 
 > Does the correct image-dependent chart explain recorded response differences
 > better than the wrong chart?
 
-That is the sharpest next question.
+That was the sharpest next question. The sharpest next follow-up is narrower:
 
+> Is the gain-bottom positive a real biological subpopulation effect, or a
+> fold/session-composition artifact?
+
+If that question cannot be answered positively by one preregistered rerun, this
+branch should remain a useful diagnostic constraint rather than a promoted
+recorded-data bridge.

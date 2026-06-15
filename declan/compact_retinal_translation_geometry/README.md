@@ -109,3 +109,23 @@ from supplement or exploratory status.
 The current audit runner consumes the promoted metric-validation tables when
 present. Recorded displacement decoding remains not-run until the required
 repeat-pair response/eye-position objects are available.
+
+## Chart-Swap Diagnostics
+
+For the chart-swap branch, use the diagnostic atlas to compare split variants
+and inspect pair composition without rerunning the expensive scorer:
+
+```bash
+uv run python -m declan.compact_retinal_translation_geometry.diagnose_chart_swap_alignment \
+  --roots outputs/compact_retinal_translation_geometry/all_sessions_nfold5_gainbottom_unitdot_v1,outputs/compact_retinal_translation_geometry/all_sessions_nfold50_gainbottom_unitdot_v1 \
+  --labels drift_trial_n5,drift_trial_n50 \
+  --projection-control global_rate \
+  --basis-k 10 \
+  --chart-space compact \
+  --unit-score-subsets all_units,gain_bottom50 \
+  --composition-root-label drift_trial_n5 \
+  --composition-unit-score-subset gain_bottom50
+```
+
+This writes a per-session atlas plus pair-composition tables and figures under
+`outputs/compact_retinal_translation_geometry/chart_swap_diagnostics/`.

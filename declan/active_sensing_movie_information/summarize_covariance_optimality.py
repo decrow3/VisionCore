@@ -111,18 +111,47 @@ def paired_contrasts(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
         key = (pair_key(row), str(row["family"]), str(row.get("kind", "")), fnum(row, "scale_D"))
         by_key[(key, str(row["regime"]))] = fnum(row, "final_fisher_trace_per_spike")
 
-    contrasts: dict[tuple[str, str, float, str], list[float]] = {}
-    for key_regime, aware in by_key.items():
-        key, regime = key_regime
-        if regime != "cov_pose_aware":
-            continue
+    contrast_by_pair: dict[tuple[tuple[str, str, str, str], str, str, float, str], float] = {}
+    keys = sorted({key for key, _regime in by_key})
+    for key in keys:
+        aware = by_key.get((key, "cov_pose_aware"))
         blind = by_key.get((key, "cov_pose_blind"))
         ind = by_key.get((key, "independent_pose_aware"))
+        geometry_items = {
+            regime: value
+            for (candidate_key, regime), value in by_key.items()
+            if candidate_key == key and str(regime).startswith("cov_geometry_aware")
+        }
         _pair, family, kind, scale = key
+        if aware is None:
+            continue
         if blind is not None:
-            contrasts.setdefault((family, kind, scale, "pose_gap"), []).append(aware - blind)
+            contrast_by_pair[(_pair, family, kind, scale, "pose_gap")] = aware - blind
+        if ind is not None:
+            contrast_by_pair[(_pair, family, kind, scale, "independent_minus_cov_pose_aware")] = ind - aware
         if ind is not None and blind is not None:
-            contrasts.setdefault((family, kind, scale, "independent_optimism_gap"), []).append(ind - blind)
+            contrast_by_pair[(_pair, family, kind, scale, "independent_minus_cov_pose_blind")] = ind - blind
+        for regime, geometry in geometry_items.items():
+            suffix = str(regime).removeprefix("cov_geometry_aware_")
+            contrast_by_pair[(_pair, family, kind, scale, f"pose_to_geometry_gap_{suffix}")] = aware - geometry
+            if blind is not None:
+                contrast_by_pair[(_pair, family, kind, scale, f"geometry_to_blind_gap_{suffix}")] = geometry - blind
+                contrast_by_pair[(_pair, family, kind, scale, f"geometry_fraction_of_pose_gap_{suffix}")] = (
+                    (geometry - blind) / (aware - blind)
+                    if abs(aware - blind) > 1e-12
+                    else float("nan")
+                )
+
+    corrected_by_pair: dict[tuple[tuple[str, str, str, str], str, str, float, str], float] = {}
+    for (pair, family, kind, scale, contrast), value in contrast_by_pair.items():
+        baseline = contrast_by_pair.get((pair, family, kind, 0.0, contrast))
+        if baseline is None:
+            continue
+        corrected_by_pair[(pair, family, kind, scale, f"{contrast}_minus_D0")] = value - baseline
+
+    contrasts: dict[tuple[str, str, float, str], list[float]] = {}
+    for (_pair, family, kind, scale, contrast), value in {**contrast_by_pair, **corrected_by_pair}.items():
+        contrasts.setdefault((family, kind, scale, contrast), []).append(value)
 
     out: list[dict[str, Any]] = []
     for (family, kind, scale, contrast), vals in sorted(contrasts.items()):
@@ -251,7 +280,9 @@ def summarize_alignment(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
 
 
 def plot_scale_curves(scale_summary: list[dict[str, Any]], path: Path) -> None:
-    regimes = ("independent_pose_aware", "cov_pose_aware", "cov_pose_blind")
+    regimes = ["independent_pose_aware", "cov_pose_aware"]
+    regimes.extend(sorted({str(row["regime"]) for row in scale_summary if str(row["regime"]).startswith("cov_geometry_aware")}))
+    regimes.append("cov_pose_blind")
     colors = {
         "independent_pose_aware": "#2b6cb0",
         "cov_pose_aware": "#2f855a",
@@ -271,8 +302,9 @@ def plot_scale_curves(scale_summary: list[dict[str, Any]], path: Path) -> None:
                 x = np.asarray([fnum(row, "scale_D") for row in rows])
                 y = np.asarray([fnum(row, "mean") for row in rows])
                 e = np.asarray([fnum(row, "sem", 0.0) for row in rows])
-                ax.plot(x, y, marker="o", lw=2.0, color=colors[regime], label=regime)
-                ax.fill_between(x, y - e, y + e, color=colors[regime], alpha=0.15, linewidth=0)
+                color = colors.get(regime, None)
+                ax.plot(x, y, marker="o", lw=2.0, color=color, label=regime)
+                ax.fill_between(x, y - e, y + e, color=color, alpha=0.15, linewidth=0)
             ax.axvline(1.0, color="0.2", lw=1.0, ls="--")
             ax.set_title(f"{family} / {kind}")
             ax.set_xlabel("movement scale D")
@@ -372,12 +404,16 @@ def write_summary_md(
         row for row in contrasts
         if row["contrast"] == "pose_gap" and np.isclose(fnum(row, "scale_D"), 1.0)
     ]
+    pose_corrected_at_empirical = [
+        row for row in contrasts
+        if row["contrast"] == "pose_gap_minus_D0" and np.isclose(fnum(row, "scale_D"), 1.0)
+    ]
     lines = [
         "# Covariance-Aware FEM Optimality Summary",
         "",
-        "Primary interpretation: pose-aware minus pose-blind covariance-aware Fisher efficiency.",
+        "Primary interpretation: D=0-corrected pose-aware minus pose-blind covariance-aware Fisher efficiency.",
         "",
-        "## Pose gap at empirical scale",
+        "## Pose gap at empirical scale, raw",
         "",
     ]
     if pose_at_empirical:
@@ -388,6 +424,15 @@ def write_summary_md(
             )
     else:
         lines.append("- No D=1 pose-gap rows found.")
+    lines.extend(["", "## Pose gap at empirical scale, D0-corrected", ""])
+    if pose_corrected_at_empirical:
+        for row in pose_corrected_at_empirical:
+            lines.append(
+                f"- {row['family']} / {row['kind']}: mean={fnum(row, 'mean'):.6g}, "
+                f"SEM={fnum(row, 'sem'):.6g}, n={int(row['n'])}"
+            )
+    else:
+        lines.append("- No D=1 D0-corrected pose-gap rows found.")
     lines.extend(["", "## Curve labels", ""])
     for row in decision:
         lines.append(

@@ -31,6 +31,12 @@ SCALE_CONDITIONS = (
     ("real_fem", 1.0, "1.0x real"),
     ("scaled_real_1.5", 1.5, "1.5x"),
 )
+SCALE_FAMILY_ORDER = (
+    "scaled real",
+    "matched phase cloud",
+    "order shuffled",
+    "static center",
+)
 THRESHOLD_CONTRASTS = (
     ("real_fem", "static_center"),
     ("real_fem", "static_phase_cloud_matched_positions"),
@@ -288,9 +294,73 @@ def plot_axis_specificity(out_dir: Path, reliability_rows: list[dict[str, str]])
     return path
 
 
+def parse_scaled_condition(condition: str) -> tuple[str, float] | None:
+    if condition == "static_center":
+        return "static center", 0.0
+    if condition == "real_fem":
+        return "scaled real", 1.0
+    if condition == "static_phase_cloud_matched_positions":
+        return "matched phase cloud", 1.0
+    if condition == "order_shuffled_positions":
+        return "order shuffled", 1.0
+    prefixes = (
+        ("scaled_real_", "scaled real"),
+        ("scaled_phase_cloud_matched_positions_", "matched phase cloud"),
+        ("static_phase_cloud_matched_scaled_", "matched phase cloud"),
+        ("scaled_order_shuffled_positions_", "order shuffled"),
+        ("order_shuffled_scaled_", "order shuffled"),
+    )
+    for prefix, family in prefixes:
+        if condition.startswith(prefix):
+            try:
+                return family, float(condition[len(prefix) :])
+            except ValueError:
+                return None
+    return None
+
+
 def plot_scale_curve(out_dir: Path, reliability_rows: list[dict[str, str]]) -> Path:
     lookup = row_lookup(reliability_rows, "readout", "condition", "fd_step_arcmin")
     fd_steps = sorted({fnum(row.get("fd_step_arcmin")) for row in reliability_rows if row.get("readout") == "pose_aware_diagonal_poisson"})
+    parsed_rows = []
+    for row in reliability_rows:
+        if row.get("readout") != "pose_aware_diagonal_poisson":
+            continue
+        parsed = parse_scaled_condition(row.get("condition", ""))
+        if parsed is None:
+            continue
+        family, scale = parsed
+        parsed_rows.append((family, scale, row))
+
+    if parsed_rows:
+        fig, axes = plt.subplots(1, len(fd_steps), figsize=(5.8 * len(fd_steps), 3.8), dpi=160, sharey=True)
+        if len(fd_steps) == 1:
+            axes = [axes]
+        for ax, fd_step in zip(axes, fd_steps, strict=True):
+            for family in SCALE_FAMILY_ORDER:
+                rows = [
+                    (scale, row)
+                    for fam, scale, row in parsed_rows
+                    if fam == family and np.isclose(fnum(row.get("fd_step_arcmin")), fd_step)
+                ]
+                if not rows:
+                    continue
+                rows = sorted(rows, key=lambda item: item[0])
+                x = np.asarray([scale for scale, _row in rows], dtype=float)
+                y = np.asarray([fnum(row.get("mean_final_fisher")) for _scale, row in rows], dtype=float)
+                ax.plot(x, y, marker="o", linewidth=2.0, label=family)
+            ax.set_title(f"{fd_step:g} arcmin FD")
+            ax.set_xlabel("motion scale D")
+            ax.spines[["top", "right"]].set_visible(False)
+        axes[0].set_ylabel("mean final Fisher")
+        axes[-1].legend(frameon=False, fontsize=8)
+        fig.suptitle("Motion Scale Curve with Scale-Matched Controls", y=1.02)
+        fig.tight_layout()
+        path = out_dir / "scale_curve.png"
+        fig.savefig(path, bbox_inches="tight")
+        plt.close(fig)
+        return path
+
     fig, ax = plt.subplots(figsize=(5.2, 3.6), dpi=160)
     for fd_step in fd_steps:
         xs = []
@@ -345,6 +415,178 @@ def plot_pose_readout_comparison(out_dir: Path, reliability_rows: list[dict[str,
     fig.savefig(path, bbox_inches="tight")
     plt.close(fig)
     return path
+
+
+def plot_pose_uncertainty(out_dir: Path, reliability_rows: list[dict[str, str]]) -> Path | None:
+    rows = [row for row in reliability_rows if str(row.get("readout", "")).startswith("pose_uncertain_diagonal_sigma")]
+    if not rows:
+        return None
+    conditions = [cond for cond in ("real_fem", "scaled_real_0.5", "static_phase_cloud_matched_positions") if any(row.get("condition") == cond for row in rows)]
+    fd_steps = sorted({fnum(row.get("fd_step_arcmin")) for row in rows})
+    lookup = row_lookup(reliability_rows, "readout", "condition", "fd_step_arcmin")
+    fig, axes = plt.subplots(1, len(fd_steps), figsize=(5.8 * len(fd_steps), 3.8), dpi=160, sharey=True)
+    if len(fd_steps) == 1:
+        axes = [axes]
+    for ax, fd_step in zip(axes, fd_steps, strict=True):
+        for condition in conditions:
+            cond_rows = [
+                row for row in rows
+                if row.get("condition") == condition and np.isclose(fnum(row.get("fd_step_arcmin")), fd_step)
+            ]
+            cond_rows = sorted(cond_rows, key=lambda row: fnum(row.get("pose_sigma_arcmin")))
+            if not cond_rows:
+                continue
+            x = np.asarray([fnum(row.get("pose_sigma_arcmin")) for row in cond_rows], dtype=float)
+            y = np.asarray([fnum(row.get("mean_final_fisher")) for row in cond_rows], dtype=float)
+            ax.plot(x, y, marker="o", linewidth=2.0, label=label_condition(condition))
+            aware = fnum(lookup.get(("pose_aware_diagonal_poisson", condition, fd_step), {}).get("mean_final_fisher"))
+            blind = fnum(lookup.get(("pose_blind_diagonal_count_plus_marginal", condition, fd_step), {}).get("mean_final_fisher"))
+            if np.isfinite(aware):
+                ax.axhline(aware, color=COLORS.get(condition, "#777777"), linestyle=":", linewidth=1.0, alpha=0.55)
+            if np.isfinite(blind):
+                ax.axhline(blind, color=COLORS.get(condition, "#777777"), linestyle="--", linewidth=1.0, alpha=0.45)
+        ax.set_title(f"{fd_step:g} arcmin FD")
+        ax.set_xlabel("pose uncertainty sigma (arcmin)")
+        ax.spines[["top", "right"]].set_visible(False)
+    axes[0].set_ylabel("mean final Fisher")
+    axes[-1].legend(frameon=False, fontsize=8)
+    fig.suptitle("Pose-Uncertainty Sweep (dotted=aware, dashed=blind)", y=1.02)
+    fig.tight_layout()
+    path = out_dir / "pose_uncertainty_sweep.png"
+    fig.savefig(path, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
+COMPACT_STATIC_MATCH_FIELDS = (
+    "readout",
+    "fd_step_arcmin",
+    "compact_mode",
+    "subspace_source",
+    "compact_k",
+    "compact_alpha",
+    "cov_shrinkage",
+    "unit_subset",
+    "n_units_used",
+)
+
+
+def _same_field(a: Any, b: Any) -> bool:
+    fa = fnum(a)
+    fb = fnum(b)
+    if np.isfinite(fa) or np.isfinite(fb):
+        return bool(np.isclose(fa, fb, equal_nan=True))
+    return str(a) == str(b)
+
+
+def _static_ratio(row: dict[str, str], reliability_rows: list[dict[str, str]]) -> float:
+    static = float("nan")
+    for candidate in reliability_rows:
+        if candidate.get("condition") != "static_center":
+            continue
+        if all(_same_field(row.get(field, ""), candidate.get(field, "")) for field in COMPACT_STATIC_MATCH_FIELDS):
+            static = fnum(candidate.get("mean_final_fisher"))
+            break
+    val = fnum(row.get("mean_final_fisher"))
+    return val / static if np.isfinite(val) and static > 0 else float("nan")
+
+
+def plot_compact_aware_k_sweep(out_dir: Path, reliability_rows: list[dict[str, str]]) -> Path | None:
+    rows = [row for row in reliability_rows if row.get("compact_mode") == "hard_project"]
+    if not rows:
+        return None
+    reference_lookup = row_lookup(reliability_rows, "readout", "condition", "fd_step_arcmin")
+    fd_steps = sorted({fnum(row.get("fd_step_arcmin")) for row in rows})
+    conditions = [cond for cond in ("real_fem", "scaled_real_0.5", "static_phase_cloud_matched_positions") if any(row.get("condition") == cond for row in rows)]
+    fig, axes = plt.subplots(1, len(fd_steps), figsize=(6.0 * len(fd_steps), 3.8), dpi=160, sharey=True)
+    if len(fd_steps) == 1:
+        axes = [axes]
+    for ax, fd_step in zip(axes, fd_steps, strict=True):
+        for condition in conditions:
+            cond_rows = [
+                row for row in rows
+                if row.get("condition") == condition
+                and row.get("subspace_source") != "random_orthonormal"
+                and np.isclose(fnum(row.get("fd_step_arcmin")), fd_step)
+            ]
+            cond_rows = sorted(cond_rows, key=lambda row: (str(row.get("subspace_source")), fnum(row.get("compact_k"))))
+            for source in sorted({str(row.get("subspace_source")) for row in cond_rows}):
+                src_rows = [row for row in cond_rows if str(row.get("subspace_source")) == source]
+                if not src_rows:
+                    continue
+                x = np.asarray([fnum(row.get("compact_k")) for row in src_rows], dtype=float)
+                y = np.asarray([_static_ratio(row, reliability_rows) for row in src_rows], dtype=float)
+                ax.plot(x, y, marker="o", linewidth=1.8, label=f"{label_condition(condition)} | {source}")
+            aware = _reference_ratio(reference_lookup, "pose_aware_diagonal_poisson", condition, fd_step)
+            blind = _reference_ratio(reference_lookup, "pose_blind_diagonal_count_plus_marginal", condition, fd_step)
+            if np.isfinite(aware):
+                ax.axhline(aware, color=COLORS.get(condition, "#777777"), linestyle=":", linewidth=1.0, alpha=0.5)
+            if np.isfinite(blind):
+                ax.axhline(blind, color=COLORS.get(condition, "#777777"), linestyle="--", linewidth=1.0, alpha=0.4)
+        ax.set_title(f"{fd_step:g} arcmin FD")
+        ax.set_xlabel("removed nuisance rank k")
+        ax.set_ylabel("Fisher/static-center ratio")
+        ax.spines[["top", "right"]].set_visible(False)
+    axes[-1].legend(frameon=False, fontsize=7)
+    fig.suptitle("Compact-Aware Pose-Blind Hard Projection", y=1.02)
+    fig.tight_layout()
+    path = out_dir / "compact_aware_pose_blind_k_sweep.png"
+    fig.savefig(path, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
+def plot_compact_aware_alpha_sweep(out_dir: Path, reliability_rows: list[dict[str, str]]) -> Path | None:
+    rows = [row for row in reliability_rows if row.get("compact_mode") == "soft_discount"]
+    if not rows:
+        return None
+    reference_lookup = row_lookup(reliability_rows, "readout", "condition", "fd_step_arcmin")
+    fd_steps = sorted({fnum(row.get("fd_step_arcmin")) for row in rows})
+    primary_k = sorted({int(fnum(row.get("compact_k"))) for row in rows if np.isfinite(fnum(row.get("compact_k")))})
+    primary_k = primary_k[min(1, len(primary_k) - 1)] if primary_k else 1
+    conditions = [cond for cond in ("real_fem", "scaled_real_0.5", "static_phase_cloud_matched_positions") if any(row.get("condition") == cond for row in rows)]
+    fig, axes = plt.subplots(1, len(fd_steps), figsize=(6.0 * len(fd_steps), 3.8), dpi=160, sharey=True)
+    if len(fd_steps) == 1:
+        axes = [axes]
+    for ax, fd_step in zip(axes, fd_steps, strict=True):
+        for condition in conditions:
+            cond_rows = [
+                row for row in rows
+                if row.get("condition") == condition
+                and int(fnum(row.get("compact_k"))) == int(primary_k)
+                and row.get("subspace_source") != "random_orthonormal"
+                and np.isclose(fnum(row.get("fd_step_arcmin")), fd_step)
+            ]
+            for source in sorted({str(row.get("subspace_source")) for row in cond_rows}):
+                src_rows = sorted([row for row in cond_rows if str(row.get("subspace_source")) == source], key=lambda row: fnum(row.get("compact_alpha")))
+                if not src_rows:
+                    continue
+                x = np.asarray([fnum(row.get("compact_alpha")) for row in src_rows], dtype=float)
+                y = np.asarray([_static_ratio(row, reliability_rows) for row in src_rows], dtype=float)
+                ax.plot(x, y, marker="o", linewidth=1.8, label=f"{label_condition(condition)} | {source}")
+            aware = _reference_ratio(reference_lookup, "pose_aware_diagonal_poisson", condition, fd_step)
+            blind = _reference_ratio(reference_lookup, "pose_blind_diagonal_count_plus_marginal", condition, fd_step)
+            if np.isfinite(aware):
+                ax.axhline(aware, color=COLORS.get(condition, "#777777"), linestyle=":", linewidth=1.0, alpha=0.5)
+            if np.isfinite(blind):
+                ax.axhline(blind, color=COLORS.get(condition, "#777777"), linestyle="--", linewidth=1.0, alpha=0.4)
+        ax.set_title(f"{fd_step:g} arcmin FD, k={primary_k}")
+        ax.set_xlabel("nuisance discount alpha")
+        ax.set_ylabel("Fisher/static-center ratio")
+        ax.spines[["top", "right"]].set_visible(False)
+    axes[-1].legend(frameon=False, fontsize=7)
+    fig.suptitle("Compact-Aware Pose-Blind Soft Discounting", y=1.02)
+    fig.tight_layout()
+    path = out_dir / "compact_aware_pose_blind_alpha_sweep.png"
+    fig.savefig(path, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
+def _reference_ratio(lookup: dict[tuple[Any, ...], dict[str, str]], readout: str, condition: str, fd_step: float) -> float:
+    val = fnum(lookup.get((readout, condition, fd_step), {}).get("mean_final_fisher"))
+    static = fnum(lookup.get((readout, "static_center", fd_step), {}).get("mean_final_fisher"))
+    return val / static if np.isfinite(val) and static > 0 else float("nan")
 
 
 def parse_component_condition(condition: str) -> tuple[str, float] | None:
@@ -434,6 +676,12 @@ def label_condition(condition: str) -> str:
     if parsed is not None:
         family, scale = parsed
         return f"{family} {scale:g}x"
+    scaled = parse_scaled_condition(condition)
+    if scaled is not None:
+        family, scale = scaled
+        if condition in {"static_center", "real_fem", "static_phase_cloud_matched_positions", "order_shuffled_positions"}:
+            return labels.get(condition, f"{family} {scale:g}x")
+        return f"{family} {scale:g}x"
     return labels.get(condition, condition)
 
 
@@ -472,6 +720,15 @@ def main() -> None:
     figure_paths.append(plot_axis_specificity(out_dir, reliability_rows))
     figure_paths.append(plot_scale_curve(out_dir, reliability_rows))
     figure_paths.append(plot_pose_readout_comparison(out_dir, reliability_rows))
+    pose_uncertainty_path = plot_pose_uncertainty(out_dir, reliability_rows)
+    if pose_uncertainty_path is not None:
+        figure_paths.append(pose_uncertainty_path)
+    compact_k_path = plot_compact_aware_k_sweep(out_dir, reliability_rows)
+    if compact_k_path is not None:
+        figure_paths.append(compact_k_path)
+    compact_alpha_path = plot_compact_aware_alpha_sweep(out_dir, reliability_rows)
+    if compact_alpha_path is not None:
+        figure_paths.append(compact_alpha_path)
     component_path = plot_component_scale(out_dir, reliability_rows)
     if component_path is not None:
         figure_paths.append(component_path)

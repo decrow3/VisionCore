@@ -50,7 +50,7 @@ TARGET_SESSION = "Allen_2022-02-16"
 WINDOW_IDX = 0
 OMIT_SUBJECTS = {"Luke"}
 POOLED_SUBJECT = "Pooled"
-POOLED_COLOR = "0.25"
+POOLED_COLOR = "tab:blue"
 
 
 def _label(ax, letter):
@@ -414,6 +414,8 @@ def _plot_compact_cov_decomp(fig, subplot_spec, data, letter="D"):
     cint_uncorr = project_to_psd(mats["Total"][ix] - mats["PSTH"][ix])
 
     cmax = float(np.nanmax(ctotal))
+    vlim = 0.35 * cmax
+    norm = mpl.colors.Normalize(vmin=-vlim, vmax=vlim)
     cmap = plt.get_cmap("seismic_r")
     top_titles = [
         "Total covariance",
@@ -424,29 +426,41 @@ def _plot_compact_cov_decomp(fig, subplot_spec, data, letter="D"):
         "FEM component",
         "Corrected residual",
     ]
-    for ax, mat, title, frac in zip(
+    matrix_image = None
+    for ax, mat, title in zip(
         top_axes,
         [ctotal, cpsth, cint_uncorr],
         top_titles,
-        [0.35, 0.18, 0.35],
     ):
-        vlim = frac * cmax
-        ax.imshow(mat, cmap=cmap, interpolation="nearest",
-                  vmin=-vlim, vmax=vlim, aspect="equal")
+        matrix_image = ax.imshow(mat, cmap=cmap, interpolation="nearest",
+                                 norm=norm, aspect="equal")
         ax.set_title(title, fontsize=8, pad=3)
         _style_matrix_axis(ax)
 
-    for ax, mat, title, frac in zip(
+    for ax, mat, title in zip(
         bot_axes,
         [cfem, cint],
         bot_titles,
-        [0.35, 0.35],
     ):
-        vlim = frac * cmax
         ax.imshow(mat, cmap=cmap, interpolation="nearest",
-                  vmin=-vlim, vmax=vlim, aspect="equal")
+                  norm=norm, aspect="equal")
         ax.set_xlabel(title, fontsize=8, labelpad=4)
         _style_matrix_axis(ax)
+
+    residual_pos = top_axes[2].get_position()
+    cbar_ax = fig.add_axes([
+        residual_pos.x1 + 0.006,
+        residual_pos.y0,
+        0.007,
+        residual_pos.height,
+    ])
+    cbar = fig.colorbar(matrix_image, cax=cbar_ax)
+    cbar.set_label("Covariance", fontsize=6, labelpad=2)
+    cbar.ax.tick_params(labelsize=6, length=2, pad=1)
+    cbar.set_ticks([-vlim, 0.0, vlim])
+    cbar.formatter = mpl.ticker.ScalarFormatter(useMathText=True)
+    cbar.formatter.set_powerlimits((-2, 2))
+    cbar.update_ticks()
 
     for ax, sym in zip(top_sep_axes, ["=", "+"]):
         ax.text(0.5, 0.5, sym, ha="center", va="center",
@@ -479,7 +493,7 @@ def _plot_compact_cov_decomp(fig, subplot_spec, data, letter="D"):
 
     top_axes[0].text(-0.13, 1.16, letter, transform=top_axes[0].transAxes,
                      fontweight="bold", fontsize=10, va="top", ha="left")
-    return top_axes + top_sep_axes + bot_axes + bot_sep_axes + note_axes
+    return top_axes + top_sep_axes + bot_axes + bot_sep_axes + note_axes + [cbar_ax]
 
 
 def _add_condition_legend(ax, loc="upper left"):

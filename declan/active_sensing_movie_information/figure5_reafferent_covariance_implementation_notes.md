@@ -390,6 +390,75 @@ natural_image_condition_pose_summary.csv
 natural_image_condition_pose_frames.csv
 ```
 
+## 2026-06-13: Covariance-Optimality Code Audit and Fix
+
+Question:
+
+> Are the covariance-aware results trustworthy if we inspect the implementation
+> instead of the generated summaries?
+
+Audit finding:
+
+- `cov_pose_aware` in `jake/twininfo/run_covariance_optimality.py` was
+  previously `f_ind.copy()`, so it was exactly equal to the raw independent
+  Fisher path.
+- `cov_pose_blind` used `covariance_fisher_by_time(...)`, which includes ridge
+  regularization. This created a small nonzero pose-aware-minus-pose-blind gap
+  even at `D=0`, where movement covariance is exactly zero.
+- The sign of the covariance cost was not fabricated, but the pre-audit gaps
+  mixed a real covariance penalty with a ridge-path mismatch.
+
+Implementation fix:
+
+- `cov_pose_aware` now calls `covariance_fisher_by_time(mu, J, None,
+  ridge_frac=...)`, matching the pose-blind numerical path with zero extra
+  movement covariance.
+- The runner gained `--refresh-results` to regenerate result tables from the
+  saved `mu/J` cache without rerendering model rates.
+- The runner gained `--skip-sensitivity` to preserve the expensive gain/noise
+  sensitivity table while refreshing core row metrics.
+- `summarize_covariance_optimality.py` now reports explicit contrasts:
+  `pose_gap`, `pose_gap_minus_D0`,
+  `independent_minus_cov_pose_aware`, and
+  `independent_minus_cov_pose_blind`.
+
+Verification:
+
+```text
+D=0 cov_pose_aware_vs_blind max abs diff: 0
+manual covariance-optimality tests: pass
+py_compile: pass
+```
+
+Corrected empirical `D=1` pose-aware minus pose-blind Fisher gaps:
+
+```text
+scaled_real:
+  fixation      0.0382 +/- 0.0032
+  microsaccade  0.1952 +/- 0.0163
+
+random_amp_scaled:
+  fixation      0.0842 +/- 0.0063
+  microsaccade  0.2472 +/- 0.0215
+
+random_amp_cloud_matched_scaled:
+  fixation      0.0541 +/- 0.0047
+  microsaccade  0.2582 +/- 0.0185
+
+trajectory_order_shuffle_scaled:
+  fixation      0.0275 +/- 0.0024
+  microsaccade  0.0925 +/- 0.0085
+```
+
+Interpretation after fix:
+
+- real FEMs still create a meaningful pose-blind covariance cost, especially in
+  microsaccade windows;
+- knowing pose, under this model, recovers that cost;
+- random amplitude controls still match or exceed real, so this remains
+  evidence for pose-relevant reafferent covariance, not evidence for unique
+  optimality of measured FEM trajectories.
+
 What it does:
 
 - reproduces the selected trace examples from the source twininfo run;

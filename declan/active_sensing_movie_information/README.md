@@ -114,6 +114,29 @@ This summarizes the saved natural-image Check 6 pairwise rows into condition
 means and paired real-minus-control contrasts for `dprime2_pop`,
 `dprime2_indep`, and `eta = dprime2_pop / dprime2_indep`.
 
+Covariance-aware operating-regime implementation:
+
+```text
+jake/twininfo/run_covariance_optimality.py
+summarize_covariance_optimality.py
+outputs/active_sensing_movie_information/covariance_optimality/covopt_full_gpu1/
+```
+
+Post-audit status, 2026-06-13:
+
+- `cov_pose_aware` now uses the same covariance-Fisher/ridge path as
+  `cov_pose_blind` with no movement covariance, rather than aliasing the raw
+  independent Fisher path.
+- The former `D=0` ridge artifact is fixed: pose-aware and pose-blind rows
+  match exactly when movement scale is zero.
+- At empirical `D=1`, the corrected pose-aware minus pose-blind Fisher gaps
+  remain positive but are slightly smaller than the pre-audit summary:
+  scaled-real fixation `0.038 +/- 0.003`, scaled-real microsaccade
+  `0.195 +/- 0.016` Fisher trace per expected spike.
+- Random amplitude controls still match or exceed real in this metric, so the
+  result supports a pose-relevant covariance-cost interpretation, not unique
+  optimality of measured FEM trajectories.
+
 Pose-aware recoverability prep:
 
 ```text
@@ -176,6 +199,34 @@ response space: 16 biological twin channels at the center readout location
 inventory: 27 images x 4 selected trace windows x 16 conditions
 ```
 
+Response-space accounting:
+
+- See `../active_sensing_unit_space_provenance.md` for the cross-branch ledger
+  of 16-channel, sampled-population, and 756-channel canonical results.
+- General rule: use matched/session readouts when the claim depends on
+  empirical-session comparability or individual recorded-neuron alignment. Use
+  the canonical large digital twin when asking normative/mechanistic
+  population-level questions that do not require individual-neuron matching.
+- The production `twininfo` source run was configured with `population_size=16`
+  and `population_grid_position_mode=full_grid`, so
+  `metadata/00_population_units.csv` contains `16 x 51 x 51 = 41616`
+  simulated spatial readout rows.
+- The natural-image Checks 5-9 and current covariance-optimality summaries use
+  the center/sample subset: 16 session-matched biological twin channels, not
+  the full 41616-row spatial population.
+- The Figure 4/TFTS compact-geometry basis is the canonical 756-response-channel
+  shared readout. It is not dimension-compatible with the 16-channel
+  natural-image response cache.
+- The historical compact add-back/remove-out run therefore applies to the
+  756-channel e-optotype/TFTS scaffold, not to the current 16-channel
+  natural-image covariance curves.
+- The plausible hierarchy
+  `cov_pose_aware >= cov_geometry_aware >= cov_pose_blind` remains untested in
+  this natural-image run. It requires all three curves in the same response
+  coordinates: either rerun natural-image checks in the canonical 756-channel
+  space, or build a matched compact basis for the exact 16 center channels
+  while labeling the 16D ceiling/underpowering caveat.
+
 Result summary:
 
 - Check 5: real and stabilized have essentially identical reafference-signal
@@ -222,6 +273,294 @@ outputs/active_sensing_movie_information/figure5_cached_rate_checks_5_to_9_check
 Do not use those e-optotype outputs as Figure 5 evidence. They were useful for
 debugging the population-coding machinery, but the active-sensing claim is
 natural-image-only.
+
+## Covariance Hierarchy Update
+
+The `covopt_geometry_hierarchy_n256` run should be labeled as:
+
+> Strong low-rank covariance rescue, translation-geometry specificity untested.
+
+At empirical `D=1`, the middle observer closes most of the pose-aware versus
+pose-blind Fisher-efficiency gap (`k=2` about `96-98%`; `k=20` about
+`99.7-99.9%`). That is a real result: the pose-blind cost is concentrated in a
+low-dimensional movement-covariance subspace.
+
+The important caveat is that the current `cov_geometry_aware_k` observer is not
+an independent compact translation-tangent basis. It removes the top eigenspace
+of the movement covariance being corrected, so it is effectively an oracle
+top-PC covariance correction. In this run, `cov_geometry_aware_k` and
+`cov_topPC_aware_k` are the same object.
+
+Do not claim yet that the compact translation geometry discovered in the TFTS /
+Figure 4 analyses is what closes the gap. The next implementation target is a
+separate `cov_tangent_geometry_aware_k` observer whose basis is learned from
+finite-difference translation tangents, ideally image-disjoint from the
+covariance-optimality evaluation set. The decisive comparison is:
+
+```text
+oracle top movement-PC
+independent translation-tangent basis
+random subspace
+unit-shuffled tangent basis
+```
+
+The signal-preservation diagnostic is also mixed: the top movement-covariance
+subspace contains substantial coding/signal variance at larger `k`, so the safe
+claim is covariance accounting in an overlapping signal/nuisance subspace, not
+pure nuisance removal.
+
+Exact tangent pathfinding, 2026-06-14:
+
+```text
+outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/tangent_geometry_pathfinding_d1/
+```
+
+This run projects the completed `N=256` covariance-optimality cache onto the
+116 units that overlap the canonical 756-channel Figure 4/TFTS tangent basis,
+then recomputes exact D=1 Fisher scores for `k = 2, 5, 10, 20`. It is a
+partial-overlap pathfinding result, not a final matched 756-channel claim.
+
+The independent tangent basis is consistently above random subspaces and
+usually above unit-shuffled tangent controls, so there is some translation-
+geometry-specific covariance structure. But it closes much less of the
+pose-aware versus pose-blind gap than the oracle top movement-PC observer:
+at `k=2`, tangent closure is about `0.18-0.25` while oracle top-PC closure is
+about `0.95-0.98`; at `k=20`, tangent closure is about `0.33-0.41` while
+oracle top-PC closure is about `0.998-0.999`. All 32 decision rows are labeled
+`topPC_much_better_than_tangent`.
+
+Safe interpretation: compact translation tangents capture a non-random slice
+of the covariance penalty, but the large hierarchy rescue is still mostly a
+generic low-rank movement-covariance/top-PC result in this response space.
+The next decisive run should build the covariance cache directly in the full
+canonical 756-channel tangent response space, or an explicitly matched tangent
+and covariance response space, before making a strong geometry-rescue claim.
+
+Same-cache cleanup sanity check:
+
+```text
+outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/tangent_geometry_pathfinding_d1_cache_tangent/
+```
+
+This variant builds a tangent basis directly from the cached Jacobian columns
+in the same 116-unit subset. It is intentionally not independent, so it is only
+a response-space sanity check. It does not rescue the functional readout
+interpretation: mean gap closure for same-cache tangent is about `0.04`,
+`0.08`, `0.09`, and `0.09` for `k = 2, 5, 10, 20`, compared with oracle
+top-PC closure of about `0.97`, `0.99`, `1.00`, and `1.00`.
+
+Status labels before the removal-semantics audit:
+
+- Compact functional branch: useful negative. Independent translation tangents
+  capture non-random covariance structure but do not account for the dominant
+  covariance-aware information rescue.
+- Compact structural branch: promotable as a structural mechanism for
+  FEM-linked covariance, not as a demonstrated functional readout mechanism.
+
+Removal-semantics pause, 2026-06-14:
+
+The tangent-vs-oracle hierarchy interpretation is paused because the original
+pathfinding used `cov - U(U.T cov U)U.T` plus PSD projection rather than the
+matched noise-side-only residual `R Sigma_FEM R.T`. That difference matters for
+non-eigenvector bases and can confound manifest/cache tangent comparisons.
+
+Corrected audit implementation:
+
+```text
+declan/active_sensing_movie_information/run_noise_side_closure_audit.py
+outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/noise_side_closure_audit_sampled/
+```
+
+This audit leaves responses, task derivatives, and signal terms untouched for
+all bases. Every basis calls the same `covariance_residual_noise_side`
+function, using `Sigma_k = R Sigma_FEM R.T` as the extra nuisance covariance.
+Provenance for the sampled audit is `Sigma_FEM_pooled_residual`.
+
+Sanity checks pass: `D=0` has zero covariance trace and `F_PA ~= F_PB ~= F_k`
+to numerical precision, and a synthetic `Sigma_FEM = J Sigma_e J.T` closes with
+residual trace near zero and closure `1.0`.
+
+Sampled D=1 result, 12 rows per group and one random/unit-shuffled draw:
+
+- Oracle top-PC still closes almost all of the gap: mean closure rises from
+  `0.967` at `k=2` to `0.999` at `k=20`.
+- Manifest tangent is stronger under corrected semantics than in the old audit:
+  mean closure rises from `0.078` at `k=2` to `0.507` at `k=20`.
+- Cache tangent does not span the pooled-residual `Sigma_FEM`: residual trace
+  remains high, about `0.66` at `k=2` and `0.41` at `k=20`, with mean closure
+  only `0.20-0.24`.
+
+Current interpretation after correction: do not call this a settled useful
+negative for compact tangents. The corrected sampled audit points first to a
+`J`/`Sigma_FEM` provenance mismatch for cache tangents. A full all-row corrected
+audit, ideally also checking `within_pair`, is needed before restoring a final
+functional status label.
+
+Covariance-target provenance audit, 2026-06-14:
+
+```text
+declan/active_sensing_movie_information/run_covariance_target_provenance_audit.py
+outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/covariance_target_provenance_d1/
+outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/covariance_target_provenance_d1_highk/
+```
+
+This audit was run as a trace-capture provenance check only. It intentionally
+does not add more closure variants. The script compares three covariance
+targets: exact reconstructed `J Sigma_e J.T` from the cached Jacobian columns,
+the within-pair movement covariance, and the pooled-residual covariance target
+used by the corrected closure audit.
+
+Mean D=1 trace capture, 116 matched units:
+
+- Exact `J Sigma_e J.T`: cache tangent captures `0.27`, `0.42`, `0.53`,
+  and `0.63` at `k = 2, 5, 10, 20`; oracle top-PC captures `0.53`, `0.68`,
+  `0.79`, and `0.89`; manifest tangent captures `0.03`, `0.09`, `0.14`,
+  and `0.22`.
+- Pooled-residual covariance: cache tangent captures `0.36`, `0.48`, `0.55`,
+  and `0.59`; oracle top-PC captures `0.77`, `0.87`, `0.93`, and `0.97`;
+  manifest tangent captures `0.03`, `0.10`, `0.15`, and `0.23`.
+- Within-pair movement covariance is effectively identical to pooled residual
+  for these trace-capture summaries, so broad pooling alone does not explain
+  the mismatch.
+
+The high-k check sharpens the provenance issue. At `k=116`, manifest tangent
+spans the full 116D response space and captures all three targets, while the
+current cache-tangent construction still captures only about `0.74` of the
+exact `J Sigma_e J.T` trace and `0.64` of the pooled/within-pair trace.
+Therefore the current cache basis should not yet be interpreted as "the" full
+column space of the cached Jacobian target. A likely implementation-level
+candidate is the unit-centering/rank handling used when constructing the cache
+tangent basis, which can remove common-rate directions present in the
+covariance target.
+
+Updated status label: compact covariance functional branch is paused pending
+covariance-provenance resolution. The corrected noise-side-only audit validates
+the scoring semantics. Oracle top-PC closure remains near complete, but cache
+tangents do not span the pooled-residual covariance target, and under the
+current basis construction they also do not fully span the exact reconstructed
+`J Sigma_e J.T` target. The previous useful-negative label should not be
+interpreted until the covariance target and cache-basis definition are
+decomposed.
+
+Projection debug, 2026-06-14:
+
+```text
+declan/active_sensing_movie_information/run_covariance_projection_debug.py
+outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/projection_debug_d1/
+```
+
+The minimal projection checks identify the source of the `k=116` surprise.
+Identity projection captures all trace for exact `J Sigma_e J.T`,
+pooled-residual, and within-pair targets. A basis built as `orth(J_exact)`
+inside the same function that reconstructs `Sigma_J` also passes: trace capture
+`1.0`, residual trace about `7e-31`, direct J residual about `7e-31`, closure
+`1.0`, and rank `116`.
+
+The existing cache tangent basis fails the full-basis sanity check because it
+is built from unit-centered cached J columns. At `k=116`, it has rank `115`,
+`||U U.T - I||_F = 1`, and it leaves about `0.257` of the uncentered J-column
+Frobenius energy outside the subspace, while the centered-J residual is
+numerically zero. Mean trace capture is therefore capped at about `0.744` for
+exact `J Sigma_e J.T` and `0.638` for pooled/within-pair covariance. Unit hashes
+match for the basis and covariance objects (`baac97be3d382ca4`), so this is a
+centering/response-space definition issue, not a unit-order mismatch.
+
+Uncentered exact-J closure follow-up, 2026-06-14:
+
+```text
+declan/active_sensing_movie_information/run_uncentered_j_tangent_closure_audit.py
+outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/uncentered_j_tangent_closure_d1_sample6_k2_20_116/
+```
+
+This focused run uses corrected noise-side-only semantics and compares oracle
+top-PC, uncentered exact-J tangent, centered exact-J tangent, manifest tangent,
+random, and unit-shuffled manifest bases for exact `J Sigma_e J.T`,
+within-pair, and pooled-residual covariance targets. Scope: D=1, 116 matched
+units, six sampled rows per family/kind group, `k = 2, 20, 116`, one random and
+one unit-shuffled draw. A full all-row closure pass was too slow for an
+interactive run; trace/residual provenance remains available from the all-row
+trace-only audit above.
+
+Mean sampled closure and trace-capture result:
+
+- Exact `J Sigma_e J.T`: uncentered exact-J nearly matches oracle top-PC at
+  low/mid rank. At `k=2`, trace capture/closure are `0.517/0.892` for
+  uncentered exact-J versus `0.531/0.893` for oracle. At `k=20`, they are
+  `0.899/0.993` versus `0.915/0.994`. At `k=116`, both are exactly closed.
+- Pooled-residual covariance: uncentered exact-J is also close to oracle. At
+  `k=2`, trace capture/closure are `0.694/0.947` for uncentered exact-J versus
+  `0.767/0.967` for oracle. At `k=20`, they are `0.943/0.998` versus
+  `0.968/0.999`.
+- Within-pair covariance is effectively identical to pooled residual in this
+  run.
+- Centered exact-J remains poor under the corrected semantics: pooled/within
+  closure is about `0.21` at `k=2`, `0.24` at `k=20`, and only `0.23` even at
+  `k=116`, because it omits the common-mode direction.
+- Manifest tangent remains a separate, weaker independent-basis result: pooled
+  closure is about `0.077` at `k=2` and `0.502` at `k=20`, with unit-shuffled
+  manifest controls similar at `k=20`.
+
+Updated coding conclusion: the previous same-cache tangent failure was a
+basis-centering artifact. Under matched noise-side-only semantics, an
+uncentered exact-J tangent basis strongly closes the exact linear covariance
+target and, in this sampled pass, also closes most of the pooled/within
+movement-covariance target. This revives the local-linear tangent mechanism as
+a same-cache explanation, while leaving the independent manifest-basis
+specificity question unresolved.
+
+Current compact covariance branch status: positive matched-cache mechanism.
+Uncentered local translation sensitivity explains the movement-covariance
+rescue in the matched cache. The independent canonical/manifest tangent basis
+remains partial and is not sufficient for the full rescue.
+
+Final focused k=20 summary:
+
+```text
+declan/active_sensing_movie_information/summarize_uncentered_j_tangent_closure.py
+outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/uncentered_j_tangent_closure_d1_sample6_k20_summary/
+```
+
+This summary reads the existing sampled closure audit and recomputes only the
+signal fraction for the same sampled row/basis regime. At `k=20`, uncentered
+exact-J is essentially oracle-like across all three targets:
+
+| target | oracle closure | uncentered exact-J closure | centered exact-J closure | manifest closure | random closure | uncentered exact-J residual trace | uncentered exact-J signal frac |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| exact `J Sigma_e J.T` | `0.994` | `0.993` | `0.402` | `0.469` | `0.312` | `0.101` | `0.904` |
+| pooled residual | `0.999` | `0.998` | `0.241` | `0.502` | `0.344` | `0.057` | `0.904` |
+| within pair | `0.999` | `0.998` | `0.241` | `0.502` | `0.295` | `0.057` | `0.904` |
+
+The compact figure is
+`outputs/active_sensing_movie_information/covariance_optimality/covopt_geometry_hierarchy_n256/uncentered_j_tangent_closure_d1_sample6_k20_summary/uncentered_j_tangent_k20_metrics.png`.
+The main message is that the common-mode uncentered tangent is essential:
+centered exact-J retains substantial signal fraction (`0.644`) but fails to
+close the pooled/within covariance gap because it omits the common-mode
+covariance direction. Manifest tangent remains an independent-basis bridge, not
+the same-cache closure mechanism.
+
+Canonical manifest convention check:
+
+```text
+declan/active_sensing_movie_information/rebuild_manifest_tangent_basis_conventions.py
+outputs/active_sensing_movie_information/compact_basis_exports/manifest_tangent_basis_conventions/
+```
+
+The cached canonical TFTS tangent maps still contain raw per-object `bx/by`
+vectors, so the canonical basis can be rebuilt in an uncentered convention
+without rerunning the digital twin. This diagnostic exports both conventions:
+raw uncentered `stack bx/by -> SVD` and the historical centered convention
+`stack bx/by -> subtract per-unit mean tangent across source rows -> SVD`.
+
+At the manifest/source level, however, the uncentered rebuild is almost the same
+top-k subspace as the existing centered export. For the default `0.25` arcmin
+delta, uncentered-vs-centered subspace overlap is `0.999` at `k=2`, `0.999` at
+`k=20`, and `0.998` at `k=50`. The centered export is also exactly
+reconstructed from the cache, confirming the provenance. Therefore this
+particular convention change is unlikely by itself to make the manifest basis
+behave like the same-cache uncentered exact-J basis. The manifest result should
+still be treated as a weaker independent-basis companion unless a future
+independent basis is rebuilt from source objects that better match the
+natural-image covariance cache.
 
 ## Working Interpretation
 

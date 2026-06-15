@@ -8,7 +8,7 @@ can treat each rendered image as an audited source artifact.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +65,7 @@ class VernierSpec:
     center_x_arcmin: float = 0.0
     center_y_arcmin: float = 0.0
     edge_softness_world_px: float = 0.75
+    orientation_deg: float = 0.0
 
     def with_offset(self, offset_arcmin: float) -> "VernierSpec":
         return VernierSpec(**{**asdict(self), "offset_arcmin": float(offset_arcmin)})
@@ -126,10 +127,17 @@ class VernierRenderer(nn.Module):
         softness_arcmin = float(spec.edge_softness_world_px) * float(geom.world_pixel_arcmin)
         cx = float(spec.center_x_arcmin)
         cy = float(spec.center_y_arcmin)
+        theta = np.deg2rad(float(spec.orientation_deg))
+        cos_t = float(np.cos(theta))
+        sin_t = float(np.sin(theta))
+        x0 = self.x_arcmin - cx
+        y0 = self.y_arcmin - cy
+        x_local = x0 * cos_t + y0 * sin_t + cx
+        y_local = -x0 * sin_t + y0 * cos_t + cy
 
         upper = _bar_mask(
-            self.x_arcmin,
-            self.y_arcmin,
+            x_local,
+            y_local,
             center_x=cx,
             y0=cy + half_gap,
             y1=cy + half_gap + length,
@@ -137,8 +145,8 @@ class VernierRenderer(nn.Module):
             softness=softness_arcmin,
         )
         lower = _bar_mask(
-            self.x_arcmin,
-            self.y_arcmin,
+            x_local,
+            y_local,
             center_x=cx + float(spec.offset_arcmin),
             y0=cy - half_gap - length,
             y1=cy - half_gap,
@@ -237,14 +245,22 @@ def pixel_audit(
         deriv = diff / (2.0 * float(step))
         sigma = np.maximum((plus + minus) / 2.0, 1e-3)
         fisher = float(np.sum((deriv * deriv) / sigma))
+        contrast_template = np.abs(zero - float(geom.background_raw))
+        x_template = _x_template(zero.shape)
+        template_fisher = _template_fisher(deriv, sigma, contrast_template)
+        x_template_fisher = _template_fisher(deriv, sigma, contrast_template * x_template)
         centroid_plus = luminance_centroid(plus, geom.background_raw)
         centroid_minus = luminance_centroid(minus, geom.background_raw)
+        centroid_dx = float(centroid_plus[0] - centroid_minus[0])
+        centroid_dy = float(centroid_plus[1] - centroid_minus[1])
         rows.append(
             {
                 "fd_step_arcmin": float(step),
                 "max_abs_plus_minus_diff": float(np.max(np.abs(diff))),
                 "l2_plus_minus_diff": float(np.sqrt(np.sum(diff * diff))),
                 "pixel_fisher_per_arcmin2_diag": fisher,
+                "template_fisher_per_arcmin2_contrast": template_fisher,
+                "template_fisher_per_arcmin2_x_weighted": x_template_fisher,
                 "total_luminance_plus": float(np.sum(plus)),
                 "total_luminance_minus": float(np.sum(minus)),
                 "total_luminance_abs_delta": float(abs(np.sum(plus) - np.sum(minus))),
@@ -252,8 +268,10 @@ def pixel_audit(
                 "centroid_y_plus_px": centroid_plus[1],
                 "centroid_x_minus_px": centroid_minus[0],
                 "centroid_y_minus_px": centroid_minus[1],
-                "centroid_dx_px": float(centroid_plus[0] - centroid_minus[0]),
-                "centroid_dy_px": float(centroid_plus[1] - centroid_minus[1]),
+                "centroid_dx_px": centroid_dx,
+                "centroid_dy_px": centroid_dy,
+                "centroid_sensitivity_x_px_per_arcmin": centroid_dx / (2.0 * float(step)),
+                "centroid_sensitivity_y_px_per_arcmin": centroid_dy / (2.0 * float(step)),
             }
         )
     return {
@@ -280,6 +298,63 @@ def luminance_centroid(frame: np.ndarray, background_raw: float) -> tuple[float,
     return float(np.sum(xx * weights) / total), float(np.sum(yy * weights) / total)
 
 
+def _x_template(shape: tuple[int, int]) -> np.ndarray:
+    h, w = shape
+    _yy, xx = np.mgrid[:h, :w]
+    x = xx.astype(np.float64) - (w - 1) / 2.0
+    scale = float(np.max(np.abs(x))) or 1.0
+    return x / scale
+
+
+def _template_fisher(deriv: np.ndarray, sigma: np.ndarray, template: np.ndarray) -> float:
+    d = np.asarray(deriv, dtype=np.float64).ravel()
+    s = np.maximum(np.asarray(sigma, dtype=np.float64).ravel(), 1e-8)
+    t = np.asarray(template, dtype=np.float64).ravel()
+    norm = float(np.sqrt(np.sum((t * t) / s)))
+    if norm <= 1e-12:
+        return float("nan")
+    t = t / norm
+    return float(np.sum(d * t / s) ** 2)
+
+
+def scaled_render_geometry(geometry: RenderGeometry, factor: float) -> RenderGeometry:
+    factor = float(factor)
+    if factor <= 0:
+        raise ValueError(f"Resolution factor must be positive, got {factor}")
+    world_h, world_w = geometry.world_size
+    return replace(
+        geometry,
+        world_ppd=float(geometry.world_ppd) * factor,
+        world_size=(max(8, int(round(world_h * factor))), max(8, int(round(world_w * factor)))),
+    )
+
+
+def renderer_resolution_sweep(
+    spec: VernierSpec,
+    *,
+    fd_steps_arcmin: list[float],
+    factors: list[float],
+    geometry: RenderGeometry | None = None,
+    device: str = "cpu",
+) -> list[dict[str, Any]]:
+    base_geom = geometry or RenderGeometry()
+    rows: list[dict[str, Any]] = []
+    for factor in factors:
+        geom = scaled_render_geometry(base_geom, float(factor))
+        audit = pixel_audit(spec, fd_steps_arcmin=fd_steps_arcmin, geometry=geom, device=device)
+        for row in audit["fd_rows"]:
+            rows.append(
+                {
+                    "resolution_factor": float(factor),
+                    "world_ppd": float(geom.world_ppd),
+                    "world_size_h": int(geom.world_size[0]),
+                    "world_size_w": int(geom.world_size[1]),
+                    **row,
+                }
+            )
+    return rows
+
+
 def save_pixel_audit_artifacts(
     out_dir: Path,
     spec: VernierSpec,
@@ -287,12 +362,22 @@ def save_pixel_audit_artifacts(
     fd_steps_arcmin: list[float],
     geometry: RenderGeometry | None = None,
     device: str = "cpu",
+    resolution_factors: list[float] | None = None,
 ) -> dict[str, Any]:
     """Save stimulus PNGs, difference PNGs, line profiles, and return audit dict."""
     geom = geometry or RenderGeometry()
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     audit = pixel_audit(spec, fd_steps_arcmin=fd_steps_arcmin, geometry=geom, device=device)
+    factors = [float(v) for v in (resolution_factors or []) if float(v) > 0.0]
+    if factors:
+        audit["resolution_sweep_rows"] = renderer_resolution_sweep(
+            spec,
+            fd_steps_arcmin=fd_steps_arcmin,
+            factors=factors,
+            geometry=geom,
+            device=device,
+        )
     offsets = sorted({0.0, *fd_steps_arcmin, *[-float(s) for s in fd_steps_arcmin]})
     frames = {offset: central_retina_frame(spec.with_offset(offset), geom, device=device) for offset in offsets}
     for offset, frame in frames.items():

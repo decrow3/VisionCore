@@ -257,6 +257,32 @@ Interpretation:
 - the canonical 756-channel natural-image Check 6 remains tabled for the
   proper e-optotype comparison.
 
+Response-space guardrail, 2026-06-13:
+
+- Current `covopt_full_gpu1` covariance-aware curves use the sampled/center
+  subset of the active-sensing run: 16 session-matched biological twin channels.
+- The older compact add-back/remove-out scaffold used the Figure 4/TFTS
+  756-response-channel basis.
+- Do not compare those as if they were one three-condition ladder. The intended
+  ladder is a hypothesis to test in one matched response space:
+
+```text
+cov_pose_aware >= cov_geometry_aware >= cov_pose_blind
+```
+
+Here `cov_geometry_aware` should mean a covariance-aware readout that gets only
+the compact translation-geometry degrees of freedom, or an equivalent compact
+add-back/remove-out construction in the same response coordinates as the
+`cov_pose_aware` and `cov_pose_blind` curves.
+
+Implementation update: `jake/twininfo/run_covariance_optimality.py` now emits
+`cov_geometry_aware_k*` rows and supports
+`--population-source analysis --analysis-population-size N`. The first
+geometry-aware implementation conditions on the top-k movement-covariance
+eigenspace and computes Fisher with the residual nuisance covariance. Use this
+for the first same-population hierarchy run at `N=100/256`, then full `N=756`
+if compute permits.
+
 ## Priority 3: Pose-Aware Recoverability
 
 Goal:
@@ -344,7 +370,9 @@ Current blocker:
 
 The completed natural-image center-channel run uses 16 response channels, so
 the prior 756-unit Figure 4/TFTS basis is not compatible. A fair compact
-addback/removeout test needs a matched response space.
+addback/removeout test needs a matched response space. The geometry-aware
+middle curve for the hierarchy above is therefore not yet implemented for the
+natural-image covariance-optimality run.
 
 ## Tabled But Important: Canonical Natural-Image Checks 5-9
 
