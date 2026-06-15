@@ -71,6 +71,12 @@ Important details:
   `756` canonical units. The scale/pose sweep's main pose-aware rows also use
   `756` units, while its compact-aware controls use a `256`-unit `top_abs_fd`
   subset from the same original 756-unit space.
+- Noise/readout audit: the Vernier result did not rely on simulated noisy spike
+  draws or an empirically fitted trial-noise model. It used deterministic twin
+  rates and explicit Fisher/readout assumptions, especially pose-aware
+  diagonal-Poisson Fisher. The pose-blind diagonal count-plus-marginal readout
+  behaved very differently, so the absolute numbers remain observer-model
+  dependent.
 - Full real FEM is not optimal for the Vernier task.
 - Reduced motion, especially `D ~= 0.125` to `0.25`, gives the strongest
   pose-aware Vernier information.
@@ -473,17 +479,21 @@ adaptation. Instead of asking whether fixation `i` uses the best axis for patch
 - static;
 - empirical FEM traces;
 - scaled empirical traces (`0.125x`, `0.25x`, `0.5x`, `1x`, optional `1.5x`);
-- Brownian matched to effective RMS/diffusion;
-- OU matched to RMS/autocorrelation/confinement;
+- OU matched to RMS/autocorrelation/confinement as the primary synthetic null;
+- Brownian matched to effective RMS/diffusion as a secondary generic-diffusion
+  null;
 - shuffled, rotated, or phase-randomized empirical controls.
 
 Primary readouts should include ensemble image-feature decoding and a
-signal-versus-motion-nuisance covariance decomposition. Every nominal-scale
-summary must report effective RMS, clipping, path length, and motion-energy
-matching. Figure-level claims require empirical FEMs to beat matched controls
-or lie on a sensible information/cost frontier; if all motion helps and the
-largest motion always wins, the metric is generic modulation rather than active
-sensing.
+signal-versus-motion-nuisance covariance decomposition, with temporal PCs as
+the primary response summary and mean-over-trajectory as a diagnostic. Promote
+signal-motion subspace overlap because it connects directly to the covariance
+story. Every nominal-scale summary must report effective RMS, clipping, path
+length, and motion-energy matching. Figure-level claims should be twin-scoped.
+Real tying OU is not automatically a failure; it means broad FEM-like
+confinement/autocorrelation may be sufficient. If all motion helps and the
+largest motion always wins, the metric is generic modulation unless the
+signal/motion overlap shows a useful frontier.
 
 ## What Should Be Demoted
 

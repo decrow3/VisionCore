@@ -33,6 +33,14 @@ A positive result should not be merely "any motion beats static." The stronger
 result is that empirical FEMs either outperform matched synthetic controls at
 comparable motion energy, or lie near a useful information/cost frontier.
 
+Language guardrail: deterministic ridge-decoding scores from twin rates are
+linear decodability or information proxies, not literal mutual information. The
+Vernier branch did not depend on stochastic spike draws, but its headline
+Fisher quantities did depend on explicit readout/noise assumptions, especially
+the pose-aware diagonal-Poisson observer. This aggregate branch can start from
+deterministic rates, but any paper-level "information" statement needs either
+proxy wording or an added fixed noise/logdet formulation.
+
 ## Why This Branch Exists
 
 The corrected local BackImage `I_z` branch is informative but heterogeneous:
@@ -68,10 +76,14 @@ Priority order:
    - scales `0`, `0.125x`, `0.25x`, `0.5x`, `1x`, optionally `1.5x`.
    - Avoid treating `2x` as biological unless explicitly labeled over-large or
      capped.
-4. `brownian_matched`
-   - Brownian motion matched to effective RMS or diffusion.
-5. `ou_matched`
+4. `ou_matched`
    - Ornstein-Uhlenbeck motion matched to RMS, autocorrelation, and confinement.
+   - This is the primary synthetic null. If real ties OU but beats Brownian,
+     the conclusion is FEM-like confinement/autocorrelation, not exact trace
+     specialness.
+5. `brownian_matched`
+   - Brownian motion matched to effective RMS or diffusion.
+   - This is a secondary generic-diffusion null.
 6. `shuffled_empirical`
    - at least one of time-shuffled increments, trace-shuffled image pairing,
      rotated traces, or phase-randomized traces with matched temporal spectrum.
@@ -99,17 +111,17 @@ Candidate latents:
 
 Response summaries:
 
-- mean response over trajectory;
-- delta from static;
-- temporal PCs;
-- compact multi-bin response features if dimensionality permits.
+- temporal PCs, primary;
+- compact multi-bin response features if dimensionality permits;
+- delta from static, secondary;
+- mean response over trajectory, diagnostic only.
 
 Primary contrasts:
 
 ```text
 real - static
-real - Brownian matched
 real - OU matched
+real - Brownian matched
 real - shuffled empirical
 scaled empirical - real
 large motion - real
@@ -134,9 +146,9 @@ Report:
 - `trace(Sigma_signal)`;
 - `trace(Sigma_motion)`;
 - signal/motion ratio;
+- signal-motion subspace overlap, promoted as a primary paper-coherent metric;
 - top-k signal and motion variance;
 - participation ratio;
-- signal-motion subspace overlap;
 - optional logdet score using `Sigma_motion + lambda I`,
   `diag(Sigma_motion) + lambda I`, or a Poisson/mean-rate diagonal proxy.
 
@@ -172,6 +184,11 @@ controls and do not simply track motion amplitude. If all motion families
 improve similarly and the largest motion always wins, the metric is measuring
 generic modulation rather than active sensing.
 
+Claim boundary: this branch is twin-scoped unless later connected to recorded
+data. Preferred wording is "empirical FEM statistics improve the V1-twin
+representation of natural-image structure," not "empirical FEMs improve foveal
+V1 representation."
+
 ## Suggested Implementation
 
 New runner:
@@ -193,30 +210,125 @@ outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
   backimage_aggregate_fem_information_n<...>_<tag>/
 ```
 
+## Cache-First Path
+
+Before running new twin inference, reuse the caches from the corrected
+BackImage branch.
+
+Primary existing cache:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_latent_information_scalesweep_n256_rel0125-2_rand8_delta/
+```
+
+Useful files:
+
+- `analysis_windows.csv`: the locked n=256 image/window manifest with session,
+  phase, real drift axis, edge axis, coherence, anisotropy, and observed RMS.
+- `latent_feature_arrays.npz`: fixed local-field latents,
+  `gabor_local_field` `(256, 4608)` and `pyramid_local_field` `(256, 3072)`.
+- `response_feature_arrays.npz`: canonical 756-unit
+  `pose_blind_delta_mean` response summaries for scales
+  `0.125x`, `0.25x`, `0.5x`, `1x`, and `2x`, with static, real, edge,
+  edge-orthogonal, and rand8 axis candidates.
+- `candidate_motion_metadata.csv`: nominal/effective RMS, path length, clipping,
+  duration, response length, and candidate provenance.
+
+Cache-only proxy script:
+
+```text
+declan/fixation_statistics_by_stimulus/summarize_backimage_aggregate_cache_proxy.py
+```
+
+This script loads the saved latents/responses and computes cheap aggregate
+decoding and response-covariance summaries without touching the twin. It is a
+debugging and prioritization step, not the full aggregate motion-distribution
+test.
+
+Current focused proxy output:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_latent_information_scalesweep_n256_rel0125-2_rand8_delta/
+    aggregate_cache_proxy_full_postfix_nested/
+```
+
+Status: post-fix full cached proxy, all cached scales, nested alpha, rand8
+baseline computed as mean decoded random-axis score.
+
+Post-fix cache-proxy readout:
+
+- Therefore the cache proxy supports using cached arrays to debug scoring and
+  regularization, but it does not replace the OU/Brownian/unpaired empirical
+  aggregate run.
+- `random_axis_mean` now means the mean of decoded random-axis scores, not a
+  decoder fit to the averaged random-axis response vector.
+- Raw random axes are retained internally for covariance diagnostics even when
+  the requested contrast name is `random_axis_mean`.
+- Motion-versus-static is strongly positive and grows with scale, consistent
+  with generic motion-induced feature modulation.
+- Real-vs-random specificity is narrow: Gabor `k=4`, `0.25x`
+  `+3.480`, CI `[+0.642, +7.030]`; pyramid `k=8`, `0.25x`
+  `+2.185`, CI `[+0.617, +4.251]`. Other scales mostly have CIs crossing zero.
+
+Second useful cache:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_twin_stability_metric_audit/
+```
+
+Useful files:
+
+- `twin_endpoint_tail_vectors.npz`: endpoint response cache for static,
+  edge-parallel, and edge-orthogonal endpoint motions.
+- `endpoint_feature_preservation_static_decoder/feature_latents.npz`: matching
+  Gabor/pyramid latents.
+- `endpoint_feature_preservation_static_decoder/*`: existing static-trained
+  feature-preservation decoder summaries.
+
+This cache is best for preservation controls and edge-parallel/orthogonal
+sanity checks, not for full trajectory-distribution comparisons.
+
+What still needs new inference:
+
+- true empirical trace ensembles, especially unpaired image-trace sampling;
+- Brownian matched controls;
+- OU matched controls;
+- time-shuffled, rotated, or phase-randomized empirical traces;
+- response summaries beyond the cached `pose_blind_delta_mean` axis endpoints.
+
 ## Minimum Viable Run
 
 ```text
 images: 256 or 512 patches
 traces: 256 empirical traces
 population: canonical 756 units
+pairing:
+  unpaired ensemble primary
+  paired/original diagnostic
 motion families:
   static
   empirical 0.25x
   empirical 0.5x
   empirical 1x
-  Brownian matched RMS
-  OU matched RMS
+  OU matched effective RMS + autocorrelation/confinement
+  Brownian matched RMS, secondary
+  shuffled or rotated empirical trajectory control
 features:
   Gabor k=4 or grouped Gabor features
   pyramid k=8 or grouped pyramid features
 response summaries:
-  mean response over trajectory
-  delta from static
+  temporal PCs, primary
+  compact multi-bin summary, if cheap
+  delta from static, secondary
+  mean response over trajectory, diagnostic only
 metrics:
-  feature decoding
+  feature decoding with shared or fixed alpha
   signal/motion covariance ratio
+  signal-motion subspace overlap
 controls:
-  shared or fixed-alpha ridge
   clipping/effective-RMS report
 ```
 
@@ -229,6 +341,21 @@ useful scale sit near biological/sub-biological motion rather than the largest
 tested motion?
 ```
 
+Predefined pilot outcomes:
+
+```text
+real > OU > Brownian/static:
+  empirical trajectory statistics add something beyond generic confined motion.
+
+real ~= OU > Brownian/static:
+  FEM-like confinement/autocorrelation is sufficient; exact biological trace
+  identity is not uniquely required.
+
+real ~= OU ~= Brownian > static, and score rises with motion scale:
+  likely generic motion modulation unless signal-motion overlap shows a useful
+  frontier.
+```
+
 ## Production Run
 
 If the MVP lands:
@@ -239,22 +366,25 @@ traces: 512+
 motion families:
   static
   empirical scales 0.125, 0.25, 0.5, 1
-  Brownian matched
   OU matched
+  Brownian matched
   shuffled empirical
   phase-randomized if cheap
+  over-large empirical scale as a diagnostic
 features:
   Gabor grouped by orientation/SF
   steerable pyramid grouped by scale/orientation
   DCT grouped by frequency band
 response summaries:
-  mean
   temporal PCs
+  compact multi-bin
   delta from static
+  mean diagnostic
 metrics:
   decoding
   linear-Gaussian/logdet information
   signal-versus-motion covariance decomposition
+  signal-motion subspace overlap
   information/cost Pareto frontier
 ```
 
@@ -264,7 +394,7 @@ A successful aggregate analysis could support a Figure 4/5 panel sequence:
 
 ```text
 A. Natural images x FEM distribution -> V1 response movies.
-B. Motion families: static, empirical FEM, Brownian/OU, scaled empirical.
+B. Motion families: static, empirical FEM, OU, Brownian, scaled empirical.
 C. Aggregate image-feature information across scale/family.
 D. Signal versus motion-nuisance covariance decomposition.
 E. Feature breakdown by spatial-frequency band or latent family.

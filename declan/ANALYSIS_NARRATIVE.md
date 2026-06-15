@@ -344,7 +344,18 @@ Post-fix Gabor/pyramid latent-information branch:
   `backimage_aggregate_fem_information_plan.md`. This shifts the figure-level
   question from exact local axis optimality to distributional adaptation:
   whether empirical FEM motion distributions improve ensemble natural-image
-  representation over static and matched Brownian/OU/shuffled controls.
+  representation over static, OU-matched, Brownian-matched, and shuffled
+  controls.
+- Cache-first aggregate proxy:
+  `fixation_statistics_by_stimulus/summarize_backimage_aggregate_cache_proxy.py`
+  reuses the completed n=256 latent/response arrays before new inference. The
+  post-fix full nested-alpha output at
+  `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_scalesweep_n256_rel0125-2_rand8_delta/aggregate_cache_proxy_full_postfix_nested`
+  confirms that cached motion-versus-static is strongly positive and grows with
+  scale, while real-vs-random specificity is narrow: Gabor `k=4`, `0.25x`
+  `+3.480` CI `[+0.642, +7.030]`; pyramid `k=8`, `0.25x` `+2.185`
+  CI `[+0.617, +4.251]`. Treat the script as a scoring/regularization bridge,
+  not as the full OU/Brownian/unpaired aggregate test.
 
 Edge-parallel stability and twin metric audit:
 
@@ -405,8 +416,13 @@ Practical next gates:
   regime-dependent support; if not, demote it behind edge-parallel preservation.
 - Build the aggregate BackImage FEM information runner and summarizer. The next
   figure-level question is ensemble distributional adaptation over natural
-  images and traces, with static, scaled empirical, Brownian, OU, and shuffled
-  controls, not exact local axis optimality.
+  images and traces, with unpaired image-trace sampling, static, scaled
+  empirical, OU as the primary synthetic null, Brownian as secondary, and
+  shuffled/rotated controls, not exact local axis optimality. Temporal PCs
+  should be the primary response summary, mean-over-trajectory diagnostic only,
+  and signal-motion subspace overlap should be a primary covariance-linked
+  readout. Deterministic ridge scores are linear decodability/information
+  proxies unless a fixed noise/logdet model is added.
 - When rerunning revised free-viewing objectives, prefer a full canonical
   population or at least a larger sampled population. Keep 16-channel or
   smaller sampled variants as transfer checks, not discovery space.
@@ -603,6 +619,17 @@ The pose-blind diagonal count-plus-marginal readout was much weaker for motion
 conditions than pose-aware readout and even made `static_center` look strong.
 Use this as a warning that observer assumptions dominate the absolute Vernier
 information numbers.
+
+Noise/readout clarification:
+
+The Vernier result did not rely on simulated noisy spike draws or an empirically
+fitted trial-noise model. The twin produced deterministic rates, and the
+analysis derived Fisher/readout quantities from those rates under explicit
+observer assumptions. The pose-aware result used diagonal-Poisson Fisher; the
+pose-blind variant used diagonal count-plus-marginal covariance and behaved
+very differently. This matters for aggregate natural-image analyses: a
+deterministic ridge score is a linear decodability/information proxy, not
+literal mutual information, unless a fixed noise/logdet formulation is added.
 
 Incomplete component-scale run:
 

@@ -216,7 +216,21 @@ The broader aggregate hypothesis is now separated into
 `backimage_aggregate_fem_information_plan.md`: if exact per-fixation axis
 matching remains heterogeneous, the next figure-level candidate is whether the
 empirical FEM distribution improves ensemble natural-image representation over
-static and matched Brownian/OU/shuffled motion controls.
+static, OU-matched, Brownian-matched, and shuffled motion controls. For that
+pilot, OU is the primary synthetic null, Brownian is secondary, temporal PCs are
+the primary response summary, mean-over-trajectory is diagnostic, and
+signal-motion subspace overlap is a primary covariance-linked readout.
+Deterministic ridge scores should be called linear decodability or information
+proxies unless a fixed noise/logdet model is added.
+
+Cache-first bridge: use
+`fixation_statistics_by_stimulus/summarize_backimage_aggregate_cache_proxy.py`
+before launching new aggregate inference. The current focused nested-alpha proxy
+reuses the completed n=256 latents/responses and lives at
+`outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_scalesweep_n256_rel0125-2_rand8_delta/aggregate_cache_proxy_full_postfix_nested`.
+The post-fix script keeps raw random axes and defines `random_axis_mean` as the
+mean decoded random-axis score. The proxy confirms strong motion-versus-static
+modulation and narrow real-vs-random specificity at `0.25x`.
 
 ## Unit-Space Policy
 

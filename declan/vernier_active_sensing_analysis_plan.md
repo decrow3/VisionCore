@@ -173,6 +173,14 @@ Run the analysis in increasing order of ambition:
    - Repeat key metrics under several observation models.
    - Run pose-aware and pose-blind readouts in parallel from the first pass.
    - Because the twin is noiseless, all information results must be reported as observer-model-dependent.
+   - Clarification for downstream aggregate analyses: the first-pass Vernier
+     result did not depend on stochastic spike draws, but it did depend on an
+     explicit Fisher/readout assumption. The pose-aware result used a
+     diagonal-Poisson Fisher readout; the pose-blind variant used a diagonal
+     count-plus-marginal readout and behaved differently. Deterministic-rate
+     decoder scores in later analyses should therefore be called linear
+     decodability or information proxies unless a fixed noise/logdet model is
+     added.
 
 ---
 

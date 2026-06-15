@@ -42,9 +42,10 @@ Figure 4/Figure 5 split. The most important files to check first are:
   FEM information branch.
 - `backimage_aggregate_fem_information_plan.md`: newest Figure-level candidate
   plan for testing whether the empirical FEM distribution improves ensemble
-  natural-image representation over static and matched Brownian/OU/shuffled
-  controls, with effective-scale, clipping, motion-energy, and shared/fixed
-  decoder-regularization guardrails.
+  natural-image representation over static, OU-matched, Brownian-matched, and
+  shuffled controls, with effective-scale, clipping, motion-energy, temporal-PC
+  response summaries, signal-motion overlap, and shared/fixed decoder
+  regularization guardrails.
 - `active_sensing_unit_space_provenance.md`: response-space ledger separating
   16-channel matched/session results, sampled-population results, and full
   756-channel canonical results. Use it before comparing pose-aware,
@@ -277,7 +278,9 @@ Primary locations:
 - `fixation_statistics_by_stimulus/run_backimage_latent_information_screen.py`
 - `fixation_statistics_by_stimulus/summarize_backimage_latent_information_screen.py`
 - `fixation_statistics_by_stimulus/audit_backimage_latent_real_random.py`
+- `fixation_statistics_by_stimulus/summarize_backimage_aggregate_cache_proxy.py`
 - `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_scalesweep_n256_rel0125-2_rand8_delta/`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_scalesweep_n256_rel0125-2_rand8_delta/aggregate_cache_proxy_full_postfix_nested/`
 - `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_scalesweep_n256_rel0125-2_rand8_delta_seed1_manifest_optimized_tb2/`
 
 Purpose: complete the locked canonical n=256 BackImage Gabor/pyramid
@@ -332,12 +335,24 @@ New aggregate plan:
 - `backimage_aggregate_fem_information_plan.md` shifts the figure-level
   question from exact per-fixation axis optimality to distributional adaptation:
   whether empirical FEM motion distributions improve ensemble natural-image
-  representation compared with static and matched Brownian/OU/shuffled
-  controls.
+  representation compared with static, OU-matched, Brownian-matched, and
+  shuffled controls.
+- The backup note is preserved as `Global Iz FEMs.md`.
+- `summarize_backimage_aggregate_cache_proxy.py` is a cache-first bridge: it
+  reuses the completed n=256 latent and response arrays to compute aggregate
+  decoding/covariance proxy summaries without new twin inference. The script
+  now keeps raw random axes and defines `random_axis_mean` as the mean of
+  decoded random-axis scores. The post-fix full proxy folder is
+  `aggregate_cache_proxy_full_postfix_nested`: motion-versus-static is strongly
+  positive and grows with scale, while real-vs-random specificity is narrow
+  (`0.25x` Gabor `k=4` and pyramid `k=8` survive with positive CIs).
 - Guardrails: report effective RMS and clipping for every nominal scale, match
   motion energy, include paired/unpaired image-trace modes, use shared/fixed
-  decoder regularization for figure-level claims, and do not interpret
-  largest-motion wins as biological optimality.
+  decoder regularization for figure-level claims, treat OU as the primary
+  synthetic null and Brownian as secondary, use temporal PCs as the primary
+  pilot response summary, promote signal-motion subspace overlap, call
+  deterministic ridge scores linear decodability/information proxies, and do
+  not interpret largest-motion wins as biological optimality.
 
 Status: `Open / local I_z has stable small-scale support; optimized
 same-window seed replication running; aggregate ensemble plan documented`.
