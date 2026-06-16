@@ -1,11 +1,12 @@
 # Active-Sensing Roadmap After Vernier, Fixation-Regime, and Image-Structure Results
 
-Last curated: 2026-06-15.
+Last curated: 2026-06-16.
 
 This note updates the active-sensing branch after the Vernier hyperacuity work,
 fixation-statistics-by-stimulus analysis, BackImage local image-structure
 analysis, scaled BackImage twin drift-geometry adjudication, and the
-input-whitening negative result.
+input-whitening negative result. It now also includes the cleaned aggregate
+BackImage natural-image FEM information result.
 
 Companion response-space ledger:
 
@@ -31,7 +32,10 @@ during BackImage viewing are robustly aligned with raw local edge geometry, but
 the current V1-twin PA/PB/Pareto axis objectives do not add explanatory power
 beyond that edge baseline. Drift also whitens natural-image input relative to
 stabilization, but unconstrained input whitening alone does not determine
-biological FEM amplitude.
+biological FEM amplitude. A cleaned aggregate BackImage run now shows that
+empirical drift-like motion adds feature-decoding signal beyond static V1-twin
+responses and robustly beats OU-like confined controls, with the advantage over
+Brownian/generic motion strongest at small scales.
 ```
 
 This reframes the digital twin. The twin should not primarily ask whether
@@ -456,7 +460,7 @@ seed dependence: if the optimized same-window seed-1 replication preserves the
 exploratory regime-dependent support. If it does not, demote it behind the
 edge-parallel preservation result.
 
-### 9. Aggregate Natural-Image FEM Information Is the Next Figure-Level Candidate
+### 9. Aggregate Natural-Image FEM Information Is the Current BackImage Candidate
 
 The local per-fixation `I_z` screen asks a difficult question: whether each
 measured drift axis is optimal for its exact local patch. The new aggregate
@@ -494,6 +498,121 @@ Real tying OU is not automatically a failure; it means broad FEM-like
 confinement/autocorrelation may be sufficient. If all motion helps and the
 largest motion always wins, the metric is generic modulation unless the
 signal/motion overlap shows a useful frontier.
+
+Latest pathfinder update:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_aggregate_fem_information_pathfinder_n64_k2_drift_only_common_unclipped_rel025-2_not_final
+```
+
+This cleaned run used the canonical `756`-unit twin, grouped-by-image CV,
+drift-only traces, common-unclipped trace sources through `2x`, and empirical,
+OU, Brownian, and rotated controls. It passed the scale sanity checks: `40`
+accepted drift-only trace sources, zero clipping, median effective/requested RMS
+`1.0`, and the same source traces reused across scales.
+
+The result should be read as nuanced rather than as a straight null:
+
+- The feared "more motion is better" trap did not appear cleanly. For temporal
+  PCA/DCT, empirical incremental gain over static became more negative as scale
+  increased, so the aggregate decoder was not simply rewarding larger motion
+  amplitude in this cleaned bank.
+- Empirical traces still beat OU in several motion-derived contrasts, especially
+  Gabor temporal PCA/DCT and pyramid at lower scales. This preserves evidence
+  for a real drift-like trajectory-statistics effect.
+- Rotated empirical traces were competitive with empirical traces. That weakens
+  any claim that original trajectory orientation relative to the local image is
+  the key ingredient, but it is compatible with the broader unpaired-ensemble
+  hypothesis that real trace kinematics matter more than exact image-locked
+  direction.
+- The response summary controls the answer. Temporal PCA/DCT ask a
+  temporal-code question and were negative relative to static. `mean` asks about
+  the time-averaged moving response. `delta_mean` asks whether the average
+  motion-induced response change carries feature information, and it was
+  strongly positive. Therefore the aggregate branch may be about integrated
+  motion-induced feature signals rather than temporal-code enhancement.
+
+Substantial patched result:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_aggregate_fem_information_n256_k48_rel025-2_drift_only_common_unclipped_patched
+```
+
+Corrected incremental static-plus-motion posthoc:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_aggregate_fem_information_n256_k48_rel025-2_drift_only_common_unclipped_patched/
+    incremental_static_plus_motion_relids
+```
+
+The original automatic `incremental_static_plus_motion` folder used old-style
+scale IDs in the launch command and produced empty gain tables. Use the
+`relids` folder for incremental claims.
+
+The larger run used the canonical `756`-unit twin, `256` images, `K=4` trace
+samples, grouped-by-image CV, a drift-only/common-unclipped trace bank,
+empirical/OU/Brownian/rotated families, scales `0.25x`, `0.5x`, `1x`, `1.5x`,
+and `2x`, and Gabor/pyramid local-field latents at `k=4,8`. Motion bookkeeping
+was clean:
+
+```text
+accepted drift-only trace sources: 151 / 256
+median effective/requested RMS: 1.0 for every family and scale
+clipped fraction: 0.0 for every family and scale
+same raw source traces reused across scales: yes
+```
+
+Primary temporal-PCA incremental result:
+
+```text
+static + empirical temporal_pca versus static alone
+
+Gabor k=4:
+  0.25x  +14.31, CI [+7.45, +21.79]
+  0.5x   +13.04, CI [+6.81, +20.89]
+  1x     +9.10,  CI [+3.73, +14.86]
+  1.5x   +9.98,  CI [+5.36, +15.87]
+  2x     +9.07,  CI [+3.87, +15.73]
+
+Pyramid k=8:
+  0.25x  +5.20, CI [+3.02, +7.68]
+  0.5x   +4.89, CI [+2.88, +7.07]
+  1x     +3.93, CI [+1.93, +5.86]
+  1.5x   +4.44, CI [+2.34, +6.64]
+  2x     +4.21, CI [+2.38, +6.23]
+```
+
+Control readout for Gabor `k=4`, temporal PCA:
+
+```text
+empirical incremental-gain advantage
+
+0.25x: vs OU +21.24, vs Brownian +10.52, vs rotated +15.27
+0.5x:  vs OU +19.59, vs Brownian +7.89,  vs rotated +11.21
+1x:    vs OU +17.16, vs Brownian +0.51,  vs rotated +5.63
+1.5x:  vs OU +18.69, vs Brownian +0.15,  vs rotated +8.58
+2x:    vs OU +18.03, vs Brownian -0.60, vs rotated +7.55
+```
+
+Current interpretation:
+
+```text
+Empirical drift-like motion adds feature-decoding signal beyond static
+responses in the V1 twin and robustly beats OU-like confined motion. The
+advantage over Brownian and rotated empirical controls is strongest at
+0.25x-0.5x and narrows at 1x-2x. The result is therefore not a simple
+more-motion-is-better artifact, but it is also not proof that exact biological
+trajectory order or image-locked direction is uniquely optimal.
+```
+
+This is now the strongest BackImage aggregate active-sensing result. It supports
+a distributional claim about empirical drift statistics at biologically
+plausible scales, while preserving the larger guardrail from Vernier and local
+BackImage screens: motion utility depends on the readout, scale, and coordinate
+frame.
 
 ## What Should Be Demoted
 

@@ -27,6 +27,17 @@ from typing import Any
 import numpy as np
 
 from .forward import compute_vernier_rates, load_model_and_readout
+from .joint_observer import (
+    SUPPORTED_COMPACT_COVARIANCE,
+    SUPPORTED_JOINT_OBSERVERS,
+    SUPPORTED_JOINT_CONTROLS,
+    THETA_LABELS,
+    build_discrete_gaussian_step_prior,
+    build_compact_translation_basis,
+    joint_geometry_vernier_observer_trial,
+    summarize_joint_geometry_rows,
+    write_joint_geometry_gap_figure,
+)
 from .metrics import (
     compact_aware_pose_blind_fisher,
     expected_counts,
@@ -347,6 +358,265 @@ def select_pose_hidden_covariance_units(
     }
 
 
+def build_local_translation_jacobian_cache(
+    args: argparse.Namespace,
+    out_dir: Path,
+    model: Any,
+    readout: Any,
+    geometry: RenderGeometry,
+    *,
+    fd_step_arcmin: float,
+    n_timebins: int,
+    reference_trace_deg: np.ndarray | None = None,
+    cache_label: str = "center",
+) -> dict[str, Any]:
+    """Compute centered finite-difference translation charts for +/- Vernier offsets."""
+    t = int(n_timebins)
+    eps = float(args.joint_translation_eps_arcmin)
+    if t <= 0:
+        raise ValueError("n_timebins must be positive for joint-geometry cache")
+    if eps <= 0.0:
+        raise ValueError("--joint-translation-eps-arcmin must be positive")
+    cache_dir = out_dir / "cache" / "joint_geometry"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    safe_label = "".join(c if c.isalnum() or c in {"-", "_"} else "_" for c in str(cache_label))
+    tag = f"{safe_label}_fd{float(fd_step_arcmin):.4f}arcmin_eps{eps:.4f}arcmin_t{t}"
+    cache_path = cache_dir / f"local_translation_jacobian_{tag}.npz"
+    theta_values = np.asarray([float(fd_step_arcmin), -float(fd_step_arcmin)], dtype=np.float32)
+    if reference_trace_deg is None:
+        reference = np.zeros((t, 2), dtype=np.float32)
+    else:
+        reference = np.asarray(reference_trace_deg, dtype=np.float32)
+        if reference.ndim != 2 or reference.shape[1] != 2:
+            raise ValueError(f"reference_trace_deg must be (T, 2), got {reference.shape}")
+        if reference.shape[0] < t:
+            raise ValueError(f"reference_trace_deg has {reference.shape[0]} bins, expected at least {t}")
+        reference = reference[:t].astype(np.float32, copy=True)
+    dx = np.asarray([eps / 60.0, 0.0], dtype=np.float32)
+    dy = np.asarray([0.0, eps / 60.0], dtype=np.float32)
+    mu0_rates: list[np.ndarray] = []
+    jac_rates: list[np.ndarray] = []
+    for theta in theta_values:
+        spec = build_spec(args, float(theta))
+        mu0 = compute_vernier_rates(
+            model,
+            readout,
+            spec,
+            reference,
+            inference_mode=args.inference_mode,
+            geometry=geometry,
+            batch_size=args.batch_size,
+            spatial_collapse=args.spatial_collapse,
+            device=args.device,
+        )[:t]
+        xp = compute_vernier_rates(
+            model,
+            readout,
+            spec,
+            reference + dx[None, :],
+            inference_mode=args.inference_mode,
+            geometry=geometry,
+            batch_size=args.batch_size,
+            spatial_collapse=args.spatial_collapse,
+            device=args.device,
+        )[:t]
+        xm = compute_vernier_rates(
+            model,
+            readout,
+            spec,
+            reference - dx[None, :],
+            inference_mode=args.inference_mode,
+            geometry=geometry,
+            batch_size=args.batch_size,
+            spatial_collapse=args.spatial_collapse,
+            device=args.device,
+        )[:t]
+        yp = compute_vernier_rates(
+            model,
+            readout,
+            spec,
+            reference + dy[None, :],
+            inference_mode=args.inference_mode,
+            geometry=geometry,
+            batch_size=args.batch_size,
+            spatial_collapse=args.spatial_collapse,
+            device=args.device,
+        )[:t]
+        ym = compute_vernier_rates(
+            model,
+            readout,
+            spec,
+            reference - dy[None, :],
+            inference_mode=args.inference_mode,
+            geometry=geometry,
+            batch_size=args.batch_size,
+            spatial_collapse=args.spatial_collapse,
+            device=args.device,
+        )[:t]
+        if mu0.shape[0] != t:
+            raise ValueError(f"Joint cache expected {t} bins but got {mu0.shape[0]}")
+        jac = np.stack([(xp - xm) / (2.0 * eps), (yp - ym) / (2.0 * eps)], axis=-1)
+        mu0_rates.append(mu0.astype(np.float32))
+        jac_rates.append(jac.astype(np.float32))
+    payload = {
+        "path": cache_path,
+        "theta_arcmin": theta_values,
+        "theta_labels": np.asarray(THETA_LABELS),
+        "translation_eps_arcmin": np.asarray([eps], dtype=np.float32),
+        "reference_trace_deg": reference,
+        "mu0_rates": np.asarray(mu0_rates, dtype=np.float32),
+        "jacobian_rates_per_arcmin": np.asarray(jac_rates, dtype=np.float32),
+    }
+    np.savez_compressed(
+        cache_path,
+        theta_arcmin=payload["theta_arcmin"],
+        theta_labels=payload["theta_labels"],
+        translation_eps_arcmin=payload["translation_eps_arcmin"],
+        reference_trace_deg=payload["reference_trace_deg"],
+        reference_mean_deg=np.asarray(np.mean(reference, axis=0, keepdims=True), dtype=np.float32),
+        reference_std_deg=np.asarray(np.std(reference, axis=0, keepdims=True), dtype=np.float32),
+        mu0_rates=payload["mu0_rates"],
+        jacobian_rates_per_arcmin=payload["jacobian_rates_per_arcmin"],
+        fd_step_arcmin=np.asarray([float(fd_step_arcmin)], dtype=np.float32),
+        bin_seconds=np.asarray([float(args.bin_seconds)], dtype=np.float32),
+        inference_mode=np.asarray([args.inference_mode]),
+        spatial_collapse=np.asarray([args.spatial_collapse]),
+        response_units=np.asarray(["rates_hz"]),
+        jacobian_units=np.asarray(["rates_hz_per_arcmin"]),
+        model_class=np.asarray([type(model).__name__]),
+        readout_class=np.asarray([type(readout).__name__]),
+        render_geometry_json=np.asarray([json.dumps(json_ready(asdict(geometry)), sort_keys=True)]),
+        stimulus_orientation_deg=np.asarray([float(args.stimulus_orientation_deg)], dtype=np.float32),
+        bar_width_arcmin=np.asarray([float(args.bar_width_arcmin)], dtype=np.float32),
+        gap_arcmin=np.asarray([float(args.gap_arcmin)], dtype=np.float32),
+        bar_length_arcmin=np.asarray([float(args.bar_length_arcmin)], dtype=np.float32),
+        contrast=np.asarray([float(args.contrast)], dtype=np.float32),
+        polarity=np.asarray([str(args.polarity)]),
+        compact_k_list=np.asarray(list(args.joint_compact_k_list), dtype=np.int32),
+        controls=np.asarray(list(args.joint_controls)),
+        joint_observer=np.asarray([str(args.joint_observer)]),
+        joint_covariance_mode=np.asarray([str(args.joint_covariance_mode)]),
+        eye_step_max_arcmin=np.asarray([float(args.joint_eye_step_max_arcmin)], dtype=np.float32),
+        eye_step_sigma_arcmin=np.asarray([float(args.joint_eye_step_sigma_arcmin)], dtype=np.float32),
+        eye_step_arcmin=np.asarray([float(args.joint_eye_step_arcmin)], dtype=np.float32),
+        joint_max_particles=np.asarray([int(args.joint_max_particles)], dtype=np.int32),
+        joint_likelihood_scale=np.asarray([float(args.joint_likelihood_scale)], dtype=np.float32),
+    )
+    return payload
+
+
+def append_joint_geometry_rows(
+    joint_rows: list[dict[str, Any]],
+    *,
+    condition: str,
+    fd_step: float,
+    inference_mode: str,
+    plus_rates: list[np.ndarray],
+    minus_rates: list[np.ndarray],
+    pose_traces: list[np.ndarray],
+    caches: list[dict[str, Any]],
+    args: argparse.Namespace,
+) -> None:
+    """Append trial-level joint hidden-pose observer rows for one condition."""
+    controls = list(getattr(args, "joint_controls", []))
+    k_list = list(getattr(args, "joint_compact_k_list", []))
+    step_prior = build_discrete_gaussian_step_prior(
+        max_step_arcmin=float(args.joint_eye_step_max_arcmin),
+        sigma_arcmin=float(args.joint_eye_step_sigma_arcmin),
+        step_arcmin=float(args.joint_eye_step_arcmin),
+    )
+    if len(caches) != len(plus_rates):
+        raise ValueError(f"Expected one joint cache per trace, got {len(caches)} caches for {len(plus_rates)} traces")
+    for trace_idx, (plus, minus, pose, cache) in enumerate(zip(plus_rates, minus_rates, pose_traces, caches, strict=True)):
+        mu0_counts = expected_counts(np.asarray(cache["mu0_rates"], dtype=np.float64), args.bin_seconds)
+        jac_counts = np.asarray(cache["jacobian_rates_per_arcmin"], dtype=np.float64) * float(args.bin_seconds)
+        reference_trace = np.asarray(cache["reference_trace_deg"], dtype=np.float64)
+        for control in controls:
+            for compact_k in k_list:
+                known_u_trans = build_compact_translation_basis(
+                    jac_counts,
+                    compact_k=int(compact_k),
+                    control="correct_chart",
+                    seed=int(args.seed),
+                )
+                u_trans = build_compact_translation_basis(
+                    jac_counts,
+                    compact_k=int(compact_k),
+                    control=str(control),
+                    seed=int(args.seed),
+                )
+                effective_k = int(u_trans.shape[1])
+                for true_label, rates in (("plus", plus), ("minus", minus)):
+                    t = min(rates.shape[0], mu0_counts.shape[1], jac_counts.shape[1], pose.shape[0], reference_trace.shape[0])
+                    pose_residual_arcmin = (np.asarray(pose[:t], dtype=np.float64) - reference_trace[:t]) * 60.0
+                    result = joint_geometry_vernier_observer_trial(
+                        expected_counts(rates[:t], args.bin_seconds),
+                        true_label,
+                        mu0_counts[:, :t],
+                        jac_counts[:, :t],
+                        u_trans,
+                        control=str(control),
+                        amplitude_lambda=float(args.joint_pose_amplitude_lambda),
+                        smoothness_lambda=float(args.joint_pose_smoothness_lambda),
+                        phi=float(args.phi),
+                        true_pose_arcmin=pose_residual_arcmin,
+                        known_u_trans=known_u_trans,
+                        observer_mode=str(args.joint_observer),
+                        step_prior=step_prior,
+                        max_particles=int(args.joint_max_particles),
+                        likelihood_scale=float(args.joint_likelihood_scale),
+                        covariance_mode=str(args.joint_covariance_mode),
+                    )
+                    tau = np.asarray(result.pop("joint_tau_hat"), dtype=np.float32)
+                    tau_path = (
+                        Path(args.out_dir)
+                        / "cache"
+                        / "joint_geometry"
+                        / f"tau_{condition}_fd{float(fd_step):.4f}_trace{trace_idx}_{true_label}_{control}_k{effective_k}.npz"
+                    )
+                    tau_path.parent.mkdir(parents=True, exist_ok=True)
+                    np.savez_compressed(
+                        tau_path,
+                        tau_hat_arcmin=tau,
+                        condition=np.asarray([condition]),
+                        true_label=np.asarray([true_label]),
+                        fd_step_arcmin=np.asarray([float(fd_step)], dtype=np.float32),
+                        joint_control=np.asarray([control]),
+                        compact_k=np.asarray([effective_k], dtype=np.int32),
+                    )
+                    joint_rows.append(
+                        {
+                            "readout": "joint_geometry_map_classification_pilot",
+                            "condition": condition,
+                            "fd_step_arcmin": float(fd_step),
+                            "trace_index": trace_idx,
+                            "inference_mode": inference_mode,
+                            "joint_control": str(control),
+                            "joint_observer": str(args.joint_observer),
+                            "joint_covariance_mode": str(args.joint_covariance_mode),
+                            "compact_k": effective_k,
+                            "requested_compact_k": int(compact_k),
+                            "translation_eps_arcmin": float(args.joint_translation_eps_arcmin),
+                            "pose_smoothness_lambda": float(args.joint_pose_smoothness_lambda),
+                            "pose_amplitude_lambda": float(args.joint_pose_amplitude_lambda),
+                            "eye_step_max_arcmin": float(args.joint_eye_step_max_arcmin),
+                            "eye_step_sigma_arcmin": float(args.joint_eye_step_sigma_arcmin),
+                            "eye_step_arcmin": float(args.joint_eye_step_arcmin),
+                            "joint_max_particles": int(args.joint_max_particles),
+                            "joint_likelihood_scale": float(args.joint_likelihood_scale),
+                            "n_eye_steps": int(step_prior["steps"].shape[0]),
+                            "n_timebins": int(t),
+                            "n_units": int(rates.shape[1]),
+                            "tau_cache_path": str(tau_path),
+                            "local_jacobian_cache_path": str(cache["path"]),
+                            "pose_reference": "per_trace_mean",
+                            "reference_x_mean_deg": float(np.mean(reference_trace[:t, 0])),
+                            "reference_y_mean_deg": float(np.mean(reference_trace[:t, 1])),
+                            **result,
+                        }
+                    )
+
+
 def append_pose_hidden_rows(
     summary_rows: list[dict[str, Any]],
     *,
@@ -476,12 +746,13 @@ def run_model_responses(
     geometry: RenderGeometry,
     conditions: list[str],
     fd_steps: list[float],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     trace_set = subsample_traces(load_eye_traces(Path(args.eye_traces_path)), args.n_traces, args.seed)
     model, readout = load_model_and_readout(args.device)
     rng = np.random.default_rng(int(args.seed))
     summary_rows: list[dict[str, Any]] = []
     inventory_rows: list[dict[str, Any]] = []
+    joint_rows: list[dict[str, Any]] = []
 
     for step in fd_steps:
         plus_spec = build_spec(args, float(step))
@@ -583,8 +854,44 @@ def run_model_responses(
                 pose_traces=pose_traces,
                 args=args,
             )
+            if bool(getattr(args, "run_joint_geometry_observer", False)):
+                t_joint = min(arr.shape[0] for arr in plus_rates + minus_rates)
+                print(
+                    f"Building joint-geometry local translation caches condition={condition} fd_step={step} arcmin T={t_joint}",
+                    flush=True,
+                )
+                joint_caches: list[dict[str, Any]] = []
+                for trace_idx, pose in enumerate(pose_traces):
+                    reference = np.broadcast_to(np.mean(pose[:t_joint], axis=0, keepdims=True), (t_joint, 2)).astype(
+                        np.float32,
+                        copy=True,
+                    )
+                    joint_caches.append(
+                        build_local_translation_jacobian_cache(
+                            args,
+                            out_dir,
+                            model,
+                            readout,
+                            geometry,
+                            fd_step_arcmin=float(step),
+                            n_timebins=int(t_joint),
+                            reference_trace_deg=reference,
+                            cache_label=f"{condition}_trace{trace_idx}",
+                        )
+                    )
+                append_joint_geometry_rows(
+                    joint_rows,
+                    condition=condition,
+                    fd_step=float(step),
+                    inference_mode=str(args.inference_mode),
+                    plus_rates=plus_rates,
+                    minus_rates=minus_rates,
+                    pose_traces=pose_traces,
+                    caches=joint_caches,
+                    args=args,
+                )
 
-    return summary_rows, inventory_rows
+    return summary_rows, inventory_rows, joint_rows
 
 
 def _pad_rates(rates: list[np.ndarray]) -> np.ndarray:
@@ -736,6 +1043,19 @@ def parse_args() -> argparse.Namespace:
         default=256,
         help="Maximum readout units for full-covariance and compact-aware pose-blind diagnostics; <=0 uses all units.",
     )
+    parser.add_argument("--run-joint-geometry-observer", action="store_true")
+    parser.add_argument("--joint-observer", type=str, default="enumerated", choices=SUPPORTED_JOINT_OBSERVERS)
+    parser.add_argument("--joint-compact-k-list", type=str, default="2,5,10")
+    parser.add_argument("--joint-translation-eps-arcmin", type=float, default=0.25)
+    parser.add_argument("--joint-pose-smoothness-lambda", type=float, default=0.01)
+    parser.add_argument("--joint-pose-amplitude-lambda", type=float, default=0.001)
+    parser.add_argument("--joint-controls", type=str, default="correct_chart,wrong_chart,random_basis")
+    parser.add_argument("--joint-eye-step-max-arcmin", type=float, default=1.0)
+    parser.add_argument("--joint-eye-step-sigma-arcmin", type=float, default=1.0)
+    parser.add_argument("--joint-eye-step-arcmin", type=float, default=1.0)
+    parser.add_argument("--joint-max-particles", type=int, default=3000)
+    parser.add_argument("--joint-likelihood-scale", type=float, default=1.0)
+    parser.add_argument("--joint-covariance-mode", type=str, default="full", choices=SUPPORTED_COMPACT_COVARIANCE)
     parser.add_argument("--render-resolution-factors", type=str, default="0.5,1,2")
     parser.add_argument("--phi", type=float, default=1.0)
     parser.add_argument("--skip-model", action="store_true")
@@ -749,6 +1069,14 @@ def main() -> None:
     args.compact_k_list = parse_csv_int(args.compact_k_list)
     args.compact_alphas = parse_csv_float(args.compact_alphas)
     args.compact_subspace_sources = parse_csv_str(args.compact_subspace_sources)
+    args.joint_compact_k_list = parse_csv_int(args.joint_compact_k_list)
+    args.joint_controls = parse_csv_str(args.joint_controls)
+    unknown_joint_controls = sorted(set(args.joint_controls) - set(SUPPORTED_JOINT_CONTROLS))
+    if unknown_joint_controls:
+        raise ValueError(
+            f"Unsupported --joint-controls values {unknown_joint_controls}; "
+            f"expected a comma-separated subset of {SUPPORTED_JOINT_CONTROLS}"
+        )
     args.render_resolution_factors = parse_csv_float(args.render_resolution_factors)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -777,10 +1105,12 @@ def main() -> None:
 
     summary_rows: list[dict[str, Any]] = []
     inventory_rows: list[dict[str, Any]] = []
+    joint_rows: list[dict[str, Any]] = []
+    joint_summary_rows: list[dict[str, Any]] = []
     if args.recompute_from_cache:
         summary_rows, _condition_summary_rows, _contrast_summary_rows = recompute_summaries_from_cache(args, out_dir)
     elif not args.skip_model:
-        summary_rows, inventory_rows = run_model_responses(args, out_dir, geometry, conditions, fd_steps)
+        summary_rows, inventory_rows, joint_rows = run_model_responses(args, out_dir, geometry, conditions, fd_steps)
         write_csv(out_dir / "information_summary.csv", summary_rows)
         write_csv(out_dir / "motion_inventory.csv", inventory_rows)
         condition_summary_rows = summarize_condition_rows(summary_rows)
@@ -789,6 +1119,11 @@ def main() -> None:
         write_csv(out_dir / "condition_reliability_summary.csv", condition_summary_rows)
         write_csv(out_dir / "paired_baseline_contrasts.csv", contrast_rows)
         write_csv(out_dir / "paired_baseline_contrast_summary.csv", contrast_summary_rows)
+        if joint_rows:
+            joint_summary_rows = summarize_joint_geometry_rows(joint_rows)
+            write_csv(out_dir / "joint_geometry_observer_trials.csv", joint_rows)
+            write_csv(out_dir / "joint_geometry_observer_summary.csv", joint_summary_rows)
+            write_joint_geometry_gap_figure(out_dir, joint_summary_rows)
 
     summary_tables = [
         "information_summary.csv",
@@ -797,6 +1132,8 @@ def main() -> None:
         "condition_reliability_summary.csv",
         "paired_baseline_contrasts.csv",
         "paired_baseline_contrast_summary.csv",
+        "joint_geometry_observer_trials.csv",
+        "joint_geometry_observer_summary.csv",
     ]
     manifest_payload = {
             "args": vars(args),
@@ -808,9 +1145,12 @@ def main() -> None:
             "recompute_from_cache": bool(args.recompute_from_cache),
             "n_information_rows": len(summary_rows),
             "n_motion_inventory_rows": len(inventory_rows),
+            "n_joint_geometry_rows": len(joint_rows),
+            "n_joint_geometry_summary_rows": len(joint_summary_rows),
             "summary_tables": summary_tables if (not args.skip_model or args.recompute_from_cache) else [],
             "render_audit_dir": out_dir / "render_audit",
             "rate_cache_dir": out_dir / "cache",
+            "joint_geometry_cache_dir": out_dir / "cache" / "joint_geometry",
             "provenance": "high_res_vernier_world_render_to_retina_sampler_plus_canonical_twin_forward",
     }
     if args.recompute_from_cache and previous_manifest:

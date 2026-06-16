@@ -1,6 +1,6 @@
 # declan Manifest
 
-Last curated: 2026-06-13.
+Last curated: 2026-06-16.
 
 This is a human-maintained map of the `declan/` workspace. It is intentionally
 ordered newest-to-oldest in reading order where chronology is recoverable. The
@@ -30,7 +30,7 @@ or handoff that interprets them.
 
 ## Current Active / Uncommitted Work
 
-As of 2026-06-13, active uncommitted work has moved beyond the 2026-06-09
+As of 2026-06-16, active uncommitted work has moved beyond the 2026-06-09
 Figure 4/Figure 5 split. The most important files to check first are:
 
 - `active_sensing_roadmap_after_vernier_fixation_image_structure.md`: current
@@ -38,14 +38,17 @@ Figure 4/Figure 5 split. The most important files to check first are:
   image-structure, scaled twin drift-geometry adjudication, and the
   input-whitening negative result. It now also records the n=256 local
   Gabor/pyramid latent-information scale sweep, effective-scale audit, active
-  optimized seed-dependence replication, and the new aggregate natural-image
-  FEM information branch.
+  optimized seed-dependence replication, and the cleaned n=256 aggregate
+  natural-image FEM information result.
 - `backimage_aggregate_fem_information_plan.md`: newest Figure-level candidate
   plan for testing whether the empirical FEM distribution improves ensemble
   natural-image representation over static, OU-matched, Brownian-matched, and
   shuffled controls, with effective-scale, clipping, motion-energy, temporal-PC
   response summaries, signal-motion overlap, and shared/fixed decoder
-  regularization guardrails.
+  regularization guardrails. The current substantial result is
+  `backimage_aggregate_fem_information_n256_k48_rel025-2_drift_only_common_unclipped_patched`;
+  use its corrected `incremental_static_plus_motion_relids` posthoc for
+  incremental static-plus-motion claims.
 - `active_sensing_unit_space_provenance.md`: response-space ledger separating
   16-channel matched/session results, sampled-population results, and full
   756-channel canonical results. Use it before comparing pose-aware,
@@ -279,9 +282,13 @@ Primary locations:
 - `fixation_statistics_by_stimulus/summarize_backimage_latent_information_screen.py`
 - `fixation_statistics_by_stimulus/audit_backimage_latent_real_random.py`
 - `fixation_statistics_by_stimulus/summarize_backimage_aggregate_cache_proxy.py`
+- `fixation_statistics_by_stimulus/run_backimage_aggregate_fem_information.py`
+- `fixation_statistics_by_stimulus/summarize_backimage_aggregate_incremental_motion.py`
 - `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_scalesweep_n256_rel0125-2_rand8_delta/`
 - `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_scalesweep_n256_rel0125-2_rand8_delta/aggregate_cache_proxy_full_postfix_nested/`
 - `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_latent_information_scalesweep_n256_rel0125-2_rand8_delta_seed1_manifest_optimized_tb2/`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_k48_rel025-2_drift_only_common_unclipped_patched/`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_k48_rel025-2_drift_only_common_unclipped_patched/incremental_static_plus_motion_relids/`
 
 Purpose: complete the locked canonical n=256 BackImage Gabor/pyramid
 latent-information scale sweep, audit effective scale/clipping/subsampling
@@ -354,8 +361,41 @@ New aggregate plan:
   deterministic ridge scores linear decodability/information proxies, and do
   not interpret largest-motion wins as biological optimality.
 
+Substantial aggregate result:
+
+- Output:
+  `backimage_aggregate_fem_information_n256_k48_rel025-2_drift_only_common_unclipped_patched`.
+- Corrected incremental posthoc:
+  `incremental_static_plus_motion_relids`. The first automatic
+  `incremental_static_plus_motion` folder used old-style scale IDs in the launch
+  command and has empty gain tables.
+- Canonical `756`-unit twin, `256` images, `K=4`, grouped-by-image CV,
+  drift-only/common-unclipped trace bank, source traces reused across scales,
+  empirical/OU/Brownian/rotated controls, scales `0.25x`, `0.5x`, `1x`,
+  `1.5x`, and `2x`, and Gabor/pyramid local-field latents at `k=4,8`.
+- Motion bookkeeping was clean: `151/256` drift-only trace sources accepted,
+  median effective/requested RMS `1.0` for every family/scale, and clipped
+  fraction `0.0` throughout.
+- Primary temporal-PCA incremental result: empirical motion added decoding
+  signal beyond static responses. Gabor `k=4` gains were `+14.31`, `+13.04`,
+  `+9.10`, `+9.98`, and `+9.07` from `0.25x` through `2x`; all CIs were
+  positive. Pyramid `k=8` gains were smaller but consistently positive:
+  `+5.20`, `+4.89`, `+3.93`, `+4.44`, and `+4.21`.
+- Empirical beat OU robustly across scale. Gabor `k=4` empirical-minus-OU
+  incremental-gain advantages were `+21.24`, `+19.59`, `+17.16`, `+18.69`,
+  and `+18.03` from `0.25x` through `2x`.
+- Empirical beat Brownian and rotated most clearly at small scales. For Gabor
+  `k=4`, `0.25x` empirical-minus-Brownian was `+10.52` and
+  empirical-minus-rotated was `+15.27`; at `0.5x`, they were `+7.89` and
+  `+11.21`. Brownian became competitive at `1x-2x`.
+- Interpretation: empirical drift-like statistics add feature-decoding signal
+  and beat OU-like confined motion, with the most specific advantage at
+  `0.25x-0.5x`. This is not a simple "more motion is better" result, but it is
+  also not proof of exact trajectory optimality.
+
 Status: `Open / local I_z has stable small-scale support; optimized
-same-window seed replication running; aggregate ensemble plan documented`.
+same-window seed replication running; aggregate n=256 result supports
+readout- and scale-dependent empirical-drift benefit over OU`.
 
 ### 2026-06-14: BackImage Latent-Information Fixes and Edge-Parallel Stability Synthesis
 

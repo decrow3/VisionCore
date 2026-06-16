@@ -28,6 +28,26 @@ MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python -m declan.vernier_active_sen
   --batch-size 2
 ```
 
+## Joint geometry observer smoke
+
+```bash
+MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python -m declan.vernier_active_sensing.run_vernier_active_sensing \
+  --out-dir outputs/vernier_joint_geometry_smoke \
+  --n-traces 2 \
+  --max-frames 5 \
+  --fd-steps-arcmin 0.5 \
+  --conditions real_fem,static_center,order_shuffled_positions \
+  --run-joint-geometry-observer \
+  --joint-observer enumerated \
+  --joint-compact-k-list 2 \
+  --joint-eye-step-max-arcmin 1 \
+  --joint-eye-step-sigma-arcmin 1 \
+  --joint-eye-step-arcmin 1 \
+  --joint-max-particles 3000 \
+  --device cpu \
+  --batch-size 2
+```
+
 ## Larger first pass
 
 ```bash

@@ -118,6 +118,8 @@ class AggregateConfig:
     max_trace_source_rms_deg: float | None
     max_trace_source_radius_deg: float | None
     max_trace_source_path_length_deg: float | None
+    max_rendered_trace_path_length_deg: float | None
+    max_source_trace_path_length_deg: float | None
     max_trace_source_speed_p95_deg_s: float | None
     max_trace_source_microsaccade_events: int | None
     microsaccade_speed_threshold_dps: float | None
@@ -438,20 +440,36 @@ def _eligible_trace_bank_indices(
     max_trace_source_rms_deg: float | None,
     max_trace_source_radius_deg: float | None,
     max_trace_source_path_length_deg: float | None,
+    max_rendered_trace_path_length_deg: float | None,
+    max_source_trace_path_length_deg: float | None,
     max_trace_source_speed_p95_deg_s: float | None,
     max_trace_source_microsaccade_events: int | None,
 ) -> list[int]:
+    rendered_path_limit = (
+        max_rendered_trace_path_length_deg
+        if max_rendered_trace_path_length_deg is not None
+        else max_trace_source_path_length_deg
+    )
+
+    def over_limit(value: Any, limit: float | None) -> bool:
+        if limit is None:
+            return False
+        val = float(value)
+        return (not np.isfinite(val)) or val > float(limit)
+
     eligible = []
     for j, item in enumerate(trace_bank):
         if int(item["source_row"]) == int(current_source_row):
             continue
-        if max_trace_source_rms_deg is not None and float(item["observed_rms_deg"]) > float(max_trace_source_rms_deg):
+        if over_limit(item["observed_rms_deg"], max_trace_source_rms_deg):
             continue
-        if max_trace_source_radius_deg is not None and float(item["source_max_radius_deg"]) > float(max_trace_source_radius_deg):
+        if over_limit(item["source_max_radius_deg"], max_trace_source_radius_deg):
             continue
-        if max_trace_source_path_length_deg is not None and float(item["path_length_deg"]) > float(max_trace_source_path_length_deg):
+        if over_limit(item["path_length_deg"], rendered_path_limit):
             continue
-        if max_trace_source_speed_p95_deg_s is not None and float(item["source_speed_p95_deg_s"]) > float(max_trace_source_speed_p95_deg_s):
+        if over_limit(item["source_path_length_deg"], max_source_trace_path_length_deg):
+            continue
+        if over_limit(item["source_speed_p95_deg_s"], max_trace_source_speed_p95_deg_s):
             continue
         if (
             max_trace_source_microsaccade_events is not None
@@ -462,17 +480,17 @@ def _eligible_trace_bank_indices(
     return eligible
 
 
-def _family_trace(
+def _family_raw_trace(
     family: str,
     source_trace: np.ndarray,
     source_rho: float,
-    target_rms: float,
     *,
     rng: np.random.Generator,
     max_rms_deg: float,
     source_shape: np.ndarray | None = None,
+    selection_rms: float | None = None,
     target_path_length: float | None = None,
-) -> tuple[np.ndarray, dict[str, Any]]:
+) -> np.ndarray:
     if family == "empirical":
         raw = np.asarray(source_trace, dtype=np.float32)
     elif family == "rotated":
@@ -489,7 +507,11 @@ def _family_trace(
             if target_path_length is None or not np.isfinite(target_path_length):
                 loss = 0.0
             else:
-                cand_scaled, _ = _scale_to_rms(candidate, target_rms, max_rms_deg=max_rms_deg)
+                cand_scaled, _ = _scale_to_rms(
+                    candidate,
+                    float(selection_rms) if selection_rms is not None else _trace_rms(source_trace),
+                    max_rms_deg=max_rms_deg,
+                )
                 loss = abs(_path_length(cand_scaled) - float(target_path_length))
             if loss < best_loss:
                 best_loss = float(loss)
@@ -497,11 +519,46 @@ def _family_trace(
         raw = np.asarray(best_raw, dtype=np.float32)
     else:
         raise ValueError(f"Unknown motion family {family!r}")
+    raw = np.asarray(raw, dtype=np.float64)
+    raw -= np.mean(raw, axis=0, keepdims=True)
+    return raw.astype(np.float32)
+
+
+def _scale_family_raw_trace(
+    raw: np.ndarray,
+    target_rms: float,
+    *,
+    max_rms_deg: float,
+) -> tuple[np.ndarray, dict[str, Any]]:
     trace, meta = _scale_to_rms(raw, target_rms, max_rms_deg=max_rms_deg)
     meta["generated_lag1_autocorr"] = _lag1_autocorr(trace)
     meta["path_length_deg"] = _path_length(trace)
     meta.update(_speed_summary(trace, dt=1.0 / 120.0))
     return trace, meta
+
+
+def _family_trace(
+    family: str,
+    source_trace: np.ndarray,
+    source_rho: float,
+    target_rms: float,
+    *,
+    rng: np.random.Generator,
+    max_rms_deg: float,
+    source_shape: np.ndarray | None = None,
+    target_path_length: float | None = None,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    raw = _family_raw_trace(
+        family,
+        source_trace,
+        source_rho,
+        rng=rng,
+        max_rms_deg=max_rms_deg,
+        source_shape=source_shape,
+        selection_rms=target_rms,
+        target_path_length=target_path_length,
+    )
+    return _scale_family_raw_trace(raw, target_rms, max_rms_deg=max_rms_deg)
 
 
 def _fit_temporal_basis(responses: list[np.ndarray], n_components: int) -> np.ndarray:
@@ -834,7 +891,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--decode-group-mode",
         choices=("image", "session"),
-        default="session",
+        default="image",
         help=(
             "CV grouping for feature decoding. image keeps each image/source row in one fold; "
             "session is stricter across sessions. Response arrays are already image-averaged."
@@ -855,7 +912,27 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--max-trace-source-radius-deg", type=float, default=None)
-    parser.add_argument("--max-trace-source-path-length-deg", type=float, default=None)
+    parser.add_argument(
+        "--max-trace-source-path-length-deg",
+        type=float,
+        default=None,
+        help=(
+            "Deprecated alias for --max-rendered-trace-path-length-deg. This filters the "
+            "resampled n-timepoint trace path length, not the source-table path_length_deg."
+        ),
+    )
+    parser.add_argument(
+        "--max-rendered-trace-path-length-deg",
+        type=float,
+        default=None,
+        help="Filter trace-bank entries by path length after resampling to --n-timepoints.",
+    )
+    parser.add_argument(
+        "--max-source-trace-path-length-deg",
+        type=float,
+        default=None,
+        help="Filter trace-bank entries by the source table path_length_deg column.",
+    )
     parser.add_argument("--max-trace-source-speed-p95-deg-s", type=float, default=None)
     parser.add_argument(
         "--max-trace-source-microsaccade-events",
@@ -883,6 +960,28 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--dry-run", action="store_true", help="Prepare images/traces/latents but skip twin evaluation.")
     return parser
+
+
+def _trace_filter_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "max_trace_source_rms_deg": float(args.max_trace_source_rms_deg) if args.max_trace_source_rms_deg is not None else None,
+        "max_trace_source_radius_deg": float(args.max_trace_source_radius_deg) if args.max_trace_source_radius_deg is not None else None,
+        "max_trace_source_path_length_deg": (
+            float(args.max_trace_source_path_length_deg) if args.max_trace_source_path_length_deg is not None else None
+        ),
+        "max_rendered_trace_path_length_deg": (
+            float(args.max_rendered_trace_path_length_deg) if args.max_rendered_trace_path_length_deg is not None else None
+        ),
+        "max_source_trace_path_length_deg": (
+            float(args.max_source_trace_path_length_deg) if args.max_source_trace_path_length_deg is not None else None
+        ),
+        "max_trace_source_speed_p95_deg_s": (
+            float(args.max_trace_source_speed_p95_deg_s) if args.max_trace_source_speed_p95_deg_s is not None else None
+        ),
+        "max_trace_source_microsaccade_events": (
+            int(args.max_trace_source_microsaccade_events) if args.max_trace_source_microsaccade_events is not None else None
+        ),
+    }
 
 
 def run(args: argparse.Namespace) -> Path:
@@ -931,6 +1030,12 @@ def run(args: argparse.Namespace) -> Path:
         max_trace_source_radius_deg=float(args.max_trace_source_radius_deg) if args.max_trace_source_radius_deg is not None else None,
         max_trace_source_path_length_deg=(
             float(args.max_trace_source_path_length_deg) if args.max_trace_source_path_length_deg is not None else None
+        ),
+        max_rendered_trace_path_length_deg=(
+            float(args.max_rendered_trace_path_length_deg) if args.max_rendered_trace_path_length_deg is not None else None
+        ),
+        max_source_trace_path_length_deg=(
+            float(args.max_source_trace_path_length_deg) if args.max_source_trace_path_length_deg is not None else None
         ),
         max_trace_source_speed_p95_deg_s=(
             float(args.max_trace_source_speed_p95_deg_s) if args.max_trace_source_speed_p95_deg_s is not None else None
@@ -992,17 +1097,7 @@ def run(args: argparse.Namespace) -> Path:
     trace_pool = _eligible_trace_bank_indices(
         trace_bank,
         current_source_row=-1,
-        max_trace_source_rms_deg=float(args.max_trace_source_rms_deg) if args.max_trace_source_rms_deg is not None else None,
-        max_trace_source_radius_deg=float(args.max_trace_source_radius_deg) if args.max_trace_source_radius_deg is not None else None,
-        max_trace_source_path_length_deg=(
-            float(args.max_trace_source_path_length_deg) if args.max_trace_source_path_length_deg is not None else None
-        ),
-        max_trace_source_speed_p95_deg_s=(
-            float(args.max_trace_source_speed_p95_deg_s) if args.max_trace_source_speed_p95_deg_s is not None else None
-        ),
-        max_trace_source_microsaccade_events=(
-            int(args.max_trace_source_microsaccade_events) if args.max_trace_source_microsaccade_events is not None else None
-        ),
+        **_trace_filter_kwargs(args),
     )
     if any(
         value is not None
@@ -1010,6 +1105,8 @@ def run(args: argparse.Namespace) -> Path:
             args.max_trace_source_rms_deg,
             args.max_trace_source_radius_deg,
             args.max_trace_source_path_length_deg,
+            args.max_rendered_trace_path_length_deg,
+            args.max_source_trace_path_length_deg,
             args.max_trace_source_speed_p95_deg_s,
             args.max_trace_source_microsaccade_events,
         )
@@ -1018,7 +1115,8 @@ def run(args: argparse.Namespace) -> Path:
             "trace source filter keeps "
             f"{len(trace_pool)}/{len(trace_bank)} traces "
             f"(rms<={args.max_trace_source_rms_deg}, radius<={args.max_trace_source_radius_deg}, "
-            f"path<={args.max_trace_source_path_length_deg}, speed_p95<={args.max_trace_source_speed_p95_deg_s}, "
+            f"rendered_path<={args.max_rendered_trace_path_length_deg or args.max_trace_source_path_length_deg}, "
+            f"source_path<={args.max_source_trace_path_length_deg}, speed_p95<={args.max_trace_source_speed_p95_deg_s}, "
             f"events<={args.max_trace_source_microsaccade_events})"
         )
 
@@ -1082,31 +1180,31 @@ def run(args: argparse.Namespace) -> Path:
             }
         ]
         reusable_sources: dict[tuple[str, int], int] = {}
+        reusable_raw_traces: dict[tuple[str, int], np.ndarray] = {}
         if bool(args.reuse_trace_sources_across_scales):
             eligible = _eligible_trace_bank_indices(
                 trace_bank,
                 current_source_row=int(row["source_row"]),
-                max_trace_source_rms_deg=(
-                    float(args.max_trace_source_rms_deg) if args.max_trace_source_rms_deg is not None else None
-                ),
-                max_trace_source_radius_deg=(
-                    float(args.max_trace_source_radius_deg) if args.max_trace_source_radius_deg is not None else None
-                ),
-                max_trace_source_path_length_deg=(
-                    float(args.max_trace_source_path_length_deg) if args.max_trace_source_path_length_deg is not None else None
-                ),
-                max_trace_source_speed_p95_deg_s=(
-                    float(args.max_trace_source_speed_p95_deg_s) if args.max_trace_source_speed_p95_deg_s is not None else None
-                ),
-                max_trace_source_microsaccade_events=(
-                    int(args.max_trace_source_microsaccade_events) if args.max_trace_source_microsaccade_events is not None else None
-                ),
+                **_trace_filter_kwargs(args),
             )
             if not eligible:
                 raise ValueError("Unpaired sampling has no eligible trace-bank entries after source-RMS filtering.")
             for family in families:
                 for sample_index in range(int(args.trace_samples_per_condition)):
-                    reusable_sources[(family, sample_index)] = int(eligible[int(rng.integers(0, len(eligible)))])
+                    key = (family, sample_index)
+                    bank_index = int(eligible[int(rng.integers(0, len(eligible)))])
+                    item = trace_bank[bank_index]
+                    reusable_sources[key] = bank_index
+                    reusable_raw_traces[key] = _family_raw_trace(
+                        family,
+                        item["trace"],
+                        float(item["lag1_autocorr"]),
+                        rng=rng,
+                        max_rms_deg=float(args.max_rms_deg),
+                        source_shape=item.get("covariance_shape"),
+                        selection_rms=float(item["observed_rms_deg"]),
+                        target_path_length=float(item["path_length_deg"]),
+                    )
         for scale in scales:
             scale_id = f"rel_{_scale_token(scale)}x"
             for family in families:
@@ -1114,41 +1212,35 @@ def run(args: argparse.Namespace) -> Path:
                     eligible = _eligible_trace_bank_indices(
                         trace_bank,
                         current_source_row=int(row["source_row"]),
-                        max_trace_source_rms_deg=(
-                            float(args.max_trace_source_rms_deg) if args.max_trace_source_rms_deg is not None else None
-                        ),
-                        max_trace_source_radius_deg=(
-                            float(args.max_trace_source_radius_deg) if args.max_trace_source_radius_deg is not None else None
-                        ),
-                        max_trace_source_path_length_deg=(
-                            float(args.max_trace_source_path_length_deg) if args.max_trace_source_path_length_deg is not None else None
-                        ),
-                        max_trace_source_speed_p95_deg_s=(
-                            float(args.max_trace_source_speed_p95_deg_s) if args.max_trace_source_speed_p95_deg_s is not None else None
-                        ),
-                        max_trace_source_microsaccade_events=(
-                            int(args.max_trace_source_microsaccade_events) if args.max_trace_source_microsaccade_events is not None else None
-                        ),
+                        **_trace_filter_kwargs(args),
                     )
                     if not eligible:
                         raise ValueError("Unpaired sampling has no eligible trace-bank entries after source-RMS filtering.")
                     if bool(args.reuse_trace_sources_across_scales):
-                        bank_index = reusable_sources[(family, int(sample_index))]
+                        reuse_key = (family, int(sample_index))
+                        bank_index = reusable_sources[reuse_key]
                     else:
                         bank_index = int(eligible[int(rng.integers(0, len(eligible)))])
                     item = trace_bank[bank_index]
                     target_rms = float(scale) * float(item["observed_rms_deg"])
                     target_path = float(scale) * float(item["path_length_deg"])
-                    trace, meta = _family_trace(
-                        family,
-                        item["trace"],
-                        float(item["lag1_autocorr"]),
-                        target_rms,
-                        rng=rng,
-                        max_rms_deg=float(args.max_rms_deg),
-                        source_shape=item.get("covariance_shape"),
-                        target_path_length=target_path,
-                    )
+                    if bool(args.reuse_trace_sources_across_scales):
+                        trace, meta = _scale_family_raw_trace(
+                            reusable_raw_traces[reuse_key],
+                            target_rms,
+                            max_rms_deg=float(args.max_rms_deg),
+                        )
+                    else:
+                        trace, meta = _family_trace(
+                            family,
+                            item["trace"],
+                            float(item["lag1_autocorr"]),
+                            target_rms,
+                            rng=rng,
+                            max_rms_deg=float(args.max_rms_deg),
+                            source_shape=item.get("covariance_shape"),
+                            target_path_length=target_path,
+                        )
                     traces.append(trace)
                     trace_specs.append(
                         {
@@ -1162,8 +1254,11 @@ def run(args: argparse.Namespace) -> Path:
                             "trace_source_session": str(item["session"]),
                             "source_trace_rms_deg": float(item["observed_rms_deg"]),
                             "source_trace_path_length_deg": float(item["path_length_deg"]),
+                            "rendered_source_trace_path_length_deg": float(item["path_length_deg"]),
+                            "source_table_path_length_deg": float(item["source_path_length_deg"]),
                             "source_trace_duration_s": float(item["duration_s"]),
                             "source_trace_lag1": float(item["lag1_autocorr"]),
+                            "raw_trace_reused_across_scales": bool(args.reuse_trace_sources_across_scales),
                             "requested_rms_deg": float(meta["requested_rms_deg"]),
                             "effective_rms_deg": float(meta["effective_rms_deg"]),
                             "effective_to_requested_rms": (

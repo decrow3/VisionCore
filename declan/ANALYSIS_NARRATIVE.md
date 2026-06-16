@@ -1,6 +1,6 @@
 # declan Analysis Narrative
 
-Last curated: 2026-06-15.
+Last curated: 2026-06-16.
 
 Companion to `MANIFEST.md`. The manifest answers "where is it?" This file
 answers "why did we do it, what happened, and how did later work change the
@@ -72,9 +72,14 @@ The story has moved through four broad phases:
    constraint, but not a standalone scale-setting answer. The latest BackImage
    local Gabor/pyramid screen now supports a regime-dependent small-scale
    real-vs-random `I_z` signal, strongest near `0.25x` observed RMS, but not a
-   clean global or `1x` infomax claim. This has motivated a separate aggregate
-   natural-image FEM information plan that tests distributional adaptation over
-   image and trace ensembles instead of exact per-fixation axis optimality.
+   clean global or `1x` infomax claim. The follow-up aggregate natural-image FEM
+   information run is now the stronger BackImage result: in a cleaned `n=256`,
+   `K=4`, grouped-by-image CV run, empirical drift-like motion adds
+   feature-decoding signal beyond static V1-twin responses, robustly beats
+   OU-like confined controls, and does not simply improve with more motion. The
+   advantage over Brownian/generic motion is strongest at `0.25x-0.5x` and
+   narrows at `1x-2x`, so the claim remains scale-, readout-, and twin-scoped
+   rather than a proof of exact trajectory optimality.
 
 Numerical audit update, 2026-06-12:
 
@@ -356,6 +361,64 @@ Post-fix Gabor/pyramid latent-information branch:
   `+3.480` CI `[+0.642, +7.030]`; pyramid `k=8`, `0.25x` `+2.185`
   CI `[+0.617, +4.251]`. Treat the script as a scoring/regularization bridge,
   not as the full OU/Brownian/unpaired aggregate test.
+- Clean aggregate pathfinder:
+  `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_pathfinder_n64_k2_drift_only_common_unclipped_rel025-2_not_final`.
+  This run used the canonical `756`-unit twin, grouped-by-image CV, a
+  drift-only trace bank, common source traces across `0.25x`, `0.5x`, `1x`,
+  `1.5x`, and `2x`, and empirical, OU, Brownian, and rotated controls. Motion
+  bookkeeping was clean: `40` accepted trace sources, zero clipping, median
+  effective/requested RMS `1.0`, and identical trace sources reused across
+  scales. The result is not a straight null. For temporal PCA/DCT summaries,
+  empirical incremental gain over static became more negative with scale
+  rather than improving monotonically, arguing against the simplest
+  "more motion is better" failure mode. Empirical traces still beat OU in
+  several motion-derived contrasts, especially Gabor temporal PCA/DCT and
+  pyramid at smaller scales, so drift-like trajectory statistics remain
+  informative. However, rotated empirical traces were competitive with
+  empirical, which means the evidence is not specific to original trajectory
+  orientation relative to each image. The response summary decides the result:
+  temporal PCA/DCT were negative relative to static, while `delta_mean` was
+  strongly positive. Interpret this as a readout-dependent aggregate signal:
+  temporal-code enhancement is not supported in the pathfinder, but
+  low-dimensional motion-induced feature remapping remains alive.
+- Patched substantial aggregate run:
+  `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_k48_rel025-2_drift_only_common_unclipped_patched`.
+  This run used the canonical `756`-unit twin, `256` images, `K=4` trace
+  samples, grouped-by-image CV, drift-only common-unclipped traces, source trace
+  reuse across scales, empirical/OU/Brownian/rotated families, scales `0.25x`,
+  `0.5x`, `1x`, `1.5x`, and `2x`, and Gabor/pyramid local-field latents at
+  `k=4,8`. Motion bookkeeping was clean: `151/256` trace sources passed the
+  strict drift-only filter, effective/requested RMS was `1.0` for every
+  family/scale, and clipping was `0.0` everywhere. Use the corrected
+  incremental posthoc folder
+  `incremental_static_plus_motion_relids`; the first automatic
+  `incremental_static_plus_motion` folder used old-style scale IDs and has
+  empty gain tables.
+- Primary aggregate result:
+  temporal-PCA empirical motion added feature-decoding signal beyond the full
+  static response. For Gabor `k=4`, static-plus-empirical gains were `+14.31`
+  `[+7.45, +21.79]` at `0.25x`, `+13.04` `[+6.81, +20.89]` at `0.5x`,
+  `+9.10` `[+3.73, +14.86]` at `1x`, `+9.98` `[+5.36, +15.87]` at `1.5x`,
+  and `+9.07` `[+3.87, +15.73]` at `2x`. Pyramid `k=8` showed smaller but
+  consistent gains: `+5.20`, `+4.89`, `+3.93`, `+4.44`, and `+4.21` across the
+  same scale sequence, all with positive CIs.
+- Control result:
+  empirical temporal-PCA incremental gain beat OU robustly across scale. For
+  Gabor `k=4`, empirical-minus-OU was `+21.24`, `+19.59`, `+17.16`, `+18.69`,
+  and `+18.03` from `0.25x` to `2x`. Empirical also beat Brownian and rotated
+  most cleanly at small scales: at `0.25x`, Gabor `k=4` empirical-minus-Brownian
+  was `+10.52` and empirical-minus-rotated was `+15.27`; at `0.5x`, they were
+  `+7.89` and `+11.21`. Brownian became competitive at `1x-2x`, so high-scale
+  real-specific claims should be guarded.
+- Scale interpretation:
+  the cleaned aggregate result argues against the worst "more motion is better"
+  artifact. Empirical temporal-PCA gain is strongest at `0.25x-0.5x` and then
+  plateaus or decreases through `2x`, while effective RMS and clipping
+  bookkeeping are clean. This makes the aggregate branch the best current
+  BackImage active-sensing candidate, but with a distributional claim:
+  empirical drift statistics are useful for the V1-twin representation of
+  natural-image feature structure; exact biological trace order/orientation is
+  not established as uniquely optimal.
 
 Edge-parallel stability and twin metric audit:
 
@@ -383,8 +446,13 @@ objective. The credible result is local preservation: edge-parallel motion
 disrupts pixels and V1-twin responses less than edge-orthogonal motion. The
 corrected Gabor/pyramid branch now has stable small-scale support at `0.25x`,
 especially for Gabor `k=4` and pyramid `k=8`, but it is not a clean `1x` or
-global infomax result. Treat it as regime-dependent exploratory support unless
-the same-window seed replication confirms the random-baseline stability.
+global infomax result. The aggregate branch is now stronger than the local
+screen: empirical drift-like trajectories add feature-decoding signal beyond
+static responses and robustly beat OU in the cleaned `n=256` run. The guardrail
+is that Brownian/generic motion becomes competitive at larger scales and exact
+trajectory orientation is not established as uniquely optimal. Treat the
+aggregate result as readout- and scale-dependent support for empirical drift
+statistics, not as global infomax.
 ```
 
 Claim boundary:
@@ -414,15 +482,16 @@ Practical next gates:
 - Finish the optimized same-window seed replication. If the `0.25x`
   real-vs-random positives survive, treat the local `I_z` branch as
   regime-dependent support; if not, demote it behind edge-parallel preservation.
-- Build the aggregate BackImage FEM information runner and summarizer. The next
-  figure-level question is ensemble distributional adaptation over natural
-  images and traces, with unpaired image-trace sampling, static, scaled
-  empirical, OU as the primary synthetic null, Brownian as secondary, and
-  shuffled/rotated controls, not exact local axis optimality. Temporal PCs
-  should be the primary response summary, mean-over-trajectory diagnostic only,
-  and signal-motion subspace overlap should be a primary covariance-linked
-  readout. Deterministic ridge scores are linear decodability/information
-  proxies unless a fixed noise/logdet model is added.
+- For the aggregate BackImage FEM branch, the runner and substantial `n=256`,
+  `K=4` result are now in hand. The next useful work is figure construction and
+  targeted robustness, not another broad pathfinder: fixed/shared-alpha
+  sensitivity, seed/source resampling, concise scale-curve plots for
+  empirical-minus-OU/Brownian/rotated, and signal-motion covariance panels.
+  Temporal PCs and temporal DCT should remain primary temporal-code summaries;
+  mean and `delta_mean` should be reported as distinct
+  integrating/motion-induced-remapping readouts. Deterministic ridge scores are
+  linear decodability/information proxies unless a fixed noise/logdet model is
+  added.
 - When rerunning revised free-viewing objectives, prefer a full canonical
   population or at least a larger sampled population. Keep 16-channel or
   smaller sampled variants as transfer checks, not discovery space.

@@ -1,6 +1,6 @@
 # BackImage Aggregate FEM Information Plan
 
-Last curated: 2026-06-15.
+Last curated: 2026-06-16.
 
 ## Goal
 
@@ -323,7 +323,8 @@ response summaries:
   temporal PCs, primary
   compact multi-bin summary, if cheap
   delta from static, secondary
-  mean response over trajectory, diagnostic only
+  mean response over trajectory, integrated-readout diagnostic
+  delta_mean, motion-induced remapping readout
 metrics:
   feature decoding with shared or fixed alpha
   signal/motion covariance ratio
@@ -354,6 +355,184 @@ real ~= OU > Brownian/static:
 real ~= OU ~= Brownian > static, and score rises with motion scale:
   likely generic motion modulation unless signal-motion overlap shows a useful
   frontier.
+```
+
+## Current Pathfinder Result
+
+The cleaned pathfinder:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_aggregate_fem_information_pathfinder_n64_k2_drift_only_common_unclipped_rel025-2_not_final
+```
+
+used the canonical `756`-unit twin, `64` images, `K=2` trace samples,
+grouped-by-image CV, a drift-only/common-unclipped trace bank, scales
+`0.25x`, `0.5x`, `1x`, `1.5x`, and `2x`, and empirical, OU, Brownian, and
+rotated controls.
+
+Sanity checks were clean:
+
+```text
+accepted drift-only trace sources: 40 / 64
+same source traces reused across all scales: yes
+median effective/requested RMS: 1.0
+clipped fraction: 0.0
+```
+
+Interpretation:
+
+1. The pathfinder does not show a simple "more motion is better" artifact. For
+   temporal PCA/DCT summaries, empirical incremental gain over static becomes
+   more negative as scale increases.
+2. Empirical trajectories still outperform OU in several motion-derived
+   contrasts, especially Gabor temporal PCA/DCT and pyramid at lower scales.
+   This suggests a drift-like trajectory-statistics effect rather than a pure
+   null.
+3. Rotated empirical traces are competitive with empirical traces. Therefore
+   the effect is not clearly specific to original trajectory orientation
+   relative to the image; it is more consistent with useful real-trace
+   kinematics in an unpaired ensemble.
+4. The response summary decides the conclusion. Temporal PCA/DCT test a
+   temporal-code enhancement story and are negative relative to static in this
+   pathfinder. `mean` tests the time-averaged moving response. `delta_mean`
+   tests whether the average motion-induced response change carries feature
+   information, and remains strongly positive.
+
+This pathfinder recommendation is now superseded by the substantial patched run
+below. At the time, the proposed adjudicating run was:
+
+```text
+n=128
+K=4
+drift-only/common-unclipped trace bank through 2x
+grouped-by-image CV
+families: empirical, OU, rotated, static
+features: Gabor k=4, pyramid k=8
+summaries: temporal PCA, temporal DCT, mean, delta_mean
+required reports: predictor dimensionality, fixed alpha, effective RMS,
+clipping, source reuse, empirical-OU, empirical-rotated, empirical-static
+```
+
+Decision question:
+
+```text
+Do temporal PCA/DCT remain negative while delta_mean remains positive?
+```
+
+The substantial run did show positive temporal-PC incremental gains with better
+sampling, so temporal summaries should no longer be treated as pathfinder-only
+negatives. The remaining caveat is control specificity: empirical beats OU
+robustly, while Brownian and rotated controls narrow the advantage at larger
+scales.
+
+## Current Substantial Result
+
+The patched larger run is:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_aggregate_fem_information_n256_k48_rel025-2_drift_only_common_unclipped_patched
+```
+
+Corrected incremental static-plus-motion posthoc:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_aggregate_fem_information_n256_k48_rel025-2_drift_only_common_unclipped_patched/
+    incremental_static_plus_motion_relids
+```
+
+The first automatic posthoc folder, `incremental_static_plus_motion`, used
+old-style scale IDs in the launch command and produced empty gain tables. Use
+the corrected `incremental_static_plus_motion_relids` folder for all incremental
+claims.
+
+Run configuration:
+
+```text
+images: 256
+trace samples per family/scale/image: K = 4
+population: canonical 756-unit twin
+families: empirical, OU, Brownian, rotated
+scales: 0.25x, 0.5x, 1x, 1.5x, 2x
+features: gabor_local_field, pyramid_local_field
+feature ranks: k = 4, 8
+response summaries: temporal_pca, temporal_delta_pca, temporal_dct,
+  temporal_dct_delta, mean, delta_mean
+CV: grouped by image, 5 outer folds
+trace policy: drift-only, common-unclipped source pool, same raw trace reused
+  across scales for each family/sample
+```
+
+Motion bookkeeping was clean:
+
+```text
+accepted drift-only trace sources: 151 / 256
+median effective/requested RMS: 1.0 for every family/scale
+clipped fraction: 0.0 for every family/scale
+```
+
+This removes the major scale confound from the pathfinder. The above-`1x`
+conditions are over-large relative to observed drift, but they are not capped or
+clipping-driven in this cleaned source bank.
+
+Primary temporal-PCA incremental result:
+
+```text
+static + empirical temporal_pca versus static alone
+
+Gabor k=4:
+  0.25x  +14.31, CI [+7.45, +21.79]
+  0.5x   +13.04, CI [+6.81, +20.89]
+  1x     +9.10,  CI [+3.73, +14.86]
+  1.5x   +9.98,  CI [+5.36, +15.87]
+  2x     +9.07,  CI [+3.87, +15.73]
+
+Pyramid k=8:
+  0.25x  +5.20, CI [+3.02, +7.68]
+  0.5x   +4.89, CI [+2.88, +7.07]
+  1x     +3.93, CI [+1.93, +5.86]
+  1.5x   +4.44, CI [+2.34, +6.64]
+  2x     +4.21, CI [+2.38, +6.23]
+```
+
+Empirical temporal-PCA incremental gain beat matched controls most cleanly at
+small scales:
+
+```text
+Gabor k=4, empirical incremental-gain advantage:
+
+0.25x: vs OU +21.24, vs Brownian +10.52, vs rotated +15.27
+0.5x:  vs OU +19.59, vs Brownian +7.89,  vs rotated +11.21
+1x:    vs OU +17.16, vs Brownian +0.51,  vs rotated +5.63
+1.5x:  vs OU +18.69, vs Brownian +0.15,  vs rotated +8.58
+2x:    vs OU +18.03, vs Brownian -0.60, vs rotated +7.55
+```
+
+Main read:
+
+1. Empirical drift-like motion adds feature-decoding signal beyond the full
+   static response for temporal-PC summaries.
+2. Empirical beats OU robustly across scale, feature family, and rank.
+3. Empirical beats Brownian and rotated most cleanly at `0.25x-0.5x`. Brownian
+   becomes competitive at `1x-2x`, so the high-scale claim must be guarded.
+4. The curve does not show a simple "more motion is better" failure mode.
+   Gabor temporal-PCA gain is largest at `0.25x-0.5x`, then plateaus/lower
+   through `2x`.
+5. The result is stronger than the n=64 pathfinder, but it still does not prove
+   exact biological trajectory optimality. The supported claim is
+   distributional and twin-scoped.
+
+Figure-relevant wording:
+
+```text
+In a cleaned BackImage aggregate run, empirical drift-like motion adds
+feature-decoding signal beyond static V1-twin responses and outperforms
+OU-like confined controls across scale. The advantage over Brownian/generic
+motion is strongest at small biologically plausible scales and narrows at
+larger scales, arguing against both a pure null and a simple more-motion-is-best
+interpretation.
 ```
 
 ## Production Run
@@ -403,7 +582,10 @@ E. Feature breakdown by spatial-frequency band or latent family.
 Possible claim:
 
 ```text
-Fixational eye movements improve the ensemble representation of natural-image
-structure in foveal V1, placing empirical drift near a useful information/cost
-regime rather than simply maximizing retinal motion.
+Empirical fixational drift statistics improve the V1-twin representation of
+natural-image feature structure over matched OU-like confined motion, and add
+feature-decoding signal beyond static responses. The advantage over generic
+Brownian/rotated motion is strongest at small drift scales, so the claim is a
+scale- and readout-dependent active-sensing result rather than proof of exact
+trajectory optimality.
 ```

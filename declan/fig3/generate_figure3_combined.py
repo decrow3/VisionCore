@@ -57,6 +57,7 @@ ZEROED_COLOR = "#1f77b4"
 WITHIN_MODEL_CACHE = VISIONCORE_ROOT / "outputs" / "cache" / "behavior_vs_vision_within_model.pkl"
 PANEL_LETTER_SIZE = 11
 PANEL_TITLE_SIZE = 9.0
+SUBJECT_COLORS = {"Allen": "tab:blue", "Logan": "tab:green"}
 
 
 def _panel_title(ax, letter: str):
@@ -573,6 +574,56 @@ def _plot_fem_modulation_intact_vs_zeroed(ax, fig3_data, abl_data=None, *, lette
     )
 
 
+def _plot_improvement_vs_fem_modulation(ax, data, *, legend_fontsize: float = 5.8):
+    """Ryan Figure 4G: model/PSTH single-trial r2 improvement vs FEM modulation."""
+    ve_model = np.asarray(data["ve_model"], dtype=float)
+    ve_psth = np.asarray(data["ve_psth"], dtype=float)
+    alpha = np.asarray(data["alpha"], dtype=float)
+    subjects = np.asarray(data["subjects"])
+    good = np.asarray(data["good"], dtype=bool)
+    has_alpha = good & np.isfinite(alpha) & np.isfinite(ve_model) & np.isfinite(ve_psth) & (ve_psth > 0)
+
+    plotted = False
+    for subj, color in SUBJECT_COLORS.items():
+        mask = has_alpha & (subjects == subj)
+        if not mask.any():
+            continue
+        fem_mod = 1.0 - alpha[mask]
+        improvement = ve_model[mask] / ve_psth[mask]
+        ax.scatter(
+            fem_mod,
+            improvement,
+            s=5,
+            alpha=0.5,
+            color=color,
+            linewidths=0,
+            label=subj,
+        )
+        plotted = True
+
+    ax.axhline(1, color="k", linestyle="--", linewidth=0.5, alpha=0.5)
+    ax.set_xlabel(r"FEM modulation ($1-\alpha$)")
+    ax.set_ylabel("$r^2$ improvement\n(Model / PSTH)")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 5)
+    if plotted:
+        ax.legend(frameon=False, fontsize=legend_fontsize, loc="upper left")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    fem_all = 1.0 - alpha[has_alpha]
+    improvement_all = ve_model[has_alpha] / ve_psth[has_alpha]
+    ok = np.isfinite(fem_all) & np.isfinite(improvement_all)
+    rho = spearmanr(fem_all[ok], improvement_all[ok]).correlation if ok.sum() >= 3 else np.nan
+    ax.text(0.97, 0.92, f"ρ={rho:.2f}",
+            transform=ax.transAxes, ha="right", va="top",
+            fontsize=5.8, color="0.25")
+    print(
+        f"Panel E — Ryan Fig 4G improvement vs FEM modulation "
+        f"(N={ok.sum()}): Spearman ρ={rho:.3f}"
+    )
+
+
 def _plot_ablation_r2_pooled(ax, data, *, cond: str = "zeroed", letter: str = "E"):
     """Pooled intact-vs-zeroed single-trial r2 scatter."""
     x = data["ve"]["intact"]
@@ -772,7 +823,7 @@ def _move_first_inset_axes(ax, bounds):
 def _write_sidecars(out_dir: Path, paths: geom.DataPaths, manifest: dict):
     caption = """Figure 3. A retinal-input digital twin reveals a compact reafferent geometry underlying FEM-linked V1 variability.
 
-(A) Gaze-contingent digital twin architecture. The model receives the retinal stimulus history and optional extraretinal behavior inputs, then predicts simultaneously recorded V1 responses. (B) Observed PSTH for an example reliable neuron, overlaid with predictions from the intact behavior-input twin and the same twin with the separate behavior input zeroed. (C) Held-out stimulus-locked response prediction across pooled Allen and Logan cells, shown by normalized correlation distributions for intact and behavior-zeroed predictions from the same twin. (D) Single-trial prediction is nearly unchanged when the separate extraretinal eye-state pathway is zeroed, pooled across Allen and Logan, supporting a retinal-input route for FEM-linked variability. (E) The twin recapitulates each cell's empirical FEM modulation, measured as \\(1-\\alpha\\), pooling Allen and Logan cells and linking the model to the covariance decomposition in Figure 2. (F) Small retinal translations induce image-specific local response directions rather than a universal signed x/y population axis. (G) Pooling those local tangents reveals a compact translation subspace. (H) An image-disjoint basis captures held-out translation tangent variance above unit-shuffled controls. (I) Finite-difference fitted-twin translation covariances capture the recorded FEM covariance component above a unit-shuffled source-basis null, shown for no projection control and after removing both global-rate and target-PC1 components.
+(A) Gaze-contingent digital twin architecture. The model receives the retinal stimulus history and optional extraretinal behavior inputs, then predicts simultaneously recorded V1 responses. (B) Observed PSTH for an example reliable neuron, overlaid with predictions from the intact behavior-input twin and the same twin with the separate behavior input zeroed. (C) Held-out stimulus-locked response prediction across pooled Allen and Logan cells, shown by normalized correlation distributions for intact and behavior-zeroed predictions from the same twin. (D) Single-trial prediction is nearly unchanged when the separate extraretinal eye-state pathway is zeroed, pooled across Allen and Logan, supporting a retinal-input route for FEM-linked variability. (E) The twin's single-trial improvement over a PSTH baseline is largest for cells with stronger empirical FEM modulation, measured as \\(1-\\alpha\\). (F) Small retinal translations induce image-specific local response directions rather than a universal signed x/y population axis. (G) Pooling those local tangents reveals a compact translation subspace. (H) An image-disjoint basis captures held-out translation tangent variance above unit-shuffled controls. (I) Finite-difference fitted-twin translation covariances capture the recorded FEM covariance component above a unit-shuffled source-basis null, shown for no projection control and after removing both global-rate and target-PC1 components.
 """
     (out_dir / "fig3_combined_mechanism_caption.md").write_text(caption, encoding="utf-8")
     (out_dir / "fig3_combined_mechanism_caption.txt").write_text(caption, encoding="utf-8")
@@ -786,7 +837,7 @@ covTFTS Figure 4 scripts as source and supplemental material, but promotes only
 the panels needed for the main-text mechanism chain:
 
 digital twin schematic -> intact-vs-zeroed example PSTH -> held-out response
-validation -> extraretinal route control -> FEM modulation capture ->
+validation -> extraretinal route control -> FEM-linked prediction gain ->
 image-specific translations -> compact
 image-generalizing tangent geometry -> translation-predicted recorded FEM
 covariance closure.
@@ -886,8 +937,8 @@ def compose(
     _standard_panel_heading(ax_d, "D", "Eye-state zeroing")
 
     ax_e = fig.add_subplot(gs_mid[0, 4])
-    _plot_fem_modulation_intact_vs_zeroed(ax_e, data, abl, letter="E")
-    _standard_panel_heading(ax_e, "E", "FEM modulation")
+    _plot_improvement_vs_fem_modulation(ax_e, data)
+    _standard_panel_heading(ax_e, "E", "FEM-linked model gain")
     _shift_axes_y([ax_b, ax_c, ax_d, ax_e], 0.035)
 
     # Row 3. Reafferent geometry.
