@@ -4,6 +4,8 @@
 
 Implement an independently written, geometry-aware joint observer for the Vernier active-sensing pilot. The goal is to estimate whether compact, eye-movement-induced response geometry improves Vernier discrimination over a zero-eye baseline, while keeping the implementation clean of GPL-covered source code.
 
+This applies published joint-inference ideas only at the level of Bayesian nuisance marginalization. The Vernier sign is the desired latent variable, and eye trajectory is a nuisance variable. Unlike high-dimensional image reconstruction, this pilot should not treat eye-path reconstruction as the primary objective.
+
 This document is the implementation source of truth. Do not copy code, comments, file structure, control flow, tests, or naming conventions from any GPL-licensed repository. Treat any GPL repository only as conceptual background, or preferably do not inspect it at all while implementing this work.
 
 ## Licensing Guardrail
@@ -20,7 +22,15 @@ Requirements:
 
 ## High-Level Objective
 
-The current pilot has a compact joint observer based on fitting latent eye pose. The desired change is to make the joint observer evaluate Vernier hypotheses by marginalizing over plausible eye trajectories rather than selecting a single best MAP trajectory.
+The current pilot has a compact joint observer based on fitting latent eye pose. The desired change is to make the joint observer evaluate Vernier hypotheses by marginalizing over plausible eye trajectories rather than selecting a single best MAP trajectory. The target decision statistic is the Vernier likelihood ratio:
+
+```text
+LLR =
+  log sum_w p(response | theta = +delta, w) p(w | condition)
+  - log sum_w p(response | theta = -delta, w) p(w | condition)
+```
+
+Pose posterior quality can be reported as a secondary diagnostic, but the primary scientific question is whether the nuisance-marginalized Vernier decision improves over zero-eye and approaches known-eye.
 
 Replace or supplement the current "best pose fit per Vernier candidate" score with a particle posterior over eye trajectories:
 
@@ -518,4 +528,3 @@ Tests run:
 Key files changed:
 - ...
 ```
-

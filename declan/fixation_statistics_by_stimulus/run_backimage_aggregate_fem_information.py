@@ -349,6 +349,19 @@ def _trace_covariance_shape(trace: np.ndarray) -> np.ndarray:
     return shape.astype(np.float64)
 
 
+def _trace_covariance_anisotropy(trace: np.ndarray) -> float:
+    trace = np.asarray(trace, dtype=np.float64)
+    cov = np.cov(trace, rowvar=False) if trace.shape[0] > 1 else np.eye(2)
+    if not np.all(np.isfinite(cov)):
+        return float("nan")
+    vals = np.linalg.eigvalsh(cov + 1e-12 * np.eye(2))
+    vals = np.maximum(vals, 0.0)
+    total = float(np.sum(vals))
+    if total <= 1e-12:
+        return 0.0
+    return float((np.max(vals) - np.min(vals)) / total)
+
+
 def _lag1_autocorr(trace: np.ndarray) -> float:
     x = np.asarray(trace, dtype=np.float64)
     if x.shape[0] < 3:
@@ -405,8 +418,22 @@ def _build_trace_bank(
         eyepos = eyepos_by_session[str(row["session"])]
         start = int(row["global_start"])
         stop = int(row["global_stop"])
+        source_trace = _resample_trace(eyepos[start:stop], max(2, int(stop - start)))
+        duration_s = float(row.get("duration_s", np.nan))
+        source_dt = (
+            duration_s / float(max(1, source_trace.shape[0] - 1))
+            if np.isfinite(duration_s) and duration_s > 0.0
+            else 1.0 / 120.0
+        )
+        source_ms = _microsaccade_stats(
+            source_trace,
+            dt=source_dt,
+            threshold_dps=microsaccade_speed_threshold_dps,
+            threshold_z=float(microsaccade_threshold_z),
+            pad_frames=int(microsaccade_pad_frames),
+        )
         trace = _resample_trace(eyepos[start:stop], int(n_timepoints))
-        ms = _microsaccade_stats(
+        rendered_ms = _microsaccade_stats(
             trace,
             dt=1.0 / 120.0,
             threshold_dps=microsaccade_speed_threshold_dps,
@@ -417,17 +444,37 @@ def _build_trace_bank(
             {
                 "source_row": int(row["source_row"]),
                 "session": str(row["session"]),
+                "trial_idx": int(row.get("trial_idx", -1)),
+                "global_start": int(start),
+                "global_stop": int(stop),
+                "mean_x_deg": float(row.get("mean_x_deg", np.nan)),
+                "mean_y_deg": float(row.get("mean_y_deg", np.nan)),
                 "trace": trace,
                 "observed_rms_deg": float(_trace_rms(trace)),
+                "source_trace_observed_rms_deg": float(_trace_rms(source_trace)),
                 "source_rms_radius_deg": float(row.get("rms_radius_deg", np.nan)),
                 "source_max_radius_deg": float(row.get("max_radius_deg", np.nan)),
                 "path_length_deg": _path_length(trace),
                 "source_path_length_deg": float(row.get("path_length_deg", np.nan)),
                 "source_speed_p95_deg_s": float(row.get("speed_p95_deg_s", np.nan)),
-                "duration_s": float(row.get("duration_s", np.nan)),
+                "duration_s": duration_s,
                 "lag1_autocorr": _lag1_autocorr(trace),
                 "covariance_shape": _trace_covariance_shape(trace),
-                **ms,
+                "trace_cov_anisotropy": _trace_covariance_anisotropy(trace),
+                "source_trace_cov_anisotropy": _trace_covariance_anisotropy(source_trace),
+                "source_anisotropy": float(row.get("anisotropy", np.nan)),
+                "source_microsaccade_threshold_dps": float(source_ms["microsaccade_threshold_dps"]),
+                "source_n_microsaccade_events": int(source_ms["n_microsaccade_events"]),
+                "source_fraction_microsaccade_samples": float(source_ms["fraction_microsaccade_samples"]),
+                "source_peak_microsaccade_speed_dps": float(source_ms["peak_microsaccade_speed_dps"]),
+                "rendered_microsaccade_threshold_dps": float(rendered_ms["microsaccade_threshold_dps"]),
+                "rendered_n_microsaccade_events": int(rendered_ms["n_microsaccade_events"]),
+                "rendered_fraction_microsaccade_samples": float(rendered_ms["fraction_microsaccade_samples"]),
+                "rendered_peak_microsaccade_speed_dps": float(rendered_ms["peak_microsaccade_speed_dps"]),
+                "microsaccade_threshold_dps": float(source_ms["microsaccade_threshold_dps"]),
+                "n_microsaccade_events": int(source_ms["n_microsaccade_events"]),
+                "fraction_microsaccade_samples": float(source_ms["fraction_microsaccade_samples"]),
+                "peak_microsaccade_speed_dps": float(source_ms["peak_microsaccade_speed_dps"]),
             }
         )
     return bank
@@ -666,6 +713,28 @@ def _bootstrap_condition_delta(
     return obs, float(lo), float(hi)
 
 
+def _parse_contrast_pairs(text: str) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for part in _parse_str_list(text):
+        if ":" in part:
+            lhs, rhs = part.split(":", 1)
+        elif ">" in part:
+            lhs, rhs = part.split(">", 1)
+        elif "-" in part:
+            lhs, rhs = part.split("-", 1)
+        else:
+            raise ValueError(
+                "Contrast pairs must use lhs:rhs, lhs>rhs, or lhs-rhs syntax; "
+                f"got {part!r}"
+            )
+        lhs = lhs.strip()
+        rhs = rhs.strip()
+        if not lhs or not rhs:
+            raise ValueError(f"Invalid empty contrast pair entry: {part!r}")
+        pairs.append((lhs, rhs))
+    return pairs
+
+
 def _condition_motion_tensor(
     records: list[dict[str, Any]],
     summaries: dict[int, dict[str, np.ndarray]],
@@ -794,11 +863,18 @@ def _contrast_rows(
         for row in decode_rows
         if row["family"] == "static"
     }
-    contrasts = [("empirical", "ou"), ("empirical", "brownian"), ("empirical", "rotated"), ("ou", "brownian")]
+    contrast_text = getattr(args, "contrast_pairs", "empirical:ou,empirical:brownian,empirical:rotated,ou:brownian")
+    contrasts = _parse_contrast_pairs(contrast_text)
     row_lookup = {
         (str(row["family"]), str(row["scale_id"]), str(row["latent"]), int(row["k"])): row
         for row in decode_rows
     }
+
+    def condition_key(family: str, scale_id: str, latent: str, k: int) -> tuple[str, str, str, int] | None:
+        if family == "static":
+            return static_key_by_latent_k.get((latent, k))
+        return (family, scale_id, latent, k)
+
     for row in decode_rows:
         scale_id = str(row["scale_id"])
         latent = str(row["latent"])
@@ -808,9 +884,9 @@ def _contrast_rows(
         for lhs_family, rhs_family in contrasts:
             if str(row["family"]) != lhs_family:
                 continue
-            lhs_key = (lhs_family, scale_id, latent, k)
-            rhs_key = (rhs_family, scale_id, latent, k)
-            if lhs_key not in per_image or rhs_key not in per_image:
+            lhs_key = condition_key(lhs_family, scale_id, latent, k)
+            rhs_key = condition_key(rhs_family, scale_id, latent, k)
+            if lhs_key is None or rhs_key is None or lhs_key not in per_image or rhs_key not in per_image:
                 continue
             mean, lo, hi = _bootstrap_condition_delta(
                 per_image[lhs_key],
@@ -898,6 +974,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--n-bootstrap", type=int, default=1000)
+    parser.add_argument(
+        "--contrast-pairs",
+        default="empirical:ou,empirical:brownian,empirical:rotated,ou:brownian,empirical:static",
+        help="Comma-separated lhs:rhs family contrasts for decode_contrasts.csv.",
+    )
     parser.add_argument("--reliable-image-coherence-min", type=float, default=0.20)
     parser.add_argument("--reliable-drift-anisotropy-min", type=float, default=0.20)
     parser.add_argument("--min-duration-s", type=float, default=0.10)
@@ -1078,7 +1159,11 @@ def run(args: argparse.Namespace) -> Path:
             "bank_index": j,
             "source_row": int(item["source_row"]),
             "session": str(item["session"]),
+            "trial_idx": int(item["trial_idx"]),
+            "global_start": int(item["global_start"]),
+            "global_stop": int(item["global_stop"]),
             "observed_rms_deg": float(item["observed_rms_deg"]),
+            "source_trace_observed_rms_deg": float(item["source_trace_observed_rms_deg"]),
             "source_rms_radius_deg": float(item["source_rms_radius_deg"]),
             "source_max_radius_deg": float(item["source_max_radius_deg"]),
             "path_length_deg": float(item["path_length_deg"]),
@@ -1086,10 +1171,17 @@ def run(args: argparse.Namespace) -> Path:
             "source_speed_p95_deg_s": float(item["source_speed_p95_deg_s"]),
             "duration_s": float(item["duration_s"]),
             "lag1_autocorr": float(item["lag1_autocorr"]),
+            "source_anisotropy": float(item["source_anisotropy"]),
+            "trace_cov_anisotropy": float(item["trace_cov_anisotropy"]),
+            "source_trace_cov_anisotropy": float(item["source_trace_cov_anisotropy"]),
             "microsaccade_threshold_dps": float(item["microsaccade_threshold_dps"]),
             "n_microsaccade_events": int(item["n_microsaccade_events"]),
             "fraction_microsaccade_samples": float(item["fraction_microsaccade_samples"]),
             "peak_microsaccade_speed_dps": float(item["peak_microsaccade_speed_dps"]),
+            "rendered_microsaccade_threshold_dps": float(item["rendered_microsaccade_threshold_dps"]),
+            "rendered_n_microsaccade_events": int(item["rendered_n_microsaccade_events"]),
+            "rendered_fraction_microsaccade_samples": float(item["rendered_fraction_microsaccade_samples"]),
+            "rendered_peak_microsaccade_speed_dps": float(item["rendered_peak_microsaccade_speed_dps"]),
         }
         for j, item in enumerate(trace_bank)
     ]

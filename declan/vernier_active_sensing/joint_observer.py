@@ -14,6 +14,19 @@ THETA_LABELS = (THETA_PLUS, THETA_MINUS)
 SUPPORTED_JOINT_CONTROLS = ("correct_chart", "wrong_chart", "random_basis", "gain_only")
 SUPPORTED_JOINT_OBSERVERS = ("enumerated", "map")
 SUPPORTED_COMPACT_COVARIANCE = ("full", "diagonal")
+SUPPORTED_LIKELIHOOD_NORMALIZATION = ("residual", "full")
+
+
+def likelihood_score_family(normalization: str) -> str:
+    """Human-readable score family for observer outputs."""
+    if str(normalization) == "full":
+        return "gaussian_log_likelihood"
+    if str(normalization) == "residual":
+        return "mahalanobis_residual_score"
+    raise ValueError(
+        f"Unsupported likelihood normalization {normalization!r}; "
+        f"expected {SUPPORTED_LIKELIHOOD_NORMALIZATION}"
+    )
 
 
 def build_compact_translation_basis(
@@ -266,9 +279,15 @@ def compact_log_likelihood(
     cov_t: np.ndarray,
     *,
     likelihood_scale: float = 1.0,
+    normalization: str = "residual",
     epsilon: float = 1e-8,
 ) -> np.ndarray:
     """Gaussian compact log likelihood for one time bin and many predictions."""
+    if str(normalization) not in SUPPORTED_LIKELIHOOD_NORMALIZATION:
+        raise ValueError(
+            f"Unsupported likelihood normalization {normalization!r}; "
+            f"expected {SUPPORTED_LIKELIHOOD_NORMALIZATION}"
+        )
     obs = np.asarray(z_obs_t, dtype=np.float64)
     pred = np.asarray(z_pred_t, dtype=np.float64)
     if pred.ndim == 1:
@@ -276,7 +295,10 @@ def compact_log_likelihood(
     precision, logdet = _compact_precision_and_logdet(cov_t, epsilon=epsilon)
     resid = pred - obs[None, :]
     quad = np.einsum("nk,kl,nl->n", resid, precision, resid)
-    return float(likelihood_scale) * (-0.5 * quad - 0.5 * logdet)
+    logp = -0.5 * quad
+    if str(normalization) == "full":
+        logp = logp - 0.5 * logdet
+    return float(likelihood_scale) * logp
 
 
 def score_fixed_eye_log_evidence(
@@ -286,6 +308,7 @@ def score_fixed_eye_log_evidence(
     trajectory_arcmin: np.ndarray,
     *,
     likelihood_scale: float,
+    likelihood_normalization: str,
     epsilon: float,
 ) -> float:
     """Score a fixed eye trajectory as compact log evidence."""
@@ -297,7 +320,16 @@ def score_fixed_eye_log_evidence(
     total = 0.0
     for ti in range(t):
         pred = a[ti] @ traj[ti]
-        total += float(compact_log_likelihood(z[ti], pred, cov[ti], likelihood_scale=likelihood_scale, epsilon=epsilon)[0])
+        total += float(
+            compact_log_likelihood(
+                z[ti],
+                pred,
+                cov[ti],
+                likelihood_scale=likelihood_scale,
+                normalization=likelihood_normalization,
+                epsilon=epsilon,
+            )[0]
+        )
     return float(total)
 
 
@@ -309,7 +341,8 @@ def score_joint_eye_evidence_enumerated(
     *,
     max_particles: int,
     likelihood_scale: float,
-    epsilon: float,
+    likelihood_normalization: str = "residual",
+    epsilon: float = 1e-8,
 ) -> dict[str, Any]:
     """Deterministic beam-filter approximation to trajectory-marginal evidence."""
     z = np.asarray(z_obs, dtype=np.float64)
@@ -342,6 +375,7 @@ def score_joint_eye_evidence_enumerated(
             pred,
             cov[ti],
             likelihood_scale=likelihood_scale,
+            normalization=likelihood_normalization,
             epsilon=epsilon,
         )
         logz_inc = logsumexp(cand_logw)
@@ -419,10 +453,12 @@ def joint_geometry_vernier_observer_trial(
     phi: float,
     true_pose_arcmin: np.ndarray | None = None,
     known_u_trans: np.ndarray | None = None,
+    known_candidate_counts: np.ndarray | None = None,
     observer_mode: str = "enumerated",
     step_prior: dict[str, np.ndarray] | None = None,
     max_particles: int = 2000,
     likelihood_scale: float = 1.0,
+    likelihood_normalization: str = "residual",
     covariance_mode: str = "full",
     epsilon: float = 1e-8,
 ) -> dict[str, Any]:
@@ -438,6 +474,24 @@ def joint_geometry_vernier_observer_trial(
     mu0 = mu0[:, :t]
     jac = jac[:, :t]
     pose = None if true_pose_arcmin is None else np.asarray(true_pose_arcmin, dtype=np.float64)[:t]
+    known_counts = None
+    if known_candidate_counts is not None:
+        known_counts = np.asarray(known_candidate_counts, dtype=np.float64)
+        if known_counts.ndim != 3 or known_counts.shape[0] != len(THETA_LABELS):
+            raise ValueError(
+                f"known_candidate_counts must be (theta, time, units), got {known_counts.shape}"
+            )
+        if known_counts.shape[1] < t:
+            raise ValueError(
+                f"known_candidate_counts has {known_counts.shape[1]} time bins, "
+                f"but at least {t} are required"
+            )
+        if known_counts.shape[2] != y.shape[1]:
+            raise ValueError(
+                f"known_candidate_counts has {known_counts.shape[2]} units, "
+                f"but observed_counts has {y.shape[1]}"
+            )
+        known_counts = known_counts[:, :t]
 
     map_results: dict[str, dict[str, Any]] = {}
     zero_log_evidence: dict[str, float] = {}
@@ -458,6 +512,7 @@ def joint_geometry_vernier_observer_trial(
             sigma_z,
             np.zeros((t, 2), dtype=np.float64),
             likelihood_scale=float(likelihood_scale),
+            likelihood_normalization=str(likelihood_normalization),
             epsilon=epsilon,
         )
         if pose is None:
@@ -470,21 +525,45 @@ def joint_geometry_vernier_observer_trial(
                 sigma_z,
                 pose,
                 likelihood_scale=float(likelihood_scale),
+                likelihood_normalization=str(likelihood_normalization),
                 epsilon=epsilon,
             )
 
             if known_upper_available:
                 z_known = residual @ known_u
                 sigma_known = compact_noise_covariance(noise_diag, known_u, epsilon=epsilon, mode=covariance_mode)
-                correct_chart = candidate_chart(jac, known_u, candidate_index=ci, control="correct_chart")
-                known_log_evidence_correct[label] = score_fixed_eye_log_evidence(
-                    z_known,
-                    correct_chart,
-                    sigma_known,
-                    pose,
-                    likelihood_scale=float(likelihood_scale),
-                    epsilon=epsilon,
-                )
+                if known_counts is None:
+                    correct_chart = candidate_chart(jac, known_u, candidate_index=ci, control="correct_chart")
+                    known_log_evidence_correct[label] = score_fixed_eye_log_evidence(
+                        z_known,
+                        correct_chart,
+                        sigma_known,
+                        pose,
+                        likelihood_scale=float(likelihood_scale),
+                        likelihood_normalization=str(likelihood_normalization),
+                        epsilon=epsilon,
+                    )
+                else:
+                    pred_known = (known_counts[ci] - mu0[ci]) @ known_u
+                    known_noise_diag = np.maximum(float(phi) * np.maximum(known_counts[ci], 0.0), float(epsilon))
+                    sigma_known_exact = compact_noise_covariance(
+                        known_noise_diag,
+                        known_u,
+                        epsilon=epsilon,
+                        mode=covariance_mode,
+                    )
+                    known_log_evidence_correct[label] = 0.0
+                    for ti in range(t):
+                        known_log_evidence_correct[label] += float(
+                            compact_log_likelihood(
+                                z_known[ti],
+                                pred_known[ti],
+                                sigma_known_exact[ti],
+                                likelihood_scale=float(likelihood_scale),
+                                normalization=str(likelihood_normalization),
+                                epsilon=epsilon,
+                            )[0]
+                        )
             else:
                 known_log_evidence_correct[label] = float("nan")
 
@@ -508,6 +587,7 @@ def joint_geometry_vernier_observer_trial(
                 step_prior,
                 max_particles=int(max_particles),
                 likelihood_scale=float(likelihood_scale),
+                likelihood_normalization=str(likelihood_normalization),
                 epsilon=epsilon,
             )
             joint_log_evidence[label] = float(map_results[label]["log_evidence"])
@@ -535,10 +615,25 @@ def joint_geometry_vernier_observer_trial(
     joint_true = float(joint_log_evidence[true])
     zero_true = float(zero_log_evidence[true])
     known_true = float(known_log_evidence_correct[true])
+    joint_margin = float(joint_log_evidence[true] - joint_log_evidence[other])
+    zero_margin = float(zero_log_evidence[true] - zero_log_evidence[other])
+    known_margin = float(known_log_evidence_correct[true] - known_log_evidence_correct[other])
+    score_family = likelihood_score_family(str(likelihood_normalization))
     gap_denom = known_true - zero_true
     gap_closure = (
         (joint_true - zero_true) / gap_denom
-        if str(control) == "correct_chart" and np.isfinite(gap_denom) and abs(gap_denom) > 1e-12
+        if (
+            str(control) == "correct_chart"
+            and score_family == "gaussian_log_likelihood"
+            and np.isfinite(gap_denom)
+            and abs(gap_denom) > 1e-12
+        )
+        else float("nan")
+    )
+    margin_gap_denom = known_margin - zero_margin
+    margin_gap_closure = (
+        (joint_margin - zero_margin) / margin_gap_denom
+        if str(control) == "correct_chart" and np.isfinite(margin_gap_denom) and abs(margin_gap_denom) > 1e-12
         else float("nan")
     )
     map_loss_plus = -float(joint_log_evidence[THETA_PLUS])
@@ -546,6 +641,16 @@ def joint_geometry_vernier_observer_trial(
     retained = map_results[true].get("retained_mass_by_t", np.asarray([], dtype=np.float64))
     n_states = map_results[true].get("n_states_by_t", np.asarray([], dtype=np.int32))
     entropy = map_results[true].get("entropy_by_t", np.asarray([], dtype=np.float64))
+    known_eye_reference = "exact_candidate_counts" if known_counts is not None else "local_linear_chart"
+    decision_rule = (
+        "joint_log_evidence"
+        if str(observer_mode) == "enumerated" and score_family == "gaussian_log_likelihood"
+        else (
+            "joint_mahalanobis_residual_score"
+            if str(observer_mode) == "enumerated"
+            else "map_approx_marginal_loss"
+        )
+    )
     return {
         "map_loss_plus": map_loss_plus,
         "map_loss_minus": map_loss_minus,
@@ -557,8 +662,14 @@ def joint_geometry_vernier_observer_trial(
         "pred_known": pred_known,
         "zero_correct": bool(pred_zero == true),
         "known_correct": bool(pred_known == true) if pred_known else float("nan"),
-        "decision_rule": "joint_log_evidence" if str(observer_mode) == "enumerated" else "map_approx_marginal_loss",
+        "decision_rule": decision_rule,
         "joint_observer": str(observer_mode),
+        "joint_geometry_mode": "instantaneous_local_chart",
+        "joint_likelihood_normalization": str(likelihood_normalization),
+        "joint_score_family": score_family,
+        "joint_evidence_is_normalized_log_probability": bool(str(likelihood_normalization) == "full"),
+        "known_eye_reference": known_eye_reference,
+        "known_eye_covariance_reference": "candidate_known_counts" if known_counts is not None else "candidate_baseline_mu0",
         "compact_covariance_mode": str(covariance_mode),
         "confidence_gap": float(joint_log_evidence[THETA_PLUS] - joint_log_evidence[THETA_MINUS]),
         "true_label": true,
@@ -574,13 +685,14 @@ def joint_geometry_vernier_observer_trial(
         "zero_log_evidence_true": zero_true,
         "known_log_evidence_true": known_true,
         "joint_log_evidence_true": joint_true,
-        "joint_score": float(joint_log_evidence[true] - joint_log_evidence[other]),
-        "zero_eye_score": float(zero_log_evidence[true] - zero_log_evidence[other]),
-        "known_eye_score": float(known_log_evidence_correct[true] - known_log_evidence_correct[other]),
+        "joint_score": joint_margin,
+        "zero_eye_score": zero_margin,
+        "known_eye_score": known_margin,
         "known_eye_score_control_chart": float(
             known_log_evidence_control[true] - known_log_evidence_control[other]
         ),
         "gap_closure_vs_zero_known": float(gap_closure),
+        "margin_gap_closure_vs_zero_known": float(margin_gap_closure),
         "neural_only_gap_closure_vs_zero_known": float("nan"),
         "pose_rmse_arcmin": pose_rmse,
         "inferred_tau_shape": f"{tau_hat.shape[0]}x{tau_hat.shape[1]}",
@@ -610,6 +722,11 @@ def summarize_joint_geometry_rows(rows: list[dict[str, Any]]) -> list[dict[str, 
             row.get("inference_mode", ""),
             row.get("joint_control", ""),
             row.get("joint_observer", ""),
+            row.get("joint_geometry_mode", "instantaneous_local_chart"),
+            row.get("joint_likelihood_normalization", "residual"),
+            row.get("joint_score_family", likelihood_score_family(row.get("joint_likelihood_normalization", "residual"))),
+            row.get("known_eye_reference", "local_linear_chart"),
+            row.get("known_eye_covariance_reference", ""),
             row.get("compact_covariance_mode", ""),
             row.get("compact_k", ""),
             row.get("translation_eps_arcmin", ""),
@@ -626,6 +743,11 @@ def summarize_joint_geometry_rows(rows: list[dict[str, Any]]) -> list[dict[str, 
             inference_mode,
             control,
             observer,
+            geometry_mode,
+            likelihood_normalization,
+            score_family,
+            known_eye_reference,
+            known_eye_covariance_reference,
             cov_mode,
             compact_k,
             eps,
@@ -641,6 +763,7 @@ def summarize_joint_geometry_rows(rows: list[dict[str, Any]]) -> list[dict[str, 
         known = _finite_values(row.get("known_eye_score") for row in grp)
         known_control = _finite_values(row.get("known_eye_score_control_chart") for row in grp)
         gap = _finite_values(row.get("gap_closure_vs_zero_known") for row in grp)
+        margin_gap = _finite_values(row.get("margin_gap_closure_vs_zero_known") for row in grp)
         pose = _finite_values(row.get("pose_rmse_arcmin") for row in grp)
         retained = _finite_values(row.get("joint_retained_mass_min") for row in grp)
         n_states = _finite_values(row.get("joint_n_states_final") for row in grp)
@@ -652,6 +775,11 @@ def summarize_joint_geometry_rows(rows: list[dict[str, Any]]) -> list[dict[str, 
                 "inference_mode": inference_mode,
                 "joint_control": control,
                 "joint_observer": observer,
+                "joint_geometry_mode": geometry_mode,
+                "joint_likelihood_normalization": likelihood_normalization,
+                "joint_score_family": score_family,
+                "known_eye_reference": known_eye_reference,
+                "known_eye_covariance_reference": known_eye_covariance_reference,
                 "compact_covariance_mode": cov_mode,
                 "compact_k": compact_k,
                 "translation_eps_arcmin": eps,
@@ -667,6 +795,8 @@ def summarize_joint_geometry_rows(rows: list[dict[str, Any]]) -> list[dict[str, 
                 "mean_known_eye_score_control_chart": _mean_or_nan(known_control),
                 "mean_gap_closure_vs_zero_known": _mean_or_nan(gap),
                 "median_gap_closure_vs_zero_known": float(np.median(gap)) if gap.size else float("nan"),
+                "mean_margin_gap_closure_vs_zero_known": _mean_or_nan(margin_gap),
+                "median_margin_gap_closure_vs_zero_known": float(np.median(margin_gap)) if margin_gap.size else float("nan"),
                 "mean_pose_rmse_arcmin": _mean_or_nan(pose),
                 "mean_joint_retained_mass_min": _mean_or_nan(retained),
                 "mean_joint_n_states_final": _mean_or_nan(n_states),
@@ -692,14 +822,25 @@ def write_joint_geometry_gap_figure(out_dir: Path, summary_rows: list[dict[str, 
         rows = [row for row in summary_rows if str(row.get("joint_control", "")) == control]
         rows = sorted(rows, key=lambda r: (float(r.get("compact_k", 0) or 0), str(r.get("condition", ""))))
         x = np.asarray([float(row.get("compact_k", 0) or 0) for row in rows], dtype=float)
-        y = np.asarray([float(row.get("mean_gap_closure_vs_zero_known", np.nan)) for row in rows], dtype=float)
+        y = np.asarray(
+            [
+                float(
+                    row.get(
+                        "mean_margin_gap_closure_vs_zero_known",
+                        row.get("mean_gap_closure_vs_zero_known", np.nan),
+                    )
+                )
+                for row in rows
+            ],
+            dtype=float,
+        )
         keep = np.isfinite(x) & np.isfinite(y)
         if np.any(keep):
             ax.plot(x[keep], y[keep], marker="o", linewidth=1.8, label=control)
     ax.axhline(0.0, color="#555555", linewidth=1.0, linestyle="--")
     ax.axhline(1.0, color="#555555", linewidth=1.0, linestyle=":")
     ax.set_xlabel("compact k")
-    ax.set_ylabel("gap closure vs zero/known")
+    ax.set_ylabel("margin gap closure vs zero/known")
     ax.set_title("Joint geometry-aware Vernier observer")
     ax.legend(frameon=False)
     ax.spines[["top", "right"]].set_visible(False)

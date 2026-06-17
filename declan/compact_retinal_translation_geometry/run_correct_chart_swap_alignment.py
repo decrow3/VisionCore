@@ -31,6 +31,7 @@ import torch
 
 from declan.compact_retinal_translation_geometry.run_relative_displacement_decoding import (
     _decode_splits,
+    projection_target_covariance,
     _trial_pair_keys,
     _trial_set,
     context_labels,
@@ -987,7 +988,12 @@ def _score_session(
             shuffled_delta_e = shuffled_delta_e[rng_base.permutation(shuffled_delta_e.shape[0])]
 
         for projection_i, projection_control in enumerate(projection_controls):
-            modes = _projection_modes(str(projection_control), target_cov)
+            fold_target_cov = projection_target_covariance(
+                j=j,
+                train_sample_mask=train_sample_mask,
+                fallback_target_cov=target_cov,
+            )
+            modes = _projection_modes(str(projection_control), fold_target_cov)
             projection = _projection_complement(delta_y.shape[1], modes)
             var = _diag_whitener(fold_delta_y, train_mask, projection)
             gain_axis = projection @ gain_axis_raw

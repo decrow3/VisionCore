@@ -1267,7 +1267,8 @@ def _audit_decoding_and_direct(paths: AuditPaths, accept_rows: list[dict[str, An
             and (not np.isfinite(compact_minus_rf) or compact_minus_rf > 0.0)
             and leakage_failures == 0
             and trial_overlap_status == "pass"
-            and (not np.isfinite(eye_ci_low) or eye_ci_low > 0.0)
+            and np.isfinite(eye_ci_low)
+            and eye_ci_low > 0.0
         )
         status = "pass" if primary_pass else "warn"
         decoding_rows.append(

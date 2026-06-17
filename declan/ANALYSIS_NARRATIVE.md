@@ -96,6 +96,11 @@ Numerical audit update, 2026-06-12:
 - The current recorded pose-aware GLM ladder and gain-orthogonal structured
   decoder are controlled nulls, not rescue routes for those older functional
   interpretations.
+- The patched matched-context relative-displacement decoder is also a
+  constrained diagnostic, not a promoted bridge: same-image/time pairing now
+  works as intended, eye-label-shuffle support is explicitly required, and the
+  refreshed six-session run shows signal that weakens sharply under skeptic
+  projection controls rather than a compact-specific readout.
 - The current correct-chart swap alignment is a diagnostic branch, not a
   promoted bridge: pseudo controls pass clearly, the all-unit recorded effect is
   not robust, and the gain-bottom positive does not yet survive the fold/session
@@ -492,6 +497,12 @@ Practical next gates:
   integrating/motion-induced-remapping readouts. Deterministic ridge scores are
   linear decodability/information proxies unless a fixed noise/logdet model is
   added.
+- Reopen the local BackImage `I_z` branch only as a local-pairing test, not as
+  another broad fixed-axis optimizer screen. The new plan is
+  `backimage_local_pairing_Iz_revisit_plan.md`: test whether actual
+  image-trace pairings beat matched unpaired empirical traces, rotated actual
+  traces, OU/Brownian controls, and edge-axis baselines under grouped-by-image
+  feature decoding.
 - When rerunning revised free-viewing objectives, prefer a full canonical
   population or at least a larger sampled population. Keep 16-channel or
   smaller sampled variants as transfer checks, not discovery space.
@@ -1094,6 +1105,58 @@ Consequences:
   rather than tuning this endpoint: e.g. data-built cross-fit local charts,
   latency-aware response windows, or a forward generative observer with a
   better trial-noise model.
+
+Matched-context decoder refresh, 2026-06-16:
+
+The relative-displacement decoder was then audited and patched in three ways:
+
+- pair construction now uses image-aware matched contexts by default
+  (`image_time_bin`) rather than allowing same-time / different-image pairing,
+- promotion now requires a finite positive eye-label-shuffle effect rather than
+  treating missing support as acceptable,
+- `target_pc1` projection is estimated from fold-train tangent covariance with
+  session-target fallback, rather than from a full-session target covariance
+  inside each fold.
+
+The patched production rerun
+`outputs/compact_retinal_translation_geometry/relative_displacement_decoding_postpatch_prod_gpu1/`
+completed on six sessions with `n_sessions_ok = 6` and remained `diagnostic`.
+The refreshed result is informative because it separates "there is some
+matched-context displacement signal" from "compact geometry provides a robust
+skeptic-proof decoder."
+
+Top-line results at `k=10`:
+
+- `projection_control=none`: compact `R2_mean = 0.0746`, eye-shuffle excess
+  `+0.1029`, CI `[0.0502, 0.1569]`.
+- `projection_control=global_rate`: compact `R2_mean = 0.0506`, eye-shuffle
+  excess `+0.0789`, CI `[0.0350, 0.1202]`.
+- `projection_control=target_pc1`: compact `R2_mean = 0.0045`, eye-shuffle
+  excess `+0.0345`, CI `[0.0112, 0.0637]`.
+- `projection_control=global_rate+target_pc1`: compact `R2_mean = -0.0019`,
+  eye-shuffle excess `+0.0284`, CI `[0.0083, 0.0539]`.
+
+Interpretation:
+
+```text
+The patched run confirms that recorded responses contain matched-context
+displacement information, but it does not show that compact geometry is the
+privileged carrier of that information once global-rate and top-target-PC
+structure are projected out.
+```
+
+Why this matters:
+
+- The metadata/pathology fix landed cleanly: `pair_inventory.csv` now carries
+  real `image_id` and `time_context` provenance instead of fallback labels, so
+  the run is on the intended same-image footing.
+- The raw positive under `projection_control=none` is not enough for a main
+  claim because global-rate and especially `target_pc1` absorb most of the
+  effect.
+- The conservative result is therefore a limit statement: compact geometry is a
+  strong covariance-level structural result, but current recorded single-trial
+  displacement decoding does not isolate a compact-specific bridge beyond these
+  broader low-dimensional response components.
 
 Forward denoising interpretation:
 

@@ -62,6 +62,28 @@ def _parse_float_list(text: str) -> list[float]:
     return [float(part) for part in _parse_list(text)]
 
 
+def _parse_contrast_pairs(text: str) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for part in _parse_list(text):
+        if ":" in part:
+            lhs, rhs = part.split(":", 1)
+        elif ">" in part:
+            lhs, rhs = part.split(">", 1)
+        elif "-" in part:
+            lhs, rhs = part.split("-", 1)
+        else:
+            raise ValueError(
+                "Contrast pairs must use lhs:rhs, lhs>rhs, or lhs-rhs syntax; "
+                f"got {part!r}"
+            )
+        lhs = lhs.strip()
+        rhs = rhs.strip()
+        if not lhs or not rhs:
+            raise ValueError(f"Invalid empty contrast pair entry: {part!r}")
+        pairs.append((lhs, rhs))
+    return pairs
+
+
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not rows:
@@ -192,6 +214,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out-dir", type=Path, default=None)
     parser.add_argument("--summaries", default="temporal_pca,temporal_dct,temporal_delta_pca,temporal_dct_delta,mean,delta_mean")
     parser.add_argument("--families", default="empirical,ou,brownian,rotated")
+    parser.add_argument(
+        "--contrast-pairs",
+        default="empirical:ou,empirical:brownian,empirical:rotated",
+        help=(
+            "Comma-separated lhs:rhs family contrasts for incremental gains. "
+            "Use names from --families; e.g. actual_paired_empirical:matched_unpaired_empirical."
+        ),
+    )
     parser.add_argument("--scale-ids", default="all")
     parser.add_argument("--latent-names", default="gabor_local_field,pyramid_local_field")
     parser.add_argument("--pca-k-list", default="4,8")
@@ -223,6 +253,7 @@ def run(args: argparse.Namespace) -> Path:
     responses = _load_npz(run_dir / "response_summary_arrays.npz")
     summaries = _parse_list(args.summaries)
     families = _parse_list(args.families)
+    contrast_pairs = _parse_contrast_pairs(args.contrast_pairs)
     scale_ids = _parse_list(args.scale_ids)
     if not scale_ids or "all" in scale_ids:
         scale_ids = _available_scale_ids(responses, families, summaries)
@@ -346,26 +377,31 @@ def run(args: argparse.Namespace) -> Path:
                                 "n_sessions": boot["n_sessions"],
                             }
                         )
-                    if "empirical" in gain_by_family:
-                        for rhs in ("ou", "brownian", "rotated"):
-                            if rhs not in gain_by_family:
-                                continue
-                            boot = _session_bootstrap_delta(gain_by_family["empirical"], gain_by_family[rhs], sessions, rng=rng, n_bootstrap=int(args.n_bootstrap))
-                            contrast_rows.append(
-                                {
-                                    "motion_summary": summary,
-                                    "lhs_family": "empirical",
-                                    "rhs_family": rhs,
-                                    "scale_id": scale_id,
-                                    "latent": latent_name,
-                                    "k": int(k),
-                                    "incremental_gain_delta_neg_mse": boot["mean"],
-                                    "ci95_low": boot["ci_low"],
-                                    "ci95_high": boot["ci_high"],
-                                    "n_images": boot["n"],
-                                    "n_sessions": boot["n_sessions"],
-                                }
-                            )
+                    for lhs, rhs in contrast_pairs:
+                        if lhs not in gain_by_family or rhs not in gain_by_family:
+                            continue
+                        boot = _session_bootstrap_delta(
+                            gain_by_family[lhs],
+                            gain_by_family[rhs],
+                            sessions,
+                            rng=rng,
+                            n_bootstrap=int(args.n_bootstrap),
+                        )
+                        contrast_rows.append(
+                            {
+                                "motion_summary": summary,
+                                "lhs_family": lhs,
+                                "rhs_family": rhs,
+                                "scale_id": scale_id,
+                                "latent": latent_name,
+                                "k": int(k),
+                                "incremental_gain_delta_neg_mse": boot["mean"],
+                                "ci95_low": boot["ci_low"],
+                                "ci95_high": boot["ci_high"],
+                                "n_images": boot["n"],
+                                "n_sessions": boot["n_sessions"],
+                            }
+                        )
 
     _write_csv(out_dir / "incremental_decode_summary.csv", decode_rows)
     _write_csv(out_dir / "incremental_gain_vs_static.csv", gain_rows)
@@ -377,6 +413,7 @@ def run(args: argparse.Namespace) -> Path:
             "summaries": summaries,
             "static_summary_for_motion": STATIC_SUMMARY_FOR_MOTION,
             "families": families,
+            "contrast_pairs": contrast_pairs,
             "scale_ids": scale_ids,
             "latent_names": list(latents),
             "pca_k_list": pca_k_list,

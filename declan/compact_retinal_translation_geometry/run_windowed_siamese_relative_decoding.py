@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Windowed Siamese relative-displacement decoder for recorded V1.
+"""Windowed Siamese matched-context relative-displacement decoder for recorded V1.
 
 This runner asks a weaker, more biological question than the linear
 single-bin decoder: given the current image/time context and a short response
 history, can a nonlinear antisymmetric readout decode relative eye displacement
-between two repeats of the same condition?
+between two repeats from the same matched context?
 """
 from __future__ import annotations
 
@@ -30,7 +30,8 @@ from declan.compact_retinal_translation_geometry.run_relative_displacement_decod
     _metrics,
     _trial_pair_keys,
     _trial_set,
-    context_labels,
+    pair_condition_labels,
+    projection_target_covariance,
     write_csv,
     write_json,
 )
@@ -121,6 +122,7 @@ def build_window_pair_dataset(
     samples: Any,
     eye_px: np.ndarray,
     labels: np.ndarray,
+    condition_rows: list[dict[str, Any]],
     context_mode: str,
     context_bin_size: int,
     history_bins: int,
@@ -156,7 +158,7 @@ def build_window_pair_dataset(
     response_b: list[np.ndarray] = []
     target_delta: list[np.ndarray] = []
     prior_delta: list[np.ndarray] = []
-    condition_rows: list[int] = []
+    pair_condition_ids: list[int] = []
     center_time_rows: list[int] = []
     trial_a_rows: list[int] = []
     trial_b_rows: list[int] = []
@@ -165,6 +167,7 @@ def build_window_pair_dataset(
     inventory: list[dict[str, Any]] = []
     robs = np.asarray(samples.robs, dtype=np.float64)
     eye = np.asarray(eye_px, dtype=np.float64)
+    condition_meta = {int(row["condition_id"]): row for row in condition_rows}
     for condition_id in np.unique(labels):
         idx = [int(i) for i in np.flatnonzero(labels == int(condition_id)) if int(i) in valid_center]
         status = "ok"
@@ -195,7 +198,7 @@ def build_window_pair_dataset(
                 prior_delta.append(eye[prior_a] - eye[prior_b])
             else:
                 prior_delta.append(np.zeros((0, 2), dtype=np.float64))
-            condition_rows.append(int(condition_id))
+            pair_condition_ids.append(int(condition_id))
             center_time_rows.append(int(samples.time_indices[a]))
             trial_a_rows.append(int(samples.trial_ids[a]))
             trial_b_rows.append(int(samples.trial_ids[b]))
@@ -204,9 +207,9 @@ def build_window_pair_dataset(
         inventory.append(
             {
                 "condition_id": int(condition_id),
-                "condition_label": f"{context_mode}_{int(condition_id)}"
-                if context_mode != "time_window"
-                else f"time_window_{int(condition_id) * int(context_bin_size)}",
+                "condition_label": str(condition_meta.get(int(condition_id), {}).get("condition_label", f"{context_mode}_{int(condition_id)}")),
+                "image_id": int(condition_meta.get(int(condition_id), {}).get("image_id", -1)),
+                "time_context": int(condition_meta.get(int(condition_id), {}).get("time_context", -1)),
                 "n_windowed_repeats": int(len(idx)),
                 "n_all_cross_trial_pairs": int(n_all_pairs),
                 "n_pairs_used": int(len(pairs)),
@@ -236,7 +239,7 @@ def build_window_pair_dataset(
             "response_b": np.stack(response_b).astype(np.float32),
             "target_delta": np.stack(target_delta).astype(np.float32),
             "prior_delta": np.stack(prior_delta).astype(np.float32),
-            "condition_id": np.asarray(condition_rows, dtype=np.int64),
+            "condition_id": np.asarray(pair_condition_ids, dtype=np.int64),
             "center_time": np.asarray(center_time_rows, dtype=np.int64),
             "trial_a": np.asarray(trial_a_rows, dtype=np.int64),
             "trial_b": np.asarray(trial_b_rows, dtype=np.int64),
@@ -845,7 +848,12 @@ def _session_rows(
         train_sample_mask = ~np.isin(samples.trial_ids, held_ids) if split_mode == "trial_disjoint" else np.isin(labels, list(train_conditions))
         gain_response_all, gain_response_ok_all = _fold_condition_gain_response(pairs, train_mask)
         for projection_control in projection_controls:
-            modes = _projection_modes(str(projection_control), target_cov)
+            fold_target_cov = projection_target_covariance(
+                j=j,
+                train_sample_mask=train_sample_mask,
+                fallback_target_cov=target_cov,
+            )
+            modes = _projection_modes(str(projection_control), fold_target_cov)
             projection = _projection_complement(pairs["response_a"].shape[2], modes)
             compact_basis, basis_rank = _basis_from_j(j, train_sample_mask, projection, int(primary_k))
             rng = np.random.default_rng(int(args.seed) + int(fold_idx) * 1009 + len(metric_rows))
@@ -1169,7 +1177,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--primary-k", type=int, default=10)
     p.add_argument("--history-bins", type=int, default=10)
     p.add_argument("--future-bins", type=int, default=0)
-    p.add_argument("--context-mode", choices=["time_bin", "time_window"], default="time_bin")
+    p.add_argument(
+        "--context-mode",
+        choices=["image_time_bin", "image_time_window", "image_only", "time_bin", "time_window"],
+        default="image_time_bin",
+    )
     p.add_argument("--context-bin-size", type=int, default=10)
     p.add_argument("--context-one-hot-max", type=int, default=128)
     p.add_argument("--min-repeats-per-condition", type=int, default=3)
@@ -1254,7 +1266,7 @@ def run_analysis(args: argparse.Namespace) -> None:
                 "gain_response_source": "fold_train_condition_mean_with_global_train_fallback",
                 "weighting": str(args.chart_weighting),
             },
-            "claim_guardrail": "Context-aware relative decoder; do not describe as absolute eye-position decoding.",
+            "claim_guardrail": "Context-aware relative decoder; same-image wording is warranted only for image-aware context modes, and it should not be described as absolute eye-position decoding.",
         },
     )
     if bool(args.init_only):
@@ -1277,12 +1289,18 @@ def run_analysis(args: argparse.Namespace) -> None:
             session_rows.append({"session": session, "status": "too_few_common_units", "n_common_units": int(common_units.size)})
             continue
         dset, stim_lags, samples = _collect_samples(model=model, dataset_idx=dataset_idx, common_units=common_units, args=args)
-        labels = context_labels(samples, str(args.context_mode), int(args.context_bin_size))
+        labels, condition_rows, image_meta = pair_condition_labels(
+            dset=dset,
+            samples=samples,
+            mode=str(args.context_mode),
+            bin_size=int(args.context_bin_size),
+        )
         eye_px = samples.eyepos_deg * float(samples.pixels_per_degree)
         pairs, inventory = build_window_pair_dataset(
             samples=samples,
             eye_px=eye_px,
             labels=labels,
+            condition_rows=condition_rows,
             context_mode=str(args.context_mode),
             context_bin_size=int(args.context_bin_size),
             history_bins=int(args.history_bins),
@@ -1336,6 +1354,7 @@ def run_analysis(args: argparse.Namespace) -> None:
                 "target_len": int(pairs["target_delta"].shape[1]),
                 "rescale_status": rescale_status,
                 "rf_null_status": rf_meta.status,
+                **image_meta,
                 **target_meta,
             }
         )
@@ -1372,8 +1391,6 @@ def run_analysis(args: argparse.Namespace) -> None:
         and leakage_failures == 0
     ):
         decision = "candidate_positive"
-    elif n_sessions_ok >= min_positive_sessions and np.isfinite(compact) and compact > 0 and np.isfinite(compact_minus_orth) and compact_minus_orth > 0 and np.isfinite(compact_minus_random) and compact_minus_random > 0 and (not np.isfinite(compact_minus_rf) or compact_minus_rf > 0) and leakage_failures == 0:
-        decision = "candidate_positive_legacy_mlp"
     write_json(
         out / "audit.json",
         {
@@ -1396,7 +1413,8 @@ def run_analysis(args: argparse.Namespace) -> None:
                 "min_margin_over_chart_shuffle": min_positive_margin,
             },
             "model_info": {k: str(v) for k, v in dict(model_info).items()},
-            "claim_guardrail": "Context-aware relative decoder; do not describe as absolute eye-position decoding.",
+            "claim_guardrail": "Context-aware relative decoder; same-image wording is warranted only for image-aware context modes, and it should not be described as absolute eye-position decoding.",
+            "target_pc_projection_scope": "train_estimated_tangent_covariance_with_session_target_fallback",
         },
     )
     write_json(

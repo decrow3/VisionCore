@@ -60,7 +60,7 @@ BLOCK_HEIGHT_IN = 6.0
 # Total figure size.
 TOTAL_W_IN = PANEL_A_W_IN + PANEL_C_W_IN + PANEL_D_W_IN + 2 * PAD_IN
 TOTAL_H_IN = ROW_HEIGHT_IN + BLOCK_HEIGHT_IN
-CANVAS_H_IN = TOTAL_H_IN - 1.02
+CANVAS_H_IN = 541.348 / 72.0
 
 # Matplotlib region spans the full width; the top-left cell is left empty
 # so panel A (SVG schematic) can be composited over it.
@@ -71,8 +71,11 @@ PPI = 96.0
 MAIN_PANEL_Y_SHIFT = 15.0 / (TOTAL_H_IN * PPI)
 TOP_ROW_EXTRA_Y_SHIFT = 97.0 / (TOTAL_H_IN * PPI)
 RIGHT_COLUMN_EXTRA_Y_SHIFT = 12.0 / (TOTAL_H_IN * PPI)
+POP_COLUMN_EXTRA_Y_SHIFT = 94.0 / (TOTAL_H_IN * PPI)
 PANEL_B_LABEL_X_IN = 3.45
 PANEL_C_LABEL_X_IN = 5.52
+PANEL_A_REF_W_IN = 330.0 / 96.0
+PANEL_A_REF_H_IN = 250.0 / 96.0
 
 PANEL_LABEL_FONTSIZE_PT = 16
 # svgutils sizes in SVG user units (px). matplotlib renders 16pt @ 96 DPI as
@@ -174,12 +177,12 @@ def _render_main_svg(out_path, recalc_c=False, recalc_d=False, recalc_f=False):
 
     _, pop_axes = plot_panel_f(
         fig=sub_pop, refresh=recalc_f, panel_letters=("D", "F", "E"),
-        bottom_pad=0.45,
+        bottom_pad=1.05,
     )
     ef_subfig = sub_right.add_subfigure(right_gs[1])
     plot_panel_ef(
         fig=ef_subfig, refresh=recalc_d, panel_letters=("H", "I"),
-        vertical_pad=(0.05, 0.52), raster_height=2.05,
+        vertical_pad=(0.05, 0.94), raster_height=2.05,
     )
 
     # Constrained layout gives the gaze traces a different x-span from the
@@ -191,7 +194,8 @@ def _render_main_svg(out_path, recalc_c=False, recalc_d=False, recalc_f=False):
         pos = axes.get_position()
         axes.set_in_layout(False)
         axes.set_position([
-            pos.x0, pos.y0 + bottom_shift + MAIN_PANEL_Y_SHIFT,
+            pos.x0,
+            pos.y0 + bottom_shift + MAIN_PANEL_Y_SHIFT + POP_COLUMN_EXTRA_Y_SHIFT,
             pos.width, pos.height,
         ])
 
@@ -297,11 +301,19 @@ def _panel_a_inset_border():
     """).getroot()
 
 
+def _panel_a_reference_image():
+    with open(HERE / "fig1a_reference_crop.png", "rb") as f:
+        buf = BytesIO(f.read())
+    img = sg.ImageElement(
+        buf, PANEL_A_REF_W_IN * PPI, PANEL_A_REF_H_IN * PPI,
+    )
+    img.moveto(0.0, 0.0)
+    return img
+
+
 def compose(recalc_c=False, recalc_d=False, recalc_f=False):
     main_svg = FIG_DIR / "_fig1_main.svg"
     _render_main_svg(main_svg, recalc_c=recalc_c, recalc_d=recalc_d, recalc_f=recalc_f)
-
-    panel_a_path = HERE / "fig1a.svg"
 
     fig = sg.SVGFigure(f"{TOTAL_W_IN}in", f"{CANVAS_H_IN}in")
     fig.root.set("viewBox", f"0 0 {TOTAL_W_IN * PPI} {CANVAS_H_IN * PPI}")
@@ -317,13 +329,7 @@ def compose(recalc_c=False, recalc_d=False, recalc_f=False):
         return root
 
     main = _load_and_place(main_svg, 0.0, 0.0, TOTAL_W_IN, TOTAL_H_IN)
-    panel_a = _load_and_place(panel_a_path, PANEL_A_X_IN, PANEL_A_Y_IN,
-                              PANEL_A_W_IN, ROW_HEIGHT_IN)
-
-    label_a = sg.TextElement(
-        0.05 * PPI, 0.25 * PPI, "A",
-        size=PANEL_A_LABEL_FONTSIZE_PX, weight="bold", font="DejaVu Sans",
-    )
+    panel_a_ref = _panel_a_reference_image()
     label_b = sg.TextElement(
         PANEL_B_LABEL_X_IN * PPI, 0.25 * PPI, "B",
         size=PANEL_A_LABEL_FONTSIZE_PX, weight="bold", font="DejaVu Sans",
@@ -332,13 +338,9 @@ def compose(recalc_c=False, recalc_d=False, recalc_f=False):
         PANEL_C_LABEL_X_IN * PPI, 0.25 * PPI, "C",
         size=PANEL_A_LABEL_FONTSIZE_PX, weight="bold", font="DejaVu Sans",
     )
-    panel_a_inset = _panel_a_inset_image()
-    panel_a_legend = _panel_a_legend_overlay()
-    panel_a_border = _panel_a_inset_border()
 
     fig.append([
-        main, panel_a, label_a, label_b, label_c,
-        panel_a_legend, panel_a_inset, panel_a_border,
+        main, panel_a_ref, label_b, label_c,
     ])
 
     out_svg = FIG_DIR / "fig1.svg"

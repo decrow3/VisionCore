@@ -31,6 +31,7 @@ from .joint_observer import (
     SUPPORTED_COMPACT_COVARIANCE,
     SUPPORTED_JOINT_OBSERVERS,
     SUPPORTED_JOINT_CONTROLS,
+    SUPPORTED_LIKELIHOOD_NORMALIZATION,
     THETA_LABELS,
     build_discrete_gaussian_step_prior,
     build_compact_translation_basis,
@@ -548,6 +549,10 @@ def append_joint_geometry_rows(
                 effective_k = int(u_trans.shape[1])
                 for true_label, rates in (("plus", plus), ("minus", minus)):
                     t = min(rates.shape[0], mu0_counts.shape[1], jac_counts.shape[1], pose.shape[0], reference_trace.shape[0])
+                    known_candidate_counts = expected_counts(
+                        np.stack([plus[:t], minus[:t]], axis=0),
+                        args.bin_seconds,
+                    )
                     pose_residual_arcmin = (np.asarray(pose[:t], dtype=np.float64) - reference_trace[:t]) * 60.0
                     result = joint_geometry_vernier_observer_trial(
                         expected_counts(rates[:t], args.bin_seconds),
@@ -561,11 +566,13 @@ def append_joint_geometry_rows(
                         phi=float(args.phi),
                         true_pose_arcmin=pose_residual_arcmin,
                         known_u_trans=known_u_trans,
+                        known_candidate_counts=known_candidate_counts,
                         observer_mode=str(args.joint_observer),
                         step_prior=step_prior,
                         max_particles=int(args.joint_max_particles),
                         likelihood_scale=float(args.joint_likelihood_scale),
                         covariance_mode=str(args.joint_covariance_mode),
+                        likelihood_normalization=str(args.joint_likelihood_normalization),
                     )
                     tau = np.asarray(result.pop("joint_tau_hat"), dtype=np.float32)
                     tau_path = (
@@ -604,6 +611,7 @@ def append_joint_geometry_rows(
                             "eye_step_arcmin": float(args.joint_eye_step_arcmin),
                             "joint_max_particles": int(args.joint_max_particles),
                             "joint_likelihood_scale": float(args.joint_likelihood_scale),
+                            "joint_likelihood_normalization": str(args.joint_likelihood_normalization),
                             "n_eye_steps": int(step_prior["steps"].shape[0]),
                             "n_timebins": int(t),
                             "n_units": int(rates.shape[1]),
@@ -928,10 +936,55 @@ def _condition_from_cache_path(path: Path) -> str:
     return stem[len("rates_") : stem.rindex("_fd")]
 
 
-def recompute_summaries_from_cache(args: argparse.Namespace, out_dir: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+def _safe_joint_cache_label(label: str) -> str:
+    return "".join(c if c.isalnum() or c in {"-", "_"} else "_" for c in str(label))
+
+
+def load_joint_geometry_cache(
+    out_dir: Path,
+    *,
+    condition: str,
+    trace_idx: int,
+    fd_step: float,
+    translation_eps_arcmin: float,
+    n_timebins: int,
+) -> dict[str, Any]:
+    cache_dir = out_dir / "cache" / "joint_geometry"
+    safe_label = _safe_joint_cache_label(f"{condition}_trace{trace_idx}")
+    pattern = (
+        f"local_translation_jacobian_{safe_label}_fd{float(fd_step):.4f}arcmin_"
+        f"eps{float(translation_eps_arcmin):.4f}arcmin_t{int(n_timebins)}.npz"
+    )
+    matches = sorted(cache_dir.glob(pattern))
+    if not matches:
+        fallback = (
+            f"local_translation_jacobian_{safe_label}_fd{float(fd_step):.4f}arcmin_"
+            f"eps{float(translation_eps_arcmin):.4f}arcmin_t*.npz"
+        )
+        matches = sorted(cache_dir.glob(fallback))
+    if not matches:
+        raise FileNotFoundError(f"No joint-geometry cache matched {cache_dir / pattern}")
+    path = matches[0]
+    with np.load(path, allow_pickle=True) as npz:
+        return {
+            "path": path,
+            "theta_arcmin": np.asarray(npz["theta_arcmin"]),
+            "theta_labels": np.asarray(npz["theta_labels"]),
+            "translation_eps_arcmin": np.asarray(npz["translation_eps_arcmin"]),
+            "reference_trace_deg": np.asarray(npz["reference_trace_deg"], dtype=np.float32),
+            "mu0_rates": np.asarray(npz["mu0_rates"], dtype=np.float32),
+            "jacobian_rates_per_arcmin": np.asarray(npz["jacobian_rates_per_arcmin"], dtype=np.float32),
+        }
+
+
+def recompute_summaries_from_cache(
+    args: argparse.Namespace,
+    out_dir: Path,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     """Recompute information summaries from saved finite-difference rate caches."""
     summary_rows: list[dict[str, Any]] = []
     inventory_rows: list[dict[str, Any]] = []
+    joint_rows: list[dict[str, Any]] = []
     cache_paths = sorted((out_dir / "cache").glob("rates_*_fd*arcmin.npz"))
     if not cache_paths:
         raise FileNotFoundError(f"No rate caches found under {out_dir / 'cache'}")
@@ -990,16 +1043,47 @@ def recompute_summaries_from_cache(args: argparse.Namespace, out_dir: Path) -> t
             pose_traces=pose_traces,
             args=args,
         )
+        if bool(getattr(args, "run_joint_geometry_observer", False)):
+            if pose_traces is None:
+                raise ValueError("Joint geometry observer recompute requires poses in the rate cache")
+            t_joint = min(arr.shape[0] for arr in plus_rates + minus_rates)
+            joint_caches = [
+                load_joint_geometry_cache(
+                    out_dir,
+                    condition=condition,
+                    trace_idx=trace_idx,
+                    fd_step=fd_step,
+                    translation_eps_arcmin=float(args.joint_translation_eps_arcmin),
+                    n_timebins=int(t_joint),
+                )
+                for trace_idx in range(len(plus_rates))
+            ]
+            append_joint_geometry_rows(
+                joint_rows,
+                condition=condition,
+                fd_step=fd_step,
+                inference_mode=inference_mode,
+                plus_rates=plus_rates,
+                minus_rates=minus_rates,
+                pose_traces=pose_traces,
+                caches=joint_caches,
+                args=args,
+            )
 
     condition_summary_rows = summarize_condition_rows(summary_rows)
     contrast_rows = paired_contrast_rows(summary_rows)
     contrast_summary_rows = summarize_contrast_rows(contrast_rows)
+    joint_summary_rows = summarize_joint_geometry_rows(joint_rows) if joint_rows else []
     write_csv(out_dir / "information_summary.csv", summary_rows)
     write_csv(out_dir / "cache_inventory.csv", inventory_rows)
     write_csv(out_dir / "condition_reliability_summary.csv", condition_summary_rows)
     write_csv(out_dir / "paired_baseline_contrasts.csv", contrast_rows)
     write_csv(out_dir / "paired_baseline_contrast_summary.csv", contrast_summary_rows)
-    return summary_rows, condition_summary_rows, contrast_summary_rows
+    if joint_rows:
+        write_csv(out_dir / "joint_geometry_observer_trials.csv", joint_rows)
+        write_csv(out_dir / "joint_geometry_observer_summary.csv", joint_summary_rows)
+        write_joint_geometry_gap_figure(out_dir, joint_summary_rows)
+    return summary_rows, condition_summary_rows, contrast_summary_rows, joint_rows, joint_summary_rows
 
 
 def parse_args() -> argparse.Namespace:
@@ -1055,6 +1139,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--joint-eye-step-arcmin", type=float, default=1.0)
     parser.add_argument("--joint-max-particles", type=int, default=3000)
     parser.add_argument("--joint-likelihood-scale", type=float, default=1.0)
+    parser.add_argument(
+        "--joint-likelihood-normalization",
+        type=str,
+        default="residual",
+        choices=SUPPORTED_LIKELIHOOD_NORMALIZATION,
+        help=(
+            "Use residual-only compact Gaussian scores for deterministic expected-count pilots, "
+            "or full scores including the covariance log determinant."
+        ),
+    )
     parser.add_argument("--joint-covariance-mode", type=str, default="full", choices=SUPPORTED_COMPACT_COVARIANCE)
     parser.add_argument("--render-resolution-factors", type=str, default="0.5,1,2")
     parser.add_argument("--phi", type=float, default=1.0)
@@ -1108,7 +1202,13 @@ def main() -> None:
     joint_rows: list[dict[str, Any]] = []
     joint_summary_rows: list[dict[str, Any]] = []
     if args.recompute_from_cache:
-        summary_rows, _condition_summary_rows, _contrast_summary_rows = recompute_summaries_from_cache(args, out_dir)
+        (
+            summary_rows,
+            _condition_summary_rows,
+            _contrast_summary_rows,
+            joint_rows,
+            joint_summary_rows,
+        ) = recompute_summaries_from_cache(args, out_dir)
     elif not args.skip_model:
         summary_rows, inventory_rows, joint_rows = run_model_responses(args, out_dir, geometry, conditions, fd_steps)
         write_csv(out_dir / "information_summary.csv", summary_rows)

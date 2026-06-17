@@ -96,6 +96,10 @@ COMBO_IDX = 1               # script selected the second-best combo (j=1)
 PSTH_BIN_MS = 5.0           # ms binning for line PSTHs
 RASTER_GAP_BINS = 10
 RASTER_GROUP_GAP_BINS = 18
+GROUP_BLUE = "#6f95ee"
+GROUP_RED = "#df6556"
+GROUP_BLUE_FILL = "#e8f0ff"
+GROUP_RED_FILL = "#fde1dc"
 
 CACHE_FIG_DIR = CACHE_DIR / "fig1_population"
 FIG_DIR = FIGURES_DIR / "fig1"
@@ -437,13 +441,13 @@ def plot_gaze_axis(ax, payload, c0_trials, c1_trials, dim,
     s_idx = max(seg_s - win_start_bin, 0)
     e_idx = min(seg_e - win_start_bin, n_bins)
 
-    for trials, color in [(c0_trials, "blue"), (c1_trials, "red")]:
+    for trials, color in [(c0_trials, GROUP_BLUE), (c1_trials, GROUP_RED)]:
         for tid in trials:
             trace = eye[tid, win_start_bin:win_end_bin, dim]
-            ax.plot(t_ms, trace, color="0.6", lw=0.6, alpha=0.7)
+            ax.plot(t_ms, trace, color="0.72", lw=0.45, alpha=0.45)
             if e_idx > s_idx:
                 ax.plot(t_ms[s_idx:e_idx], trace[s_idx:e_idx],
-                        color=color, lw=1.0, alpha=0.95)
+                        color=color, lw=0.85, alpha=0.78)
 
     ax.set_xlim(window_ms[0], window_ms[1])
     label = "Az." if dim == 0 else "El."
@@ -516,8 +520,8 @@ def plot_psth_axis(ax, payload, c0_trials, c1_trials,
     """Line-plot PSTHs for the two cluster groups."""
     x0, p0 = _cluster_psth(payload, c0_trials, window_ms, bin_ms=bin_ms)
     x1, p1 = _cluster_psth(payload, c1_trials, window_ms, bin_ms=bin_ms)
-    ax.plot(x0, p0, color="blue", lw=1.0, alpha=0.9)
-    ax.plot(x1, p1, color="red", lw=1.0, alpha=0.9)
+    ax.plot(x0, p0, color=GROUP_BLUE, lw=1.0, alpha=0.9)
+    ax.plot(x1, p1, color=GROUP_RED, lw=1.0, alpha=0.9)
 
     ax.set_xlim(window_ms[0], window_ms[1])
     ax.set_ylim(bottom=0)
@@ -558,6 +562,15 @@ def plot_raster_axis(ax, payload, c0_trials=None, c1_trials=None,
     t0_ms = t0_bin * DT * 1000.0
     t1_ms = t1_bin * DT * 1000.0
 
+    blue_group_bottom = max(n0 * block_h - gap, 0)
+    red_group_top = row_c1_start
+    if n0 > 0:
+        ax.axhspan(0, blue_group_bottom, color=GROUP_BLUE_FILL, alpha=0.78,
+                   lw=0, zorder=0)
+    if n1 > 0:
+        ax.axhspan(red_group_top, total_rows, color=GROUP_RED_FILL, alpha=0.78,
+                   lw=0, zorder=0)
+
     spike_xs, spike_ys, spike_y2s = [], [], []
     tick_positions, tick_labels, tick_colors = [], [], []
 
@@ -573,7 +586,7 @@ def plot_raster_axis(ax, payload, c0_trials=None, c1_trials=None,
                 spike_y2s.append(row_top + cell + 0.7)
         tick_positions.append(row_top + n_cells / 2)
         tick_labels.append(str(trial_number))
-        tick_colors.append("blue" if cluster_label == 0 else "red")
+        tick_colors.append(GROUP_BLUE if cluster_label == 0 else GROUP_RED)
 
     row = row_c0_start
     trial_n = 1
@@ -615,23 +628,6 @@ def plot_raster_axis(ax, payload, c0_trials=None, c1_trials=None,
         ax.axhline(group_divider_y, color="0.82",
                    lw=0.5, ls="-", zorder=0)
 
-    # Outline the two displayed four-trial groups.
-    box_x = t0_ms + 2.0
-    box_w = (t1_ms - t0_ms) - 4.0
-    if n0 > 0:
-        ax.add_patch(Rectangle(
-            (box_x, 1.0), box_w, max(n0 * block_h - gap - 2.0, 1.0),
-            fill=False, edgecolor="blue", linewidth=1.2, alpha=0.95,
-            zorder=4,
-        ))
-    if n1 > 0:
-        ax.add_patch(Rectangle(
-            (box_x, row_c1_start + 1.0),
-            box_w, max(n1 * block_h - gap - 2.0, 1.0),
-            fill=False, edgecolor="red", linewidth=1.2, alpha=0.95,
-            zorder=4,
-        ))
-
     ax.set_xlim(t0_ms, t1_ms)
     ax.set_ylim(total_rows, 0)
     ax.set_xlabel("Time from fixation onset (ms)", fontsize=8)
@@ -658,19 +654,28 @@ def _add_block_label(ax, letter, dx=-22, dy=6):
 def _add_gaze_raster_links(ax_gaze, ax_raster):
     """Connect the colored gaze traces to the matching raster trial groups."""
     links = [
-        ("blue", (1.015, 0.72), (1.015, 0.78), 0.0),
-        ("red", (1.055, 0.32), (1.055, 0.27), 0.0),
+        (GROUP_BLUE, (1.02, 0.97), 0.73, -0.10),
+        (GROUP_RED, (1.055, 0.54), 0.34, 0.10),
     ]
-    for color, xy_a, xy_b, rad in links:
+    for color, xy_a, raster_y, rad in links:
         con = ConnectionPatch(
             xyA=xy_a, coordsA=ax_gaze.transAxes,
-            xyB=xy_b, coordsB=ax_raster.transAxes,
-            arrowstyle="->", mutation_scale=8,
-            linewidth=1.0, color=color, alpha=0.9,
+            xyB=(1.065, raster_y), coordsB=ax_raster.transAxes,
+            arrowstyle="-", mutation_scale=8,
+            linewidth=1.0, color=color, alpha=0.86,
             connectionstyle=f"arc3,rad={rad}",
             shrinkA=2, shrinkB=2, clip_on=False, zorder=8,
         )
         ax_raster.add_artist(con)
+        ax_raster.annotate(
+            "", xy=(1.005, raster_y), xytext=(1.065, raster_y),
+            xycoords=ax_raster.transAxes, textcoords=ax_raster.transAxes,
+            arrowprops=dict(
+                arrowstyle="->", color=color, lw=1.0, alpha=0.86,
+                shrinkA=0, shrinkB=0, mutation_scale=8,
+            ),
+            annotation_clip=False, zorder=8,
+        )
 
 
 def plot_panel_f(fig=None, subject=SUBJECT, date=DATE, refresh=False,
@@ -708,6 +713,16 @@ def plot_panel_f(fig=None, subject=SUBJECT, date=DATE, refresh=False,
     plot_raster_axis(ax_raster, payload,
                      c0_trials=c0_trials, c1_trials=c1_trials,
                      window_ms=RASTER_WINDOW_MS)
+    ax_raster.text(
+        0.03, 1.035, "...can result in very different population responses",
+        transform=ax_raster.transAxes, ha="left", va="bottom",
+        fontsize=8.5, color="0.10", clip_on=False,
+    )
+    ax_raster.text(
+        0.58, 1.34, "Small differences in trajectories...",
+        transform=ax_raster.transAxes, ha="center", va="bottom",
+        fontsize=8.5, color="0.22", clip_on=False,
+    )
     plot_psth_axis(ax_psth, payload, c0_trials, c1_trials)
 
     # Gaze pair: top plot has no bottom spine or x ticks; bottom plot keeps

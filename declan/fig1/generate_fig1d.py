@@ -772,7 +772,7 @@ def plot_panel_d_roi(ax=None, subject=SUBJECT, date=DATE, cell=DEFAULT_CELL,
     ax.set_yticklabels(["-0.5", "0", "0.5"])
     ax.set_xlabel("")
     ax.set_ylabel("")
-    ax.set_title("Cropped ROI", fontsize=8, pad=2)
+    ax.set_title("Single unit STA", fontsize=8, pad=2)
 
     if panel_letter is not None:
         _add_block_label(ax, panel_letter)

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Same-condition relative displacement decoding in recorded V1.
+"""Matched-context relative displacement decoding in recorded V1.
 
 This runner implements the recorded-data "readability" bridge for the compact
-retinal-translation geometry analysis.  It pairs repeats of the same
-time/history condition, decodes the relative eye-position difference from the
-relative recorded response, and compares compact twin-tangent features with
-full-population, orthogonal, random, unit-shuffled, RF/readout-preserving, and
-global/PC controls.
+retinal-translation geometry analysis. It pairs repeats from a matched context,
+decodes the relative eye-position difference from the relative recorded
+response, and compares compact twin-tangent features with full-population,
+orthogonal, random, unit-shuffled, RF/readout-preserving, and global/PC
+controls.
 """
 from __future__ import annotations
 
@@ -135,6 +135,129 @@ def context_labels(samples: Any, mode: str, bin_size: int) -> np.ndarray:
     raise ValueError(f"Unsupported context mode: {mode}")
 
 
+def _condition_keys(
+    *,
+    image_ids: np.ndarray,
+    time_indices: np.ndarray,
+    mode: str,
+    bin_size: int,
+) -> tuple[np.ndarray, list[dict[str, Any]]]:
+    image_ids = np.asarray(image_ids, dtype=np.int64)
+    time_indices = np.asarray(time_indices, dtype=np.int64)
+    if str(mode) == "image_only":
+        time_ctx = np.zeros_like(time_indices)
+    elif str(mode) == "image_time_window":
+        time_ctx = time_indices // max(int(bin_size), 1)
+    elif str(mode) == "image_time_bin":
+        time_ctx = time_indices
+    else:
+        raise ValueError(f"Unsupported image-aware context mode: {mode}")
+
+    labels = np.full(image_ids.shape, -1, dtype=np.int64)
+    rows: list[dict[str, Any]] = []
+    mapping: dict[tuple[int, int], int] = {}
+    for i, (img, tt) in enumerate(zip(image_ids.tolist(), time_ctx.tolist(), strict=True)):
+        if int(img) < 0:
+            continue
+        key = (int(img), int(tt))
+        if key not in mapping:
+            mapping[key] = len(mapping)
+        labels[i] = mapping[key]
+    for (img, tt), cid in sorted(mapping.items(), key=lambda kv: kv[1]):
+        rows.append(
+            {
+                "condition_id": int(cid),
+                "image_id": int(img),
+                "time_context": int(tt),
+                "condition_label": (
+                    f"image_{int(img)}"
+                    if str(mode) == "image_only"
+                    else f"image_{int(img)}_time_{int(tt)}"
+                ),
+            }
+        )
+    return labels, rows
+
+
+def _image_ids_for_samples(dset: Any, samples: Any) -> tuple[np.ndarray, dict[str, Any]]:
+    """Reconstruct fixRSVP image id at each sampled source row."""
+    try:
+        from DataYatesV1.exp.fix_rsvp import FixRsvpTrial
+        from DataYatesV1.utils.general import get_clock_functions
+    except Exception as exc:
+        return (
+            np.full(samples.source_indices.size, -1, dtype=np.int64),
+            {"image_id_status": f"unavailable_import_{type(exc).__name__}"},
+        )
+
+    trial_inds = np.asarray(dset.covariates["trial_inds"]).ravel()
+    t_bins = np.asarray(dset.covariates["t_bins"]).ravel()
+    sess = dset.metadata["sess"]
+    ptb2ephys, _ = get_clock_functions(sess.exp)
+    trial_cache: dict[int, tuple[np.ndarray, np.ndarray, int]] = {}
+    out = np.full(samples.source_indices.size, -1, dtype=np.int64)
+    failures = 0
+    for row_i, src in enumerate(np.asarray(samples.source_indices, dtype=np.int64)):
+        trial_id = int(trial_inds[int(src)])
+        try:
+            if trial_id not in trial_cache:
+                trial = FixRsvpTrial(sess.exp["D"][trial_id], sess.exp["S"])
+                start = np.where(trial.image_ids == 2)[0]
+                if start.size == 0:
+                    failures += 1
+                    continue
+                start_idx = int(start[0])
+                trial_cache[trial_id] = (
+                    np.asarray(trial.image_ids, dtype=np.int64),
+                    np.asarray(ptb2ephys(trial.flip_times[start_idx:]), dtype=np.float64),
+                    start_idx,
+                )
+            trial_image_ids, flip_times, start_idx = trial_cache[trial_id]
+            hist_idx = int(np.searchsorted(flip_times, float(t_bins[int(src)]), side="right") - 1 + start_idx)
+            hist_idx = int(np.clip(hist_idx, 0, trial_image_ids.size - 1))
+            out[row_i] = int(trial_image_ids[hist_idx]) - 1
+        except Exception:
+            failures += 1
+    valid = out >= 0
+    meta = {
+        "image_id_status": "ok" if np.any(valid) else "no_valid_image_ids",
+        "n_image_id_valid_samples": int(np.sum(valid)),
+        "n_image_id_failures": int(failures),
+        "n_unique_image_ids": int(np.unique(out[valid]).size) if np.any(valid) else 0,
+    }
+    return out, meta
+
+
+def pair_condition_labels(
+    *,
+    dset: Any,
+    samples: Any,
+    mode: str,
+    bin_size: int,
+) -> tuple[np.ndarray, list[dict[str, Any]], dict[str, Any]]:
+    if str(mode) in {"time_bin", "time_window", "trial"}:
+        labels = context_labels(samples, str(mode), int(bin_size))
+        rows: list[dict[str, Any]] = []
+        for cid in sorted(int(v) for v in np.unique(labels)):
+            rows.append(
+                {
+                    "condition_id": int(cid),
+                    "image_id": -1,
+                    "time_context": int(cid),
+                    "condition_label": _label_text(str(mode), int(cid), int(bin_size)),
+                }
+            )
+        return labels, rows, {"image_id_status": "not_requested"}
+    image_ids, image_meta = _image_ids_for_samples(dset, samples)
+    labels, rows = _condition_keys(
+        image_ids=image_ids,
+        time_indices=np.asarray(samples.time_indices, dtype=np.int64),
+        mode=str(mode),
+        bin_size=int(bin_size),
+    )
+    return labels, rows, image_meta
+
+
 def _label_text(mode: str, condition_id: int, bin_size: int) -> str:
     if mode == "time_window":
         lo = int(condition_id) * int(bin_size)
@@ -160,6 +283,27 @@ def _trial_set(trial_a: np.ndarray, trial_b: np.ndarray, mask: np.ndarray) -> se
     a = np.asarray(trial_a, dtype=np.int64)[mask]
     b = np.asarray(trial_b, dtype=np.int64)[mask]
     return set(int(v) for v in np.concatenate([a, b])) if a.size or b.size else set()
+
+
+def projection_target_covariance(
+    *,
+    j: np.ndarray,
+    train_sample_mask: np.ndarray,
+    fallback_target_cov: np.ndarray,
+) -> np.ndarray:
+    mat = tangent_matrix_from_samples(j, train_sample_mask, projection=None).T
+    mat = np.asarray(mat, dtype=np.float64)
+    if mat.ndim != 2 or mat.shape[0] < 3 or mat.shape[1] != fallback_target_cov.shape[0]:
+        return np.asarray(fallback_target_cov, dtype=np.float64)
+    mat = mat[np.all(np.isfinite(mat), axis=1)]
+    if mat.shape[0] < 3:
+        return np.asarray(fallback_target_cov, dtype=np.float64)
+    mat = mat - np.mean(mat, axis=0, keepdims=True)
+    cov = (mat.T @ mat) / max(mat.shape[0] - 1, 1)
+    cov = 0.5 * (cov + cov.T)
+    if not np.all(np.isfinite(cov)):
+        return np.asarray(fallback_target_cov, dtype=np.float64)
+    return cov
 
 
 def _decode_splits(pairs: dict[str, np.ndarray], n_folds: int, seed: int, split_mode: str) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
@@ -190,6 +334,7 @@ def build_pair_dataset(
     samples: Any,
     eye_px: np.ndarray,
     labels: np.ndarray,
+    condition_rows: list[dict[str, Any]],
     context_mode: str,
     context_bin_size: int,
     min_repeats_per_condition: int,
@@ -199,7 +344,7 @@ def build_pair_dataset(
     rng = np.random.default_rng(int(seed))
     dy_rows: list[np.ndarray] = []
     de_rows: list[np.ndarray] = []
-    condition_rows: list[int] = []
+    pair_condition_ids: list[int] = []
     trial_a_rows: list[int] = []
     trial_b_rows: list[int] = []
     sample_a_rows: list[int] = []
@@ -208,6 +353,7 @@ def build_pair_dataset(
     robs = np.asarray(samples.robs, dtype=np.float64)
     eye = np.asarray(eye_px, dtype=np.float64)
     valid = np.isfinite(robs).all(axis=1) & np.isfinite(eye).all(axis=1)
+    condition_meta = {int(row["condition_id"]): row for row in condition_rows}
     for condition_id in np.unique(labels):
         idx = np.flatnonzero((labels == int(condition_id)) & valid)
         status = "ok"
@@ -231,7 +377,7 @@ def build_pair_dataset(
         for a, b in pairs:
             dy_rows.append(robs[a] - robs[b])
             de_rows.append(eye[a] - eye[b])
-            condition_rows.append(int(condition_id))
+            pair_condition_ids.append(int(condition_id))
             trial_a_rows.append(int(samples.trial_ids[a]))
             trial_b_rows.append(int(samples.trial_ids[b]))
             sample_a_rows.append(int(a))
@@ -239,7 +385,9 @@ def build_pair_dataset(
         inventory.append(
             {
                 "condition_id": int(condition_id),
-                "condition_label": _label_text(context_mode, int(condition_id), int(context_bin_size)),
+                "condition_label": str(condition_meta.get(int(condition_id), {}).get("condition_label", _label_text(context_mode, int(condition_id), int(context_bin_size)))),
+                "image_id": int(condition_meta.get(int(condition_id), {}).get("image_id", -1)),
+                "time_context": int(condition_meta.get(int(condition_id), {}).get("time_context", -1)),
                 "n_repeats": int(idx.size),
                 "n_trials": int(np.unique(samples.trial_ids[idx]).size) if idx.size else 0,
                 "n_all_cross_trial_pairs": int(n_all_pairs),
@@ -264,7 +412,7 @@ def build_pair_dataset(
         {
             "delta_y": np.stack(dy_rows, axis=0).astype(np.float64),
             "delta_e": np.stack(de_rows, axis=0).astype(np.float64),
-            "condition_id": np.asarray(condition_rows, dtype=np.int64),
+            "condition_id": np.asarray(pair_condition_ids, dtype=np.int64),
             "trial_a": np.asarray(trial_a_rows, dtype=np.int64),
             "trial_b": np.asarray(trial_b_rows, dtype=np.int64),
             "sample_a": np.asarray(sample_a_rows, dtype=np.int64),
@@ -505,7 +653,12 @@ def _session_decode_rows(
         else:
             train_sample_mask = np.isin(sample_condition_labels, list(train_conditions))
         for projection_control in projection_controls:
-            modes = _projection_modes(str(projection_control), target_cov)
+            fold_target_cov = projection_target_covariance(
+                j=j,
+                train_sample_mask=train_sample_mask,
+                fallback_target_cov=target_cov,
+            )
+            modes = _projection_modes(str(projection_control), fold_target_cov)
             projection = _projection_complement(delta_y.shape[1], modes)
             basis_cache: dict[int, tuple[np.ndarray, int]] = {}
             for k in sorted(set([int(primary_k), *[int(v) for v in k_list]])):
@@ -737,7 +890,7 @@ def _write_summary_figure(out: Path, comparison_rows: list[dict[str, Any]], summ
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Same-condition relative displacement decoding")
+    p = argparse.ArgumentParser(description="Matched-context relative displacement decoding")
     p.add_argument("--fig3-cache", type=Path, default=DEFAULT_FIG3_CACHE)
     p.add_argument("--fig2-cache", type=Path, default=DEFAULT_FIG2_CACHE)
     p.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
@@ -759,7 +912,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--target-variant", choices=["raw", "psd"], default="psd")
     p.add_argument("--k-list", type=str, default="1,2,5,10,20,30")
     p.add_argument("--primary-k", type=int, default=10)
-    p.add_argument("--context-mode", choices=["time_bin", "time_window"], default="time_bin")
+    p.add_argument(
+        "--context-mode",
+        choices=["image_time_bin", "image_time_window", "image_only", "time_bin", "time_window"],
+        default="image_time_bin",
+    )
     p.add_argument("--context-bin-size", type=int, default=10)
     p.add_argument("--min-repeats-per-condition", type=int, default=3)
     p.add_argument("--max-pairs-per-condition", type=int, default=100)
@@ -811,7 +968,7 @@ def run_analysis(args: argparse.Namespace) -> None:
         seed=int(args.seed),
     )
     manifest_base = {
-        "analysis": "same_image_relative_displacement_decoding",
+        "analysis": "matched_context_relative_displacement_decoding",
         "status": "initialized_not_run" if bool(args.init_only) else "running",
         "run_datetime_utc": datetime.now(timezone.utc).isoformat(),
         "config": asdict(config),
@@ -821,7 +978,7 @@ def run_analysis(args: argparse.Namespace) -> None:
         "model_config": str(Path(args.model_config).resolve()),
         "dataset_config": str(Path(args.dataset_config).resolve()),
         "fd_closure_default_output": str(DEFAULT_FD_OUT),
-        "claim_guardrail": "Primary analysis decodes relative eye-position differences within matched image/time conditions; it is not an absolute eye-position decoder.",
+        "claim_guardrail": "Primary analysis decodes relative eye-position differences within the requested matched context; same-image language is warranted only for image-aware context modes.",
     }
     write_json(out / "relative_displacement_decoding_manifest.json", manifest_base)
     if bool(args.init_only):
@@ -852,13 +1009,19 @@ def run_analysis(args: argparse.Namespace) -> None:
             continue
         print(f"[relative-decoding] session {session}: collecting samples ({common_units.size} units)", flush=True)
         dset, stim_lags, samples = _collect_samples(model=model, dataset_idx=dataset_idx, common_units=common_units, args=args)
-        labels = context_labels(samples, str(args.context_mode), int(args.context_bin_size))
+        labels, condition_rows, image_meta = pair_condition_labels(
+            dset=dset,
+            samples=samples,
+            mode=str(args.context_mode),
+            bin_size=int(args.context_bin_size),
+        )
         eye_px = samples.eyepos_deg * float(samples.pixels_per_degree)
-        print(f"[relative-decoding] session {session}: building same-condition pairs from {samples.source_indices.size} samples", flush=True)
+        print(f"[relative-decoding] session {session}: building matched-context pairs from {samples.source_indices.size} samples", flush=True)
         pairs, inventory = build_pair_dataset(
             samples=samples,
             eye_px=eye_px,
             labels=labels,
+            condition_rows=condition_rows,
             context_mode=str(args.context_mode),
             context_bin_size=int(args.context_bin_size),
             min_repeats_per_condition=int(args.min_repeats_per_condition),
@@ -955,6 +1118,7 @@ def run_analysis(args: argparse.Namespace) -> None:
                 "rf_null_largest_bin_fraction": float(rf_meta.largest_bin_fraction),
                 "rf_null_bin_features": rf_meta.bin_features,
                 "jacobian_abs_median": float(np.median(np.abs(j))),
+                **image_meta,
                 **target_meta,
             }
         )
@@ -1001,6 +1165,15 @@ def run_analysis(args: argparse.Namespace) -> None:
     compact_minus_rf = float(comp.get("compact_minus_rf_readout", float("nan"))) if comp else float("nan")
     full_r2 = float(comp.get("full_population_R2_mean", float("nan"))) if comp else float("nan")
     compact_r2 = float(comp.get("compact_R2_mean", float("nan"))) if comp else float("nan")
+    compact_summary = [
+        r
+        for r in summary_rows
+        if str(r.get("feature_space")) == "compact"
+        and str(r.get("projection_control")) == str(args.primary_projection_control)
+        and int(r.get("k", -1)) == int(args.primary_k)
+        and str(r.get("metric_name")) == "R2_mean"
+    ]
+    eye_ci_low = float(compact_summary[0].get("effect_minus_eye_label_shuffle_boot_ci_low", float("nan"))) if compact_summary else float("nan")
     leakage_failures = int(sum(1 for r in leakage_rows if r.get("status") == "fail"))
     status = "ok"
     decision = "diagnostic"
@@ -1013,6 +1186,8 @@ def run_analysis(args: argparse.Namespace) -> None:
         and np.isfinite(compact_minus_random)
         and compact_minus_random > 0.0
         and (not np.isfinite(compact_minus_rf) or compact_minus_rf > 0.0)
+        and np.isfinite(eye_ci_low)
+        and eye_ci_low > 0.0
         and leakage_failures == 0
     ):
         decision = "candidate_positive"
@@ -1027,7 +1202,9 @@ def run_analysis(args: argparse.Namespace) -> None:
         "primary_projection_control": str(args.primary_projection_control),
         "primary_k": int(args.primary_k),
         "primary_feature_comparison": comp,
-        "claim_guardrail": "Do not describe this as absolute or image-independent eye-position decoding.",
+        "primary_compact_effect_minus_eye_label_shuffle_ci_low": eye_ci_low,
+        "target_pc_projection_scope": "train_estimated_tangent_covariance_with_session_target_fallback",
+        "claim_guardrail": "Do not describe this as absolute or image-independent eye-position decoding. Same-image wording is warranted only for image-aware context modes.",
         "model_info": {k: str(v) for k, v in dict(model_info).items()},
     }
     write_json(out / "audit.json", audit)
@@ -1041,7 +1218,7 @@ def run_analysis(args: argparse.Namespace) -> None:
         },
     )
     (out / "README.md").write_text(
-        "# Same-Condition Relative Displacement Decoding\n\n"
+        "# Matched-Context Relative Displacement Decoding\n\n"
         "Primary tables are `decoder_bootstrap_summary.csv`, `feature_space_comparison.csv`, "
         "and `decoder_nulls.csv`. Promote only if compact k=10 under `global_rate+target_pc1` "
         "beats eye-label shuffle plus compact-specific controls without split leakage.\n",

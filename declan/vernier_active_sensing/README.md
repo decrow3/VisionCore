@@ -28,6 +28,29 @@ MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python -m declan.vernier_active_sen
   --batch-size 2
 ```
 
+The current joint-geometry observer is an instantaneous local-chart pilot. The
+Wu-style interpretation here is Bayesian nuisance marginalization, not joint
+image/eye reconstruction: Vernier sign is the desired latent, and eye trajectory
+is nuisance state. The primary joint observer score is therefore a Vernier
+likelihood ratio, approximating `log sum_w p(response | theta, w) p(w)` for
+`theta in {+delta, -delta}`. Pose recovery metrics are diagnostics, not the
+success criterion.
+
+The `residual` likelihood mode reports Mahalanobis residual scores for
+deterministic expected-count comparisons, not normalized log probabilities. In
+residual mode, the raw true-hypothesis gap closure is suppressed and the
+margin-based closure is reported separately. The lag-aware diagnostic path in
+`run_lag_geometry_diagnostic.py` estimates temporal lag-plane translation
+kernels and compares them with exact known-trajectory responses before those
+kernels are promoted into the production joint filter.
+
+The lag diagnostic writes three row families in `lag_geometry_diagnostic.csv`:
+`rate_fidelity` for motion-induced response deltas, `likelihood_fidelity` for
+exact-vs-approximate known-trajectory residual scores, and
+`decision_fidelity` for whether the approximation preserves the known-eye
+Vernier decision margins. Use those diagnostics to choose a history length
+before running or implementing an expensive trajectory-marginalized observer.
+
 ## Joint geometry observer smoke
 
 ```bash
@@ -44,8 +67,29 @@ MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python -m declan.vernier_active_sen
   --joint-eye-step-sigma-arcmin 1 \
   --joint-eye-step-arcmin 1 \
   --joint-max-particles 3000 \
+  --joint-likelihood-normalization residual \
   --device cpu \
   --batch-size 2
+```
+
+## Exact trajectory-table observer
+
+This cache-only observer reads saved `rates_*.npz` files and evaluates the
+Vernier likelihood ratio after marginalizing over the empirical trajectory
+catalog. By default it uses a Poisson count likelihood and includes
+the observed trajectory in the empirical prior. Pass `--leave-one-out` for a
+generalization diagnostic that excludes the true trace from the nuisance
+catalog.
+
+```bash
+MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python -m declan.vernier_active_sensing.run_trajectory_table_observer \
+  --source-dir outputs/vernier_joint_geometry_enumerated_gpu0_fixed \
+  --out-dir outputs/vernier_trajectory_table_observer \
+  --conditions real_fem,static_center \
+  --prior-conditions real_fem,static_center \
+  --fd-steps-arcmin 0.25,0.5 \
+  --reference-condition static_center \
+  --likelihood-normalization poisson
 ```
 
 ## Larger first pass

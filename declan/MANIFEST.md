@@ -49,6 +49,12 @@ Figure 4/Figure 5 split. The most important files to check first are:
   `backimage_aggregate_fem_information_n256_k48_rel025-2_drift_only_common_unclipped_patched`;
   use its corrected `incremental_static_plus_motion_relids` posthoc for
   incremental static-plus-motion claims.
+- `backimage_local_pairing_Iz_revisit_plan.md`: reopened local BackImage `I_z`
+  plan after the aggregate result. It shifts the local question from
+  real-vs-random fixed axes to actual image-trace pairing: whether
+  `I_i + tau_i` beats matched unpaired empirical traces, rotated actual traces,
+  OU/Brownian controls, and edge-axis baselines under grouped-by-image
+  feature-decoding.
 - `active_sensing_unit_space_provenance.md`: response-space ledger separating
   16-channel matched/session results, sampled-population results, and full
   756-channel canonical results. Use it before comparing pose-aware,
@@ -278,6 +284,7 @@ Primary locations:
 - `free_viewing_latent_information_test_plan.md`
 - `active_sensing_roadmap_after_vernier_fixation_image_structure.md`
 - `backimage_aggregate_fem_information_plan.md`
+- `backimage_local_pairing_Iz_revisit_plan.md`
 - `fixation_statistics_by_stimulus/run_backimage_latent_information_screen.py`
 - `fixation_statistics_by_stimulus/summarize_backimage_latent_information_screen.py`
 - `fixation_statistics_by_stimulus/audit_backimage_latent_real_random.py`

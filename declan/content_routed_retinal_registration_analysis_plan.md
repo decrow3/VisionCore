@@ -120,6 +120,21 @@ The practical implication is that A2 should now be treated as a diagnostic
 branch, not a main-claim rescue path, unless a single preregistered rerun
 survives with both Allen and Logan included.
 
+Post-patch decoder note, 2026-06-16:
+
+- The relative-displacement decoder has now been audited and patched so that
+  matched contexts are image-aware by default (`image_time_bin`), the
+  eye-label-shuffle null must pass explicitly, and the `target_pc1` projection
+  is derived from fold-train tangent covariance with session-target fallback.
+- The refreshed six-session production run remains `diagnostic`, not promoted.
+  It shows positive matched-context signal under weaker projections (`none`,
+  `global_rate`), but the compact effect shrinks sharply under
+  `target_pc1` and `global_rate+target_pc1`.
+- Working interpretation: recorded responses carry some same-image
+  displacement-related information, but the present decoder does not isolate a
+  compact-specific content-routed bridge beyond broader low-dimensional response
+  structure.
+
 ## Claim Discipline
 
 ### Safe Claim

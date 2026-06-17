@@ -30,14 +30,9 @@ from VisionCore.covariance import project_to_psd
 from _panel_common import FIG_DIR
 from compute_fig2_data import load_fig2_data, _compute_fano_stats, _compute_nc_stats
 from generate_fig2a import (
-    DT as EYE_DT,
-    TRIAL_A,
-    TRIAL_B,
     UNIT_ORIG,
-    W1,
-    W2,
-    WINDOW_BINS as EYE_WINDOW_BINS,
-    _load_trial_pair,
+    _compute_uniform_bins,
+    _load_unit_payload,
 )
 from generate_fig2c import plot_panel_c as plot_fem_fraction
 from generate_fig2e import plot_panel_e as plot_fano
@@ -57,6 +52,14 @@ def _label(ax, letter):
     ax.set_title(letter, loc="left", fontweight="bold", fontsize=10)
 
 
+def _panel_header(ax, letter, text, y=1.12):
+    ax.set_title("", loc="left")
+    ax.text(-0.13, y, letter, transform=ax.transAxes,
+            fontweight="bold", fontsize=10, va="bottom", ha="left")
+    ax.text(-0.01, y, text, transform=ax.transAxes,
+            fontsize=8, va="bottom", ha="left")
+
+
 def _normalize_axis_text(ax):
     ax.xaxis.label.set_size(8)
     ax.yaxis.label.set_size(8)
@@ -73,41 +76,7 @@ def _style_matrix_axis(ax):
 
 
 def _add_diagonal_band_box(ax, n, band_frac=0.055):
-    band = max(3.0, n * band_frac)
-    extra = max(3.0, n * 0.04)
-    p0 = np.array([-0.5 - extra, -0.5 - extra], dtype=float)
-    p1 = np.array([n - 0.5 + extra, n - 0.5 + extra], dtype=float)
-    normal = np.array([1.0, -1.0]) / np.sqrt(2.0)
-    pts = [
-        p0 + normal * band / 2,
-        p1 + normal * band / 2,
-        p1 - normal * band / 2,
-        p0 - normal * band / 2,
-    ]
-    ax.add_patch(Polygon(
-        pts,
-        closed=True,
-        fill=False,
-        edgecolor="0.45",
-        linewidth=0.9,
-        alpha=0.8,
-        zorder=12,
-        clip_on=False,
-    ))
-    ax.text(
-        1.02,
-        0.05,
-        "independent",
-        transform=ax.transAxes,
-        ha="left",
-        va="center",
-        rotation=-45,
-        fontsize=6.5,
-        color="0.35",
-        bbox=dict(facecolor="white", edgecolor="none", alpha=0.78, pad=0.7),
-        zorder=13,
-        clip_on=False,
-    )
+    return
 
 
 def _despine(ax, left=False, bottom=False):
@@ -293,91 +262,77 @@ def _pool_subjects_for_plotting(data, label=POOLED_SUBJECT):
     return pooled
 
 
-def _plot_compact_eye_example(fig, subplot_spec):
-    gs = GridSpecFromSubplotSpec(
-        3,
-        1,
-        subplot_spec=subplot_spec,
-        height_ratios=[1.0, 0.42, 1.0],
-        hspace=0.08,
-    )
-    ax_eye = fig.add_subplot(gs[0, 0])
-    ax_delta = fig.add_subplot(gs[1, 0], sharex=ax_eye)
-    ax_spk = fig.add_subplot(gs[2, 0], sharex=ax_eye)
+def _plot_covariance_mismatch_panel(fig, subplot_spec):
+    ax = fig.add_subplot(subplot_spec)
+    payload = _load_unit_payload()
+    uniform = _compute_uniform_bins()
 
-    pair = _load_trial_pair()
-    robs = pair["robs"]
-    eyepos = pair["eyepos"]
-    neuron_mask = np.asarray(pair["neuron_mask"])
+    neuron_mask = np.asarray(payload["neuron_mask"])
     j = int(np.where(neuron_mask == UNIT_ORIG)[0][0])
+    bin_centers = np.asarray(uniform["bin_centers"], dtype=float)
+    count_e = np.asarray(uniform["count_e"], dtype=float)
+    ceye = np.asarray(uniform["Ceye"], dtype=float)
+    var_by_bin = ceye[:, j, j]
+    ok = np.isfinite(var_by_bin) & (count_e > 0)
+    var_psth = float(payload["Cpsth"][j, j])
+    first_x = float(bin_centers[ok][0])
+    first_y = float(var_by_bin[ok][0])
 
-    W = EYE_WINDOW_BINS
-    t_ms = np.arange(W) * EYE_DT * 1000.0
-    e_a = eyepos[TRIAL_A, :W, 0]
-    e_b = eyepos[TRIAL_B, :W, 0]
-    r_a = robs[TRIAL_A, :W, j] / EYE_DT
-    r_b = robs[TRIAL_B, :W, j] / EYE_DT
-    delta_e = np.abs(e_a - e_b)
+    ax.axvspan(0.0, 0.05, color="0.82", zorder=-2)
+    ax.axhline(0.0, color="0.55", lw=1.0, zorder=-1)
+    ax.axhline(var_psth, color="k", ls="--", lw=1.0, zorder=1)
+    ax.plot(bin_centers[ok], var_by_bin[ok], color="k", lw=1.4,
+            marker="o", ms=2.8, markerfacecolor="k", markeredgecolor="k",
+            zorder=3)
 
-    color_a, color_b = "tab:cyan", "tab:red"
-    for ax in (ax_eye, ax_delta, ax_spk):
-        for w in (W1, W2):
-            ax.axvspan(w[0] * EYE_DT * 1000.0, w[1] * EYE_DT * 1000.0,
-                       color="0.86", zorder=-1)
+    ax.annotate(
+        "Matched-trajectory variance",
+        xy=(first_x, first_y),
+        xytext=(0.24, 0.84),
+        textcoords=ax.transAxes,
+        arrowprops=dict(arrowstyle="->", color="k", lw=0.9),
+        fontsize=7.5,
+        ha="left",
+        va="center",
+    )
+    ax.text(0.58, var_psth + 0.012, "Stimulus variance",
+            fontsize=7.5, ha="left", va="bottom")
+    ax.annotate(
+        "",
+        xy=(0.02, first_y),
+        xytext=(0.02, var_psth),
+        arrowprops=dict(arrowstyle="<->", color=POOLED_COLOR, lw=2.0),
+    )
+    ax.text(0.055, 0.50 * (first_y + var_psth), "FEM\nvariance",
+            color="k", fontsize=7.5, ha="left", va="center")
+    ax.text(0.13, -0.32, "Variance decreases as\neye trajectories diverge",
+            fontsize=7.5, ha="left", va="center")
 
-    ax_eye.plot(t_ms, e_a, color=color_a, lw=1.2)
-    ax_eye.plot(t_ms, e_b, color=color_b, lw=1.2)
-    label_y = 1.04
-    for text, w in [
-        ("mismatched\ntrajectories", W1),
-        ("closely matched\ntrajectories", W2),
-    ]:
-        t_mid = 0.5 * (w[0] + w[1]) * EYE_DT * 1000.0
-        ax_eye.text(t_mid, label_y, text, transform=ax_eye.get_xaxis_transform(),
-                    ha="center", va="bottom", fontsize=6.5, clip_on=False)
-    ax_eye.set_ylabel("Eye\npos.")
-    ax_eye.set_yticks([])
-    _despine(ax_eye, left=True, bottom=True)
-    plt.setp(ax_eye.get_xticklabels(), visible=False)
-
-    ax_delta.fill_between(t_ms, 0.0, delta_e, color="0.55", alpha=0.55, lw=0)
-    ax_delta.plot(t_ms, delta_e, color="0.25", lw=0.8)
-    ax_delta.set_ylabel("Δ eye")
-    ax_delta.set_yticks([])
-    _despine(ax_delta, left=True, bottom=True)
-    plt.setp(ax_delta.get_xticklabels(), visible=False)
-
-    ymax = float(max(r_a.max(), r_b.max(), 1.0))
-    offset = 1.2 * ymax
-    ax_spk.step(t_ms, r_b + offset, color=color_b, lw=1.1, where="mid")
-    ax_spk.step(t_ms, r_a, color=color_a, lw=1.1, where="mid")
-    ax_spk.axhline(0, color="0.72", lw=0.5, zorder=-1)
-    ax_spk.axhline(offset, color="0.72", lw=0.5, zorder=-1)
-    ax_spk.set_xlabel("Time from fixation onset (ms)")
-    ax_spk.set_ylabel("Rate")
-    ax_spk.set_yticks([])
-    ax_spk.set_xlim(0, t_ms[-1])
-    _despine(ax_spk, left=True)
-
-    ax_eye.text(-0.12, 1.20, "A", transform=ax_eye.transAxes,
-                fontweight="bold", fontsize=10, va="top", ha="left")
-    return ax_spk
+    ax.set_xlim(-0.06, 1.03)
+    ax.set_ylim(-0.40, 0.52)
+    ax.set_xlabel("Eye-trajectory mismatch, Δe (°)")
+    ax.set_ylabel("Cross-trial rate variance (spk²)")
+    ax.set_yticks(np.arange(-0.4, 0.6, 0.2))
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    _label(ax, "A")
+    return ax
 
 
 def _make_compact_cov_axes(fig, subplot_spec):
     gs = GridSpecFromSubplotSpec(
         2,
-        7,
+        9,
         subplot_spec=subplot_spec,
-        width_ratios=[1.08, 0.14, 1.08, 0.34, 1.08, 0.10, 0.30],
+        width_ratios=[1.0, 0.12, 1.0, 0.12, 1.0, 0.05, 0.22, 0.12, 1.0],
         height_ratios=[1.0, 1.0],
         wspace=0.04,
-        hspace=0.30,
+        hspace=0.12,
     )
     top_mats = [fig.add_subplot(gs[0, c]) for c in (0, 2, 4)]
-    bot_mats = [fig.add_subplot(gs[1, c]) for c in (2, 4)]
+    bot_mats = [fig.add_subplot(gs[1, c]) for c in (0, 2, 4, 8)]
     top_seps = [fig.add_subplot(gs[0, c]) for c in (1, 3)]
-    bot_seps = [fig.add_subplot(gs[1, 3])]
+    bot_seps = [fig.add_subplot(gs[1, c]) for c in (1, 3, 7)]
     note_axes = [fig.add_subplot(gs[:, 6])]
     for ax in top_seps + bot_seps + note_axes:
         ax.axis("off")
@@ -423,6 +378,8 @@ def _plot_compact_cov_decomp(fig, subplot_spec, data, letter="D"):
         "Classical residual",
     ]
     bot_titles = [
+        "Total covariance",
+        "Stimulus covariance",
         "FEM component",
         "Corrected residual",
     ]
@@ -439,7 +396,7 @@ def _plot_compact_cov_decomp(fig, subplot_spec, data, letter="D"):
 
     for ax, mat, title in zip(
         bot_axes,
-        [cfem, cint],
+        [ctotal, cpsth, cfem, cint],
         bot_titles,
     ):
         ax.imshow(mat, cmap=cmap, interpolation="nearest",
@@ -455,41 +412,53 @@ def _plot_compact_cov_decomp(fig, subplot_spec, data, letter="D"):
         residual_pos.height,
     ])
     cbar = fig.colorbar(matrix_image, cax=cbar_ax)
-    cbar.set_label("Covariance", fontsize=6, labelpad=2)
     cbar.ax.tick_params(labelsize=6, length=2, pad=1)
     cbar.set_ticks([-vlim, 0.0, vlim])
-    cbar.formatter = mpl.ticker.ScalarFormatter(useMathText=True)
-    cbar.formatter.set_powerlimits((-2, 2))
+    cbar.formatter = mpl.ticker.FormatStrFormatter("%.2f")
     cbar.update_ticks()
 
     for ax, sym in zip(top_sep_axes, ["=", "+"]):
         ax.text(0.5, 0.5, sym, ha="center", va="center",
                 fontsize=14, transform=ax.transAxes)
-    for ax, sym in zip(bot_sep_axes, ["+"]):
+    for ax, sym in zip(bot_sep_axes, ["=", "+", "+"]):
         ax.text(0.5, 0.5, sym, ha="center", va="center",
-                fontsize=12, transform=ax.transAxes)
+                fontsize=14, transform=ax.transAxes)
 
-    _add_diagonal_band_box(bot_axes[1], cint.shape[0])
+    _add_diagonal_band_box(bot_axes[3], cint.shape[0])
 
     top_residual_ax = top_axes[2]
     arrow_kw = dict(
-        arrowstyle="-|>",
-        mutation_scale=9,
-        lw=0.9,
-        color="0.45",
-        alpha=0.85,
-        shrinkA=9,
-        shrinkB=9,
+        arrowstyle="->",
+        mutation_scale=10,
+        lw=1.0,
+        color="k",
+        alpha=0.9,
+        shrinkA=6,
+        shrinkB=4,
         zorder=10,
     )
     fig.add_artist(ConnectionPatch(
         xyA=(0.42, 0.01), coordsA=top_residual_ax.transAxes,
-        xyB=(0.78, 1.02), coordsB=bot_axes[0].transAxes,
+        xyB=(0.50, 1.01), coordsB=bot_axes[2].transAxes,
         **arrow_kw))
     fig.add_artist(ConnectionPatch(
         xyA=(0.58, 0.01), coordsA=top_residual_ax.transAxes,
-        xyB=(0.22, 1.02), coordsB=bot_axes[1].transAxes,
+        xyB=(0.50, 1.01), coordsB=bot_axes[3].transAxes,
         **arrow_kw))
+
+    bot_axes[3].annotate(
+        "Independent\nvariance\nalong\ndiagonal",
+        xy=(0.42, 0.58),
+        xycoords=bot_axes[3].transAxes,
+        xytext=(1.02, 0.73),
+        textcoords=bot_axes[3].transAxes,
+        arrowprops=dict(arrowstyle="->", color="0.45", lw=1.2,
+                        shrinkA=2, shrinkB=2),
+        fontsize=7.2,
+        ha="right",
+        va="center",
+        clip_on=False,
+    )
 
     top_axes[0].text(-0.13, 1.16, letter, transform=top_axes[0].transAxes,
                      fontweight="bold", fontsize=10, va="top", ha="left")
@@ -514,15 +483,25 @@ def _plot_noise_corr_panel(fig, subplot_spec, data):
     _, primary = plot_noise_corr(ax=ax_main, data=data)
     _normalize_axis_text(primary)
     _label(primary, "E")
+    primary.yaxis.set_label_coords(-0.04, 0.5)
     _add_condition_legend(primary, loc="upper left")
+    primary.text(
+        0.12,
+        1.08,
+        "FEM covariance makes up\nmost of the ‘noise’ correlations",
+        transform=primary.transAxes,
+        fontsize=7.2,
+        ha="left",
+        va="bottom",
+        clip_on=False,
+    )
     return primary
 
 
 def _add_pr_annotations(ax):
     legend = ax.get_legend()
     if legend is not None:
-        legend.set_title("PSTH PR > FEM PR")
-        legend.get_title().set_fontsize(6)
+        legend.remove()
 
 
 def compose(refresh=False, split_subjects=False):
@@ -546,7 +525,7 @@ def compose(refresh=False, split_subjects=False):
             3,
             6,
             height_ratios=[0.95, 1.38, 1.05],
-            hspace=0.30,
+            hspace=0.38,
             wspace=0.95,
             figure=fig,
             left=0.090,
@@ -555,7 +534,7 @@ def compose(refresh=False, split_subjects=False):
             bottom=0.080,
         )
 
-        _plot_compact_eye_example(fig, gs[0, 0:2])
+        _plot_covariance_mismatch_panel(fig, gs[0, 0:2])
 
         panel_specs = [
             ("B", plot_fem_fraction, gs[0, 2:4]),
@@ -573,11 +552,39 @@ def compose(refresh=False, split_subjects=False):
             ax = fig.add_subplot(spec)
             _, primary_ax = plot_fn(ax=ax, data=data)
             _normalize_axis_text(primary_ax)
-            _label(primary_ax, letter)
-            if letter == "C":
+            if letter == "B":
+                _label(primary_ax, letter)
+                primary_ax.set_xlabel("Fraction of rate modulation\ndue to FEM")
+            elif letter == "C":
+                _label(primary_ax, letter)
                 _add_condition_legend(primary_ax, loc="upper left")
+            elif letter == "F":
+                primary_ax.set_title("", loc="center")
+                _panel_header(
+                    primary_ax,
+                    letter,
+                    "Accounting for FEM covariance\nrecenters pair-wise correlations around zero",
+                    y=1.02,
+                )
             elif letter == "G":
+                _panel_header(
+                    primary_ax,
+                    letter,
+                    "FEM covariance is low dimensional...",
+                    y=1.02,
+                )
                 _add_pr_annotations(primary_ax)
+            elif letter == "H":
+                _panel_header(
+                    primary_ax,
+                    letter,
+                    "and largely lives in the stimulus subspace",
+                    y=1.02,
+                )
+                primary_ax.set_xlabel("PSTH var in FEM subspace")
+                primary_ax.set_ylabel("FEM var in PSTH subspace")
+            else:
+                _label(primary_ax, letter)
 
     stem = FIG_DIR / "fig2_3_combined"
     fig.savefig(stem.with_suffix(".pdf"), bbox_inches="tight",
