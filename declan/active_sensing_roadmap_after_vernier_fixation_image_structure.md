@@ -1,12 +1,13 @@
 # Active-Sensing Roadmap After Vernier, Fixation-Regime, and Image-Structure Results
 
-Last curated: 2026-06-16.
+Last curated: 2026-06-18.
 
 This note updates the active-sensing branch after the Vernier hyperacuity work,
 fixation-statistics-by-stimulus analysis, BackImage local image-structure
 analysis, scaled BackImage twin drift-geometry adjudication, and the
 input-whitening negative result. It now also includes the cleaned aggregate
-BackImage natural-image FEM information result.
+BackImage natural-image FEM information result and the reopened local-pairing
+`I_z` result.
 
 Companion response-space ledger:
 
@@ -448,17 +449,42 @@ Current interpretation:
 BackImage drift is not yet explained by global feature-information
 maximization. The credible BackImage result remains local preservation:
 edge-parallel motion disrupts pixels and V1-twin responses less than
-edge-orthogonal motion. The `I_z` branch is still alive, but its strongest
-current support is a regime-dependent small-scale feature-information effect,
-especially near `0.25x` observed RMS. The `1x` result is suggestive but not
-clean enough to carry a figure-level infomax claim by itself.
+edge-orthogonal motion. The fixed-axis `I_z` screen is still only
+regime-dependent support, strongest near `0.25x` observed RMS, and not a clean
+global or `1x` infomax result by itself. The reopened local-pairing branch is
+now more positive but narrower: after fixing the trace bank, feature geometry,
+and sampled matched controls, actual image-trace pairings beat matched
+unpaired empirical trace swaps for `delta_mean` feature-response gains in both
+Gabor and pyramid local fields.
 ```
 
-This keeps the branch alive but narrows its claim. The next local-screen gate is
-seed dependence: if the optimized same-window seed-1 replication preserves the
-`0.25x` Gabor/pyramid positives, the local `I_z` branch can be reported as
-exploratory regime-dependent support. If it does not, demote it behind the
-edge-parallel preservation result.
+This keeps the branch alive but narrows its claim. The local-pairing result is
+evidence for image-contingent motion-induced feature deltas beyond aggregate
+empirical FEM statistics. It is not yet evidence for a broad temporal-code
+benefit or unique local trajectory optimality, because temporal PCA/DCT
+summaries are weak and rotated actual traces remain competitive.
+
+Clean local-pairing outputs:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_pyramid_rel025_1_v1
+
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_gabor_pyramid_rel025_1_seed7_v1
+```
+
+Most relevant seed-7 `actual_paired_empirical - matched_unpaired_empirical`
+incremental contrasts:
+
+```text
+delta_mean, gabor k=4,   0.25x: +9.95, CI [+0.73, +20.62]
+delta_mean, gabor k=4,   1x:    +8.27, CI [+2.70, +14.79]
+delta_mean, gabor k=8,   0.25x: +6.33, CI [+1.27, +11.90]
+delta_mean, gabor k=8,   1x:    +6.51, CI [+2.77, +11.07]
+delta_mean, pyramid k=8, 0.25x: +6.09, CI [+1.51, +10.53]
+delta_mean, pyramid k=8, 1x:    +3.79, CI [+1.46, +6.28]
+```
 
 ### 9. Aggregate Natural-Image FEM Information Is the Current BackImage Candidate
 

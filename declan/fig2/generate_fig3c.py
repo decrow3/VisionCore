@@ -59,7 +59,7 @@ def plot_panel_c(ax=None, refresh=False, data=None):
         for key, ls in [("u", "--"), ("c", "-")]:
             means, lo, hi = series[subj][key]
             ax.errorbar(x, means, yerr=[means - lo, hi - means],
-                        fmt="none", ecolor=color, lw=1.5, capsize=3,
+                        fmt="none", ecolor=color, lw=1.5, capsize=0,
                         zorder=2)
             ax.plot(x, means, ls=ls, color=color, lw=1.5, zorder=2)
 
@@ -74,7 +74,7 @@ def plot_panel_c(ax=None, refresh=False, data=None):
 
     ax.axhline(0, color="gray", linestyle=":", alpha=0.6)
     ax.set_xlabel("Counting window (ms)")
-    ax.set_ylabel("Mean Fisher z")
+    ax.set_ylabel("Noise correlations (mean Fisher z)")
     ax.set_xticks(WINDOWS_MS)
     ax.set_xticklabels([f"{w:.0f}" for w in WINDOWS_MS])
     ax.spines["top"].set_visible(False)

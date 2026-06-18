@@ -443,10 +443,15 @@ K = 4 or 8 per prior family
 candidate_set_modes = hard_negative_structure,matched_static_response
 observation_family = empirical
 prior_families = axis_edge_parallel,axis_edge_orthogonal,empirical,ou,rotated,brownian
-scales = 0.5,1.0
+scales = 0.5,1.0,2.0
 likelihood_scales = 0.5,1.0
 trajectory_prior_mode = leave_one_out
 ```
+
+Include the `2.0x` row as the above-natural sentinel, giving the sweep a clean
+half/natural/double structure. Treat it as a guard against the trivial regime
+where larger motion simply makes the observer task easier or increases pose
+damage, and audit effective RMS and clipping across axis families.
 
 Primary output directory:
 
@@ -603,4 +608,3 @@ The current finite trajectory catalog or likelihood convention is not sufficient
 to support the mechanistic observer claim. Keep the main paper focused on
 recorded reafferent covariance and simpler BackImage local-geometry evidence.
 ```
-

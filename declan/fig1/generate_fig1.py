@@ -3,12 +3,11 @@ Compose figure 1 into a single SVG, then export PDF and PNG via cairosvg.
 
 Layout:
     Row 1 (3 in tall):  A | B gaze distribution + C RF map
-    Rows 2-4:           D-E-F population block | G pair above H-I
+    Rows 2-4:           D-G single-unit block | H-J population block
 
 Only panel A is an external SVG (Illustrator schematic); the remaining panels
-(C, D, F-I) are rendered together inside one matplotlib figure with nested
-subfigures so spacing and labels stay coherent. Panel B is rendered as a
-separate matplotlib SVG and composited as an inset over A.
+are rendered together inside one matplotlib figure and composited with
+separate SVG panel labels.
 
 Usage:
     uv run ryan/fig1/generate_fig1.py [-r] [--recalc-c] [--recalc-d] [--recalc-f]
@@ -17,7 +16,6 @@ Usage:
 import argparse
 from io import BytesIO
 from pathlib import Path
-import re
 import matplotlib.pyplot as plt
 import svgutils.transform as sg
 import cairosvg
@@ -27,8 +25,9 @@ from VisionCore.paths import FIGURES_DIR
 from generate_fig1b import plot_panel_b
 from generate_fig1c import plot_panel_c
 from generate_fig1d import (
-    plot_panel_d_roi, plot_panel_d_gaze, plot_panel_ef, _add_block_label,
-    SUBJECT as EXAMPLE_SUBJECT, DATE as EXAMPLE_DATE, DEFAULT_CELL,
+    plot_panel_d_roi, plot_panel_d_gaze, plot_panel_trial_order_raster,
+    plot_panel_ef, _add_block_label, SUBJECT as EXAMPLE_SUBJECT,
+    DATE as EXAMPLE_DATE, DEFAULT_CELL,
 )
 from generate_fig1f import plot_panel_f
 
@@ -54,7 +53,7 @@ PANEL_A_DPIEG_H_IN = 0.82
 PANEL_A_DPIEG_X_IN = PANEL_B_INSET_X_IN
 PANEL_A_DPIEG_Y_IN = PANEL_B_INSET_Y_IN + 0.29
 
-# Second + third row block (D-F and G-I, each rendered as its own subfigure).
+# Second + third row block.
 BLOCK_HEIGHT_IN = 6.0
 
 # Total figure size.
@@ -68,12 +67,38 @@ A_RESERVE_W_IN = PANEL_A_W_IN + 0.34
 
 # 1 inch = 96 SVG user units.
 PPI = 96.0
-MAIN_PANEL_Y_SHIFT = 15.0 / (TOTAL_H_IN * PPI)
-TOP_ROW_EXTRA_Y_SHIFT = 97.0 / (TOTAL_H_IN * PPI)
-RIGHT_COLUMN_EXTRA_Y_SHIFT = 12.0 / (TOTAL_H_IN * PPI)
-POP_COLUMN_EXTRA_Y_SHIFT = 94.0 / (TOTAL_H_IN * PPI)
-PANEL_B_LABEL_X_IN = 3.45
-PANEL_C_LABEL_X_IN = 5.52
+CANVAS_W_PX = TOTAL_W_IN * PPI
+CANVAS_H_PX = CANVAS_H_IN * PPI
+
+# Final panel boxes in SVG pixels: x, y, width, height, with y measured from
+# the top of the exported figure. These are intentionally explicit because
+# figure 1 is being matched by hand to a reference PDF.
+PANEL_BOXES_PX = {
+    "B": (380, 35, 146, 146),
+    "C": (568, 35, 146, 146),
+    "G": (60, 303, 242, 66),
+    "H_RF": (101, 398, 56, 56),
+    "H_GAZE": (209, 398, 56, 56),
+    "I": (59, 501, 248, 66),
+    "J": (59, 618, 248, 60),
+    "D_AZ": (388, 226, 292, 26),
+    "D_EL": (388, 268, 292, 26),
+    "E": (388, 339, 292, 236),
+    "F": (388, 616, 292, 58),
+}
+
+PANEL_LABELS_PX = {
+    "B": (332, 24),
+    "C": (532, 24),
+    "D": (34, 294),
+    "E": (34, 392),
+    "F": (34, 474),
+    "G": (34, 606),
+    "H": (360, 219),
+    "I": (360, 320),
+    "J": (360, 598),
+}
+
 PANEL_A_REF_W_IN = 330.0 / 96.0
 PANEL_A_REF_H_IN = 250.0 / 96.0
 
@@ -91,19 +116,21 @@ Population recordings in the foveal representation in marmoset V1 show strong de
 
 (B) The distribution of gaze during an example experiment shows tight oculomotor control by the marmosets. A majority of gaze positions were within 0.5 deg during the experiment.
 
-(C) Receptive field locations for each experiment. Blue represents RFs of units recorded from monkey A, while green represents RFs from monkey L. The bold black contour marks the example unit shown in (G).
+(C) Receptive field locations for each experiment. Blue represents RFs of units recorded from monkey A, while green represents RFs from monkey L. The bold black contour marks the example unit shown in (E).
 
-(D) Gaze position over time for eight representative trials colored in red and blue. The eye position traces are highly self-similar within groups, but not between groups.
+(D) Trial rasters for the example unit shown in (E), ordered by trial number. The single-unit responses vary across repeated presentations before any sorting by eye position.
 
-(E) Population rasters for the eight representative trials from (D) and (F). Colored arrows connect the blue and red gaze traces in (D) to their matching raster groups. There is clear similarity between individual trials with similar gaze traces, and large differences at the population level between trials with dissimilar gaze, even though the difference in position is just fractions of a degree.
+(E) Left: A grayscale example RF for a single foveal unit with clear Gabor-like structure. Right: The position of gaze measured across all trials in a 50 ms bin. Points are colored according to their projection onto the line of maximal sensitivity, which is orthogonal to the subunits under a linear model of the unit's response.
 
-(F) Spiking activity averaged across all recorded units for the four red trials and four blue trials over the same time course.
+(F) Trial rasters sorted by eye position across the RF. Sorting occurs on the same bins as in (G). Clear structure emerges when sorting by eye position.
 
-(G) Left: A grayscale example STA for a single foveal unit with clear Gabor-like structure. Right: The position of gaze measured across all trials in a 50 ms bin. Points are colored according to their projection onto the line of maximal sensitivity, which is orthogonal to the subunits under a linear model of the unit's response.
+(G) The peristimulus time histogram of responses for the example unit shown in (E). The gray band and black trace depict the overall PSTH across all trials, while the blue and red lines represent the PSTH of trials with negative or positive projections onto the line of maximum sensitivity. Since eye position is not steady throughout individual trials, the projection is computed on the average gaze position in 50 ms bins.
 
-(H) Trial rasters sorted by the position of gaze projected onto the line of maximum sensitivity. Sorting occurs on the same bins as in (I). Clear structure emerges when sorting by eye position.
+(H) Gaze position over time for eight representative trials colored in red and blue. The eye position traces are highly self-similar within groups, but not between groups.
 
-(I) The peristimulus time histogram of responses for the example unit shown in (G). The gray trace depicts the overall PSTH across all trials, while the blue and red lines represent the PSTH of trials with positive or negative projections onto the line of maximum sensitivity. Since eye position is not steady throughout individual trials, the projection is computed on the average gaze position in 50 ms bins.
+(I) Population rasters for the eight representative trials from (H) and (J). Colored arrows connect the blue and red gaze traces in (H) to their matching raster groups. There is clear similarity between individual trials with similar gaze traces, and large differences at the population level between trials with dissimilar gaze, even though the difference in position is just fractions of a degree.
+
+(J) Spiking activity averaged across all recorded units for the four red trials and four blue trials over the same time course. The black trace and gray band show the mean and uncertainty across the selected trials.
 """
 
 
@@ -113,62 +140,52 @@ def _write_caption_files():
         (FIG_DIR / name).write_text(FIG1_CAPTION, encoding="utf-8")
 
 
-def _translate_svg_axes(svg_path, markers, dy_px):
-    """Move selected matplotlib axes groups in the exported SVG."""
-    text = Path(svg_path).read_text(encoding="utf-8")
-    parts = re.split(r"(?=^[ \t]*<g id=\"axes_\d+\"[^>]*>)", text,
-                     flags=re.MULTILINE)
-    moved = []
-    for part in parts:
-        if part.lstrip().startswith('<g id="axes_') and any(m in part for m in markers):
-            part = part.replace(
-                ">",
-                f' transform="translate(0,{dy_px:g})">',
-                1,
-            )
-        moved.append(part)
-    Path(svg_path).write_text("".join(moved), encoding="utf-8")
+def _box_to_fig(box_px):
+    """Convert an SVG-pixel top-left box to matplotlib figure coordinates."""
+    x, y, w, h = box_px
+    return [
+        x / CANVAS_W_PX,
+        1.0 - (y + h) / CANVAS_H_PX,
+        w / CANVAS_W_PX,
+        h / CANVAS_H_PX,
+    ]
+
+
+def _set_axes_box(ax, name):
+    ax.set_in_layout(False)
+    ax.set_position(_box_to_fig(PANEL_BOXES_PX[name]))
+
+
+def _add_panel_labels(elements):
+    for letter, (x, y) in PANEL_LABELS_PX.items():
+        elements.append(sg.TextElement(
+            x, y, letter, size=PANEL_A_LABEL_FONTSIZE_PX,
+            weight="bold", font="DejaVu Sans",
+        ))
 
 
 def _render_main_svg(out_path, recalc_c=False, recalc_d=False, recalc_f=False):
     """Render B-I together as a single full-width matplotlib
     figure. The top-left cell is left empty for panel A (composited later)."""
-    fig = plt.figure(
-        figsize=(TOTAL_W_IN, TOTAL_H_IN),
-        layout="constrained",
+    fig = plt.figure(figsize=(TOTAL_W_IN, CANVAS_H_IN), layout=None)
+
+    ax_trial_order = fig.add_axes(_box_to_fig(PANEL_BOXES_PX["G"]))
+    plot_panel_trial_order_raster(
+        ax=ax_trial_order, refresh=recalc_d, panel_letter=None,
     )
-    fig.get_layout_engine().set(
-        w_pad=0.02, h_pad=0.02, wspace=0.0, hspace=0.0,
+    ax_trial_order.set_title(
+        "Single unit responses vary across repeats", fontsize=8.5, pad=7,
     )
 
-    top, bottom = fig.subfigures(
-        2, 1, height_ratios=[ROW_HEIGHT_IN, BLOCK_HEIGHT_IN], hspace=-0.14,
-    )
-    _sub_a_blank, sub_top_right = top.subfigures(
-        1, 2,
-        width_ratios=[A_RESERVE_W_IN, PANEL_C_W_IN + PANEL_D_W_IN],
-        wspace=0.0,
-    )
-    sub_b, sub_c = sub_top_right.subfigures(
-        1, 2, width_ratios=[1.0, 1.0], wspace=0.02,
-    )
-    sub_pop, sub_right = bottom.subfigures(
-        1, 2, width_ratios=[3.45, 3.55], wspace=0.0,
-    )
-
-    right_gs = sub_right.add_gridspec(
-        2, 1, height_ratios=[1.45, 4.55], hspace=-0.02,
-    )
-    d_gs = right_gs[0].subgridspec(1, 2, wspace=0.01)
-    ax_d = sub_right.add_subplot(d_gs[0])
-    _, _, roi_extent = plot_panel_d_roi(ax=ax_d, refresh=recalc_d, panel_letter="G")
-    ax_d_gaze = sub_right.add_subplot(d_gs[1])
+    ax_d = fig.add_axes(_box_to_fig(PANEL_BOXES_PX["H_RF"]))
+    _, _, roi_extent = plot_panel_d_roi(ax=ax_d, refresh=recalc_d, panel_letter=None)
+    ax_d_gaze = fig.add_axes(_box_to_fig(PANEL_BOXES_PX["H_GAZE"]))
     plot_panel_d_gaze(ax=ax_d_gaze, refresh=recalc_d)
 
-    ax_b = sub_b.add_subplot(1, 1, 1)
+    ax_b = fig.add_axes(_box_to_fig(PANEL_BOXES_PX["B"]))
     plot_panel_b(ax=ax_b)
 
-    ax_c = sub_c.add_subplot(1, 1, 1)
+    ax_c = fig.add_axes(_box_to_fig(PANEL_BOXES_PX["C"]))
     highlight_session = f"{EXAMPLE_SUBJECT}_{EXAMPLE_DATE}"
     plot_panel_c(
         ax=ax_c, refresh=recalc_c, roi_extent=roi_extent,
@@ -176,64 +193,35 @@ def _render_main_svg(out_path, recalc_c=False, recalc_d=False, recalc_f=False):
     )
 
     _, pop_axes = plot_panel_f(
-        fig=sub_pop, refresh=recalc_f, panel_letters=("D", "F", "E"),
-        bottom_pad=1.05,
+        fig=fig, refresh=recalc_f, panel_letters=None,
+        bottom_pad=0.60, raster_height=3.70, gaze_height=1.82,
+        psth_height=0.62,
     )
-    ef_subfig = sub_right.add_subfigure(right_gs[1])
-    plot_panel_ef(
-        fig=ef_subfig, refresh=recalc_d, panel_letters=("H", "I"),
-        vertical_pad=(0.05, 0.94), raster_height=2.05,
+    _, ef_axes = plot_panel_ef(
+        fig=fig, refresh=recalc_d, panel_letters=None,
+        vertical_pad=(0.05, 1.35), raster_height=0.75, psth_height=0.48,
+    )
+    ef_axes["raster"].set_title(
+        "Reordering by eye position across the RF...", fontsize=8.5, pad=7,
+    )
+    ef_axes["psth"].set_title(
+        "... reveals previously hidden structure", fontsize=8.5, pad=7,
     )
 
-    # Constrained layout gives the gaze traces a different x-span from the
-    # raster/PSTH because their left-side labels differ. Align the shared time
-    # axes after layout has solved the panel positions.
     fig.canvas.draw()
-    bottom_shift = 0.088
-    for axes in sub_pop.axes:
-        pos = axes.get_position()
-        axes.set_in_layout(False)
-        axes.set_position([
-            pos.x0,
-            pos.y0 + bottom_shift + MAIN_PANEL_Y_SHIFT + POP_COLUMN_EXTRA_Y_SHIFT,
-            pos.width, pos.height,
-        ])
-
-    for axes in sub_right.axes:
-        pos = axes.get_position()
-        axes.set_in_layout(False)
-        axes.set_position([
-            pos.x0,
-            pos.y0 + bottom_shift + MAIN_PANEL_Y_SHIFT + RIGHT_COLUMN_EXTRA_Y_SHIFT,
-            pos.width,
-            pos.height,
-        ])
-
-    for axes in sub_b.axes + sub_c.axes:
-        pos = axes.get_position()
-        axes.set_in_layout(False)
-        axes.set_position([
-            pos.x0,
-            pos.y0 + MAIN_PANEL_Y_SHIFT + TOP_ROW_EXTRA_Y_SHIFT,
-            pos.width,
-            pos.height,
-        ])
-
-    ref = pop_axes["raster"].get_position()
-    gaze_v_pos = pop_axes["gaze_v"].get_position()
-    target_gap = 0.068
-    y_shift = (ref.y1 + target_gap) - gaze_v_pos.y0
-    for ax in (pop_axes["gaze_h"], pop_axes["gaze_v"]):
-        pos = ax.get_position()
-        ax.set_in_layout(False)
-        ax.set_position([ref.x0, pos.y0 + y_shift, ref.width, pos.height])
+    _set_axes_box(ax_trial_order, "G")
+    _set_axes_box(ax_d, "H_RF")
+    _set_axes_box(ax_d_gaze, "H_GAZE")
+    _set_axes_box(ax_b, "B")
+    _set_axes_box(ax_c, "C")
+    _set_axes_box(pop_axes["gaze_h"], "D_AZ")
+    _set_axes_box(pop_axes["gaze_v"], "D_EL")
+    _set_axes_box(pop_axes["raster"], "E")
+    _set_axes_box(pop_axes["psth"], "F")
+    _set_axes_box(ef_axes["raster"], "I")
+    _set_axes_box(ef_axes["psth"], "J")
 
     fig.savefig(out_path, dpi=400)
-    _translate_svg_axes(
-        out_path,
-        markers=("Trials, by gaze along oriented axis", "Gaze proj.", "<!-- I -->"),
-        dy_px=-44.0,
-    )
     plt.close(fig)
 
 
@@ -328,20 +316,11 @@ def compose(recalc_c=False, recalc_d=False, recalc_f=False):
         root.moveto(x_in * PPI, y_in * PPI, scale_x=scale)
         return root
 
-    main = _load_and_place(main_svg, 0.0, 0.0, TOTAL_W_IN, TOTAL_H_IN)
+    main = _load_and_place(main_svg, 0.0, 0.0, TOTAL_W_IN, CANVAS_H_IN)
     panel_a_ref = _panel_a_reference_image()
-    label_b = sg.TextElement(
-        PANEL_B_LABEL_X_IN * PPI, 0.25 * PPI, "B",
-        size=PANEL_A_LABEL_FONTSIZE_PX, weight="bold", font="DejaVu Sans",
-    )
-    label_c = sg.TextElement(
-        PANEL_C_LABEL_X_IN * PPI, 0.25 * PPI, "C",
-        size=PANEL_A_LABEL_FONTSIZE_PX, weight="bold", font="DejaVu Sans",
-    )
-
-    fig.append([
-        main, panel_a_ref, label_b, label_c,
-    ])
+    elements = [main, panel_a_ref]
+    _add_panel_labels(elements)
+    fig.append(elements)
 
     out_svg = FIG_DIR / "fig1.svg"
     fig.save(str(out_svg))
@@ -386,8 +365,10 @@ def _parse_args():
     p.add_argument("-r", "--recalc", action="store_true",
                    help="Force recalc of all cached panels (C, D, F).")
     p.add_argument("--recalc-c", action="store_true", help="Force recalc of panel C.")
-    p.add_argument("--recalc-d", action="store_true", help="Force recalc of panels D-F.")
-    p.add_argument("--recalc-f", action="store_true", help="Force recalc of panels G-I.")
+    p.add_argument("--recalc-d", action="store_true",
+                   help="Force recalc of the single-unit panels.")
+    p.add_argument("--recalc-f", action="store_true",
+                   help="Force recalc of the population panels.")
     return p.parse_args()
 
 

@@ -1,6 +1,6 @@
 # declan Manifest
 
-Last curated: 2026-06-16.
+Last curated: 2026-06-18.
 
 This is a human-maintained map of the `declan/` workspace. It is intentionally
 ordered newest-to-oldest in reading order where chronology is recoverable. The
@@ -30,7 +30,7 @@ or handoff that interprets them.
 
 ## Current Active / Uncommitted Work
 
-As of 2026-06-16, active uncommitted work has moved beyond the 2026-06-09
+As of 2026-06-18, active uncommitted work has moved beyond the 2026-06-09
 Figure 4/Figure 5 split. The most important files to check first are:
 
 - `active_sensing_roadmap_after_vernier_fixation_image_structure.md`: current
@@ -54,7 +54,17 @@ Figure 4/Figure 5 split. The most important files to check first are:
   real-vs-random fixed axes to actual image-trace pairing: whether
   `I_i + tau_i` beats matched unpaired empirical traces, rotated actual traces,
   OU/Brownian controls, and edge-axis baselines under grouped-by-image
-  feature-decoding.
+  feature-decoding. Current clean sampled-control runs are
+  `backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_pyramid_rel025_1_v1`
+  and
+  `backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_gabor_pyramid_rel025_1_seed7_v1`.
+  They use a fixed 128-image manifest, full 3013-row trace pool, corrected
+  aggregate feature geometry, zero same-trial matches, and zero clipping. The
+  positive result is specific to `delta_mean`: actual image-trace pairings beat
+  matched empirical trace swaps for motion-induced feature-response deltas in
+  both Gabor and pyramid local fields. Temporal PCA/DCT and rotated controls
+  remain caveats, so this is local-pairing support rather than a broad
+  temporal-code or optimal-axis claim.
 - `active_sensing_unit_space_provenance.md`: response-space ledger separating
   16-channel matched/session results, sampled-population results, and full
   756-channel canonical results. Use it before comparing pose-aware,

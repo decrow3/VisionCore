@@ -185,16 +185,61 @@ def _prepare_windows(args: argparse.Namespace) -> pd.DataFrame:
     work = df.loc[keep].copy()
     if args.window_manifest is not None:
         manifest = pd.read_csv(args.window_manifest)
-        if "source_row" not in manifest.columns:
-            raise ValueError("--window-manifest must contain source_row for this aggregate runner")
-        requested = manifest["source_row"].astype(int).drop_duplicates().to_list()
-        available = set(work["source_row"].astype(int).to_list())
-        missing_ids = sorted(set(requested).difference(available))
-        if missing_ids:
-            preview = ", ".join(str(v) for v in missing_ids[:10])
-            suffix = "..." if len(missing_ids) > 10 else ""
-            raise ValueError(f"--window-manifest source_row values do not survive filters: {preview}{suffix}")
-        work = work.set_index("source_row", drop=False).loc[requested].reset_index(drop=True)
+        if "source_row" in manifest.columns:
+            requested = manifest["source_row"].astype(int).drop_duplicates().to_list()
+            available = set(work["source_row"].astype(int).to_list())
+            missing_ids = sorted(set(requested).difference(available))
+            if missing_ids:
+                preview = ", ".join(str(v) for v in missing_ids[:10])
+                suffix = "..." if len(missing_ids) > 10 else ""
+                raise ValueError(f"--window-manifest source_row values do not survive filters: {preview}{suffix}")
+            work = work.set_index("source_row", drop=False).loc[requested].reset_index(drop=True)
+        else:
+            matched_rows: list[int] = []
+            missing_rows: list[int] = []
+            float_pairs = [
+                ("mean_x_deg", "mean_x_deg"),
+                ("mean_y_deg", "mean_y_deg"),
+                ("image_orientation_coherence", "image_orientation_coherence"),
+                ("drift_anisotropy", "anisotropy"),
+                ("observed_rms_radius_deg", "rms_radius_deg"),
+                ("actual_observed_rms_deg", "rms_radius_deg"),
+            ]
+            for manifest_idx, manifest_row in manifest.drop_duplicates().iterrows():
+                mask = np.ones(work.shape[0], dtype=bool)
+                if "session" in manifest_row.index and "session" in work.columns and pd.notna(manifest_row["session"]):
+                    mask &= work["session"].astype(str).to_numpy() == str(manifest_row["session"])
+                if "trial_idx" in manifest_row.index and "trial_idx" in work.columns and pd.notna(manifest_row["trial_idx"]):
+                    mask &= work["trial_idx"].astype(int).to_numpy() == int(manifest_row["trial_idx"])
+                if "phase" in manifest_row.index and "phase" in work.columns and pd.notna(manifest_row["phase"]):
+                    mask &= work["phase"].astype(str).to_numpy() == str(manifest_row["phase"])
+                for manifest_col, work_col in float_pairs:
+                    if manifest_col in manifest_row.index and work_col in work.columns and pd.notna(manifest_row[manifest_col]):
+                        mask &= np.isclose(
+                            work[work_col].astype(float).to_numpy(),
+                            float(manifest_row[manifest_col]),
+                            rtol=1e-7,
+                            atol=1e-7,
+                            equal_nan=True,
+                        )
+                matches = np.flatnonzero(mask)
+                if matches.size == 0:
+                    missing_rows.append(int(manifest_idx))
+                    continue
+                if matches.size > 1:
+                    raise ValueError(
+                        "Ambiguous --window-manifest row without source_row; multiple rows match "
+                        f"session={manifest_row.get('session', '')!r}, trial_idx={manifest_row.get('trial_idx', '')!r}."
+                    )
+                matched_rows.append(int(matches[0]))
+            if missing_rows:
+                preview = ", ".join(str(v) for v in missing_rows[:10])
+                suffix = "..." if len(missing_rows) > 10 else ""
+                raise ValueError(
+                    "--window-manifest lacks source_row and some rows could not be matched by "
+                    f"session/trial/geometry after current filters: manifest rows {preview}{suffix}"
+                )
+            work = work.iloc[matched_rows].reset_index(drop=True)
     elif int(args.max_images) > 0 and work.shape[0] > int(args.max_images):
         work = work.sample(n=int(args.max_images), replace=False, random_state=int(args.seed))
         work = work.sort_values(["session", "trial_idx", "source_row"])

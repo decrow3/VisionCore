@@ -322,6 +322,7 @@ def _variant_tables(
         return np.broadcast_to(zero[:, None, :, :], prior_full.shape).copy(), zero.copy(), zero.copy()
     if u is None:
         raise ValueError(f"response_variant={variant!r} requires a basis")
+    eps = 1e-12
     prior_delta = prior_full.astype(np.float64) - zero[:, None, :, :].astype(np.float64)
     known_delta = known_full.astype(np.float64) - zero.astype(np.float64)
     prior_proj = _project_delta(prior_delta, u)
@@ -332,6 +333,24 @@ def _variant_tables(
         return (
             zero[:, None, :, :].astype(np.float64) + (prior_delta - prior_proj),
             zero.astype(np.float64) + (known_delta - known_proj),
+            zero.astype(np.float64),
+        )
+    if variant in {"log_compact_only", "log_compact_removed"}:
+        zero_prior = np.maximum(zero[:, None, :, :].astype(np.float64), eps)
+        zero_known = np.maximum(zero.astype(np.float64), eps)
+        prior_log_delta = np.log(np.maximum(prior_full.astype(np.float64), eps)) - np.log(zero_prior)
+        known_log_delta = np.log(np.maximum(known_full.astype(np.float64), eps)) - np.log(zero_known)
+        prior_log_proj = _project_delta(prior_log_delta, u)
+        known_log_proj = _project_delta(known_log_delta, u)
+        if variant == "log_compact_only":
+            return (
+                zero_prior * np.exp(prior_log_proj),
+                zero_known * np.exp(known_log_proj),
+                zero.astype(np.float64),
+            )
+        return (
+            zero_prior * np.exp(prior_log_delta - prior_log_proj),
+            zero_known * np.exp(known_log_delta - known_log_proj),
             zero.astype(np.float64),
         )
     raise ValueError(f"Unsupported response_variant={variant!r}")
@@ -445,7 +464,7 @@ def analyze(args: argparse.Namespace) -> Path:
                 if variant in {"full_exact", "zero_static"}:
                     if k_i == 0:
                         basis_by_variant.append((variant, "none", -1, 0, None))
-                elif variant in {"compact_only", "compact_removed"}:
+                elif variant in {"compact_only", "compact_removed", "log_compact_only", "log_compact_removed"}:
                     basis_by_variant.append((variant, "compact", -1, 0, compact_u))
                 elif variant == "unit_shuffle_compact":
                     u_shuffle, _perm = _unit_shuffle_basis(compact_u, np.random.default_rng(int(args.seed) + 10_000 + k))
@@ -753,21 +772,25 @@ def _add_rescue_metrics(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         row["joint_rescue_fraction_accuracy"] = acc_rescue
         row["known_gap_recovery_accuracy"] = _safe_ratio(row_joint_correct - zero_correct, known_correct - zero_correct)
         row["variant_delta_from_full_accuracy"] = row_joint_correct - full_joint_correct
-        row["compact_sufficiency_accuracy"] = acc_rescue if row["response_variant"] == "compact_only" else float("nan")
-        row["compact_removed_gain_accuracy"] = row_joint_correct - zero_correct if row["response_variant"] == "compact_removed" else float("nan")
+        row["compact_sufficiency_accuracy"] = acc_rescue if row["response_variant"] in {"compact_only", "log_compact_only"} else float("nan")
+        row["compact_removed_gain_accuracy"] = (
+            row_joint_correct - zero_correct if row["response_variant"] in {"compact_removed", "log_compact_removed"} else float("nan")
+        )
         row["compact_necessity_accuracy"] = (
             _safe_ratio(full_joint_correct - row_joint_correct, full_joint_correct - zero_correct)
-            if row["response_variant"] == "compact_removed"
+            if row["response_variant"] in {"compact_removed", "log_compact_removed"}
             else float("nan")
         )
         row["joint_rescue_fraction_true_score"] = score_rescue
         row["known_gap_recovery_true_score"] = _safe_ratio(row_joint_score - zero_score, known_score - zero_score)
         row["variant_delta_from_full_true_score"] = row_joint_score - full_joint_score
-        row["compact_sufficiency_true_score"] = score_rescue if row["response_variant"] == "compact_only" else float("nan")
-        row["compact_removed_gain_true_score"] = row_joint_score - zero_score if row["response_variant"] == "compact_removed" else float("nan")
+        row["compact_sufficiency_true_score"] = score_rescue if row["response_variant"] in {"compact_only", "log_compact_only"} else float("nan")
+        row["compact_removed_gain_true_score"] = (
+            row_joint_score - zero_score if row["response_variant"] in {"compact_removed", "log_compact_removed"} else float("nan")
+        )
         row["compact_necessity_true_score"] = (
             _safe_ratio(full_joint_score - row_joint_score, full_joint_score - zero_score)
-            if row["response_variant"] == "compact_removed"
+            if row["response_variant"] in {"compact_removed", "log_compact_removed"}
             else float("nan")
         )
         out.append(row)

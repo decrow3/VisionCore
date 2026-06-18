@@ -33,7 +33,7 @@ DEFAULT_AGGREGATE_DIR = (
     / "backimage_aggregate_fem_information_n256_k48_rel025-2_drift_only_common_unclipped_patched"
 )
 DEFAULT_INCREMENTAL_DIR = DEFAULT_AGGREGATE_DIR / "incremental_static_plus_motion_relids"
-DEFAULT_GEOMETRY_DIR = BACKIMAGE_BASE / "backimage_image_structure_reviewed_v2_screenfiltered"
+DEFAULT_GEOMETRY_DIR = BACKIMAGE_BASE / "backimage_image_structure_reviewed_v2_screenfiltered_yfix"
 DEFAULT_STABILITY_DIR = BACKIMAGE_BASE / "backimage_edge_parallel_stability_screen_yfix_n256_pop256"
 DEFAULT_OUT = ROOT / "outputs" / "fig4_active_sensing" / "active_sensing_headline_figure"
 DEFAULT_THUMBNAIL = (
@@ -60,6 +60,8 @@ COLORS = {
     "gabor": "#244f7a",
     "pyramid": "#2f8f6a",
     "edge": "#2f8f6a",
+    "high": "#eb6a4a",
+    "null": "#8e9aa6",
     "pixel": "#4f7fb7",
     "twin": "#7a5ea8",
     "light": "#eef2f4",
@@ -133,6 +135,7 @@ def _errbar(
     label: str,
     color: str,
     marker: str = "o",
+    alpha: float = 1.0,
 ) -> None:
     block = df.sort_values("scale")
     x = block["scale"].to_numpy(dtype=float)
@@ -146,8 +149,9 @@ def _errbar(
         marker=marker,
         markersize=4,
         linewidth=1.9,
-        capsize=3,
+        capsize=0,
         color=color,
+        alpha=alpha,
         label=label,
     )
 
@@ -219,6 +223,120 @@ def _edge_axis_session_bootstrap_ci(
             "n_sessions": int(sums.shape[0]),
         }
     return out
+
+
+def _wilson_interval(count: int, total: int, z: float = 1.96) -> tuple[float, float]:
+    if total <= 0:
+        return float("nan"), float("nan")
+    p = float(count) / float(total)
+    denom = 1.0 + z * z / total
+    center = (p + z * z / (2.0 * total)) / denom
+    half = z * np.sqrt((p * (1.0 - p) + z * z / (4.0 * total)) / total) / denom
+    return float(max(0.0, center - half)), float(min(1.0, center + half))
+
+
+def _edge_axis_endpoint_summary(windows: pd.DataFrame) -> pd.DataFrame:
+    work = windows.dropna(
+        subset=[
+            "drift_edge_delta_deg",
+            "image_orientation_coherence",
+            "anisotropy",
+        ]
+    ).copy()
+    signed = (work["drift_edge_delta_deg"].astype(float).to_numpy(dtype=np.float64) + 90.0) % 180.0 - 90.0
+    work["abs_edge_delta_deg"] = np.abs(signed)
+    subsets = {
+        "All windows": work,
+        "Reliable axes": work[
+            (work["image_orientation_coherence"].astype(float) >= 0.20)
+            & (work["anisotropy"].astype(float) >= 0.20)
+        ].copy(),
+        "High confidence": work[
+            (work["image_orientation_coherence"].astype(float) >= 0.50)
+            & (work["anisotropy"].astype(float) >= 0.50)
+        ].copy(),
+    }
+    zones = [
+        ("Parallel\n<=15 deg", lambda x: x <= 15.0, 15.0 / 90.0),
+        ("Orthogonal\n>=75 deg", lambda x: x >= 75.0, 15.0 / 90.0),
+        ("Mid\n30-60 deg", lambda x: (x >= 30.0) & (x <= 60.0), 30.0 / 90.0),
+    ]
+    rows: list[dict[str, Any]] = []
+    for subset_name, sub in subsets.items():
+        abs_delta = sub["abs_edge_delta_deg"].to_numpy(dtype=np.float64)
+        total = int(abs_delta.size)
+        for zone_name, mask_fn, expected in zones:
+            count = int(np.count_nonzero(mask_fn(abs_delta)))
+            fraction = float(count / total) if total else float("nan")
+            lo, hi = _wilson_interval(count, total)
+            rows.append(
+                {
+                    "subset": subset_name,
+                    "zone": zone_name,
+                    "n_windows": total,
+                    "count": count,
+                    "fraction": fraction,
+                    "ci95_low": lo,
+                    "ci95_high": hi,
+                    "uniform_expected_fraction": expected,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _uniform_cos2_bin_mass(edges: np.ndarray) -> np.ndarray:
+    clipped = np.clip(np.asarray(edges, dtype=np.float64), -1.0, 1.0)
+    theta = np.arccos(clipped)
+    mass = (theta[:-1] - theta[1:]) / np.pi
+    return np.maximum(mass, 0.0)
+
+
+def _edge_alignment_enrichment_curve(windows: pd.DataFrame, *, n_bins: int = 31) -> pd.DataFrame:
+    work = windows.dropna(
+        subset=[
+            "drift_edge_cos2",
+            "image_orientation_coherence",
+            "anisotropy",
+        ]
+    ).copy()
+    subsets = {
+        "All windows": work,
+        "Reliable axes": work[
+            (work["image_orientation_coherence"].astype(float) >= 0.20)
+            & (work["anisotropy"].astype(float) >= 0.20)
+        ].copy(),
+        "High confidence": work[
+            (work["image_orientation_coherence"].astype(float) >= 0.50)
+            & (work["anisotropy"].astype(float) >= 0.50)
+        ].copy(),
+    }
+    edges = np.linspace(-1.0, 1.0, int(n_bins) + 1)
+    centers = (edges[:-1] + edges[1:]) / 2.0
+    expected = _uniform_cos2_bin_mass(edges)
+    rows: list[dict[str, Any]] = []
+    for subset, sub in subsets.items():
+        values = sub["drift_edge_cos2"].to_numpy(dtype=np.float64)
+        values = values[np.isfinite(values)]
+        hist, _ = np.histogram(values, bins=edges)
+        observed = hist / hist.sum() if hist.sum() > 0 else np.full(hist.shape, np.nan)
+        ratio = np.divide(
+            observed,
+            expected,
+            out=np.full_like(observed, np.nan, dtype=np.float64),
+            where=expected > 0.0,
+        )
+        for center, obs, exp, rat, count in zip(centers, observed, expected, ratio, hist, strict=False):
+            rows.append(
+                {
+                    "subset": subset,
+                    "edge_alignment_index": float(center),
+                    "observed_bin_probability": float(obs),
+                    "uniform_expected_probability": float(exp),
+                    "observed_over_uniform": float(rat),
+                    "count": int(count),
+                }
+            )
+    return pd.DataFrame(rows)
 
 
 def _synthetic_patch(size: int = 96) -> np.ndarray:
@@ -419,8 +537,8 @@ def _plot_gain_vs_static(ax: plt.Axes, gain: pd.DataFrame, qc: dict[str, float |
     _clean_axis(ax)
 
 
-def _plot_control_contrasts(ax: plt.Axes, contrasts: pd.DataFrame) -> None:
-    _panel_label(ax, "D", "Empirical drift beats OU-like motion")
+def _plot_control_contrasts(ax: plt.Axes, contrasts: pd.DataFrame, *, label: str = "C") -> None:
+    _panel_label(ax, label, "Empirical drift beats OU-like motion")
     block = contrasts[
         (contrasts["motion_summary"] == "temporal_pca")
         & (contrasts["lhs_family"] == "empirical")
@@ -446,10 +564,11 @@ def _plot_control_contrasts(ax: plt.Axes, contrasts: pd.DataFrame) -> None:
             label=label,
             color=color,
             marker=marker,
+            alpha=0.70,
         )
     ax.axhline(0, color="#222222", lw=0.8)
     ax.axvspan(0.2, 0.55, color="#e8f3ec", alpha=0.75, zorder=-5)
-    ax.text(0.27, 28.0, "clearest\nmulti-control\nregime", fontsize=7.4, color="#2f6f52")
+    ax.text(0.27, 28.0, "clearest\ncontrol\nregime", fontsize=7.0, color="#2f6f52")
     ax.text(
         0.97,
         0.08,
@@ -457,7 +576,7 @@ def _plot_control_contrasts(ax: plt.Axes, contrasts: pd.DataFrame) -> None:
         transform=ax.transAxes,
         ha="right",
         va="bottom",
-        fontsize=7.4,
+        fontsize=6.8,
         color="#50585f",
         bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.78, "pad": 1.4},
     )
@@ -465,7 +584,7 @@ def _plot_control_contrasts(ax: plt.Axes, contrasts: pd.DataFrame) -> None:
     ax.set_xticklabels([_scale_label(x) for x in [0.25, 0.5, 1.0, 1.5, 2.0]])
     ax.set_xlabel(SCALE_AXIS_LABEL)
     ax.set_ylabel("contrast in incremental gain (-MSE)")
-    ax.legend(frameon=False, loc="upper right")
+    ax.legend(frameon=False, loc="upper right", handlelength=1.4, fontsize=6.9)
     _clean_axis(ax)
 
 
@@ -496,6 +615,7 @@ def _plot_absolute_temporal_pca_gains(ax: plt.Axes, gain: pd.DataFrame) -> None:
             label=label,
             color=color,
             marker=marker,
+            alpha=1.0 if family == "empirical" else 0.58,
         )
     ax.axhline(0, color="#222222", lw=0.8)
     ax.set_xticks([0.25, 0.5, 1.0, 1.5, 2.0])
@@ -516,14 +636,14 @@ def _plot_absolute_temporal_pca_gains(ax: plt.Axes, gain: pd.DataFrame) -> None:
 
 
 def _plot_local_geometry(
-    ax: plt.Axes,
+    ax_d: plt.Axes,
+    ax_e: plt.Axes,
     geometry: pd.DataFrame,
     stability: pd.DataFrame,
     edge_ci: dict[str, dict[str, float]],
+    edge_endpoint: pd.DataFrame,
+    edge_enrichment: pd.DataFrame,
 ) -> None:
-    _panel_label(ax, "E", "Predicted image-stable directions match real drift behavior")
-    ax.set_axis_off()
-
     edge = geometry[
         (geometry["alignment_reference"] == "edge_axis")
         & (
@@ -534,33 +654,26 @@ def _plot_local_geometry(
     ].copy()
     if edge.empty:
         raise ValueError("No edge-axis alignment rows found for panel D")
-    edge["label"] = edge["analysis_subset"].map(
-        {
-            "all_windows": "all windows",
-            "reliable_axes_coh_ge_0p20_aniso_ge_0p20": "reliable axes",
-        }
-    )
 
-    ax1 = ax.inset_axes([0.06, 0.58, 0.86, 0.32])
+    _panel_label(ax_d, "D", "Predicted image-stable axes")
     st = stability[stability["screen"].isin(["pixel", "twin"])].copy()
     if st.empty:
         raise ValueError("No pixel/twin stability rows found for panel D")
     st["label"] = st["screen"].map({"pixel": "pixels", "twin": "V1 twin"})
     y2 = np.arange(len(st))
     colors = [COLORS["pixel"] if s == "pixel" else COLORS["twin"] for s in st["screen"]]
-    ax1.barh(y2, st["fraction_windows_positive_advantage"], color=colors, alpha=0.90)
-    ax1.axvline(0.5, color="#222222", lw=0.8, ls="--")
-    ax1.set_title("Prediction: edge-parallel motion preserves local structure", loc="left", fontsize=8.0, pad=2)
-    ax1.set_yticks(y2)
-    ax1.set_yticklabels(st["label"])
-    ax1.invert_yaxis()
-    ax1.set_xlabel("fraction of windows with edge-parallel advantage")
-    ax1.set_xlim(0, 1.18)
-    ax1.text(
+    ax_d.barh(y2, st["fraction_windows_positive_advantage"], color=colors, alpha=0.90)
+    ax_d.axvline(0.5, color="#222222", lw=0.8, ls="--")
+    ax_d.set_yticks(y2)
+    ax_d.set_yticklabels(st["label"])
+    ax_d.invert_yaxis()
+    ax_d.set_xlabel("fraction of windows")
+    ax_d.set_xlim(0, 1.10)
+    ax_d.text(
         0.03,
         0.96,
         "bars = window fraction",
-        transform=ax1.transAxes,
+        transform=ax_d.transAxes,
         ha="left",
         va="top",
         fontsize=7.0,
@@ -568,52 +681,54 @@ def _plot_local_geometry(
         bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.70, "pad": 1.2},
     )
     for yi, (_, row) in zip(y2, st.iterrows(), strict=False):
-        ax1.text(
-            float(row["fraction_windows_positive_advantage"]) + 0.025,
+        ax_d.text(
+            float(row["fraction_windows_positive_advantage"]) + 0.018,
             yi,
-            f"sessions positive: {int(row['n_sessions_positive_advantage'])}/{int(row['n_sessions'])}",
+            f"{int(row['n_sessions_positive_advantage'])}/{int(row['n_sessions'])}",
             va="center",
-            fontsize=7.2,
+            fontsize=7.0,
         )
-    _clean_axis(ax1)
+    _clean_axis(ax_d)
 
-    ax2 = ax.inset_axes([0.06, 0.10, 0.86, 0.30])
-    y = np.arange(len(edge))
-    ax2.barh(y, edge["weighted_mean_cos2_delta"], color=COLORS["edge"], alpha=0.88)
-    ax2.axvline(0, color="#222222", lw=0.8)
-    ax2.set_yticks(y)
-    ax2.set_yticklabels(edge["label"])
-    ax2.invert_yaxis()
-    ax2.set_title("Behavior: real drift axes align with predicted stable axes", loc="left", fontsize=8.0, pad=2)
-    max_ci = max(
-        [edge_ci.get(subset, {}).get("ci95_high", np.nan) for subset in edge["analysis_subset"]]
-        + [float(edge["weighted_mean_cos2_delta"].max())]
-    )
-    ax2.set_xlim(0, max(0.27, float(max_ci) * 1.35))
-    ax2.set_xlabel("edge-axis alignment (weighted cos2 delta)")
-    for yi, (_, row) in zip(y, edge.iterrows(), strict=False):
-        p = row.get("shuffle_p_abs_cos_ge_observed", np.nan)
-        ci = edge_ci.get(str(row["analysis_subset"]))
-        value = float(row["weighted_mean_cos2_delta"])
-        if ci:
-            ax2.errorbar(
-                value,
-                yi,
-                xerr=np.asarray([[value - ci["ci95_low"]], [ci["ci95_high"] - value]]),
-                color="#246b50",
-                capsize=3,
-                lw=1.2,
-                fmt="none",
-                zorder=5,
-            )
-        ax2.text(
-            (ci["ci95_high"] if ci else value) + 0.006,
-            yi,
-            f"{value:.3f}, p={p:.3g}",
-            va="center",
-            fontsize=7.2,
+    _panel_label(ax_e, "E", "Drift is enriched near edge-parallel")
+    subset_order = ["All windows", "Reliable axes", "High confidence"]
+    subset_colors = {
+        "All windows": "#31566b",
+        "Reliable axes": COLORS["edge"],
+        "High confidence": COLORS["high"],
+    }
+    subset_alpha = {"All windows": 0.88, "Reliable axes": 0.78, "High confidence": 0.68}
+    for subset in subset_order:
+        sub = edge_enrichment[edge_enrichment["subset"] == subset].sort_values("edge_alignment_index")
+        ax_e.plot(
+            sub["edge_alignment_index"],
+            sub["observed_over_uniform"],
+            color=subset_colors[subset],
+            alpha=subset_alpha[subset],
+            lw=1.7,
+            label=subset.lower(),
         )
-    _clean_axis(ax2)
+    ax_e.axhline(1.0, color=COLORS["null"], lw=1.2, ls=":")
+    ax_e.axvline(0.0, color="#333333", lw=0.8, alpha=0.55)
+    ax_e.set_xlim(-1.02, 1.02)
+    ax_e.set_ylim(0.0, 2.7)
+    ax_e.set_xticks([-1.0, 0.0, 1.0])
+    ax_e.set_xticklabels(["-1\north.", "0", "+1\nparallel"])
+    ax_e.set_xlabel("edge alignment index")
+    ax_e.set_ylabel("observed / uniform")
+    ax_e.text(
+        0.98,
+        0.94,
+        "1 = uniform",
+        transform=ax_e.transAxes,
+        ha="right",
+        va="top",
+        fontsize=7.0,
+        color="#50585f",
+        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.70, "pad": 1.2},
+    )
+    ax_e.legend(frameon=False, loc="upper left", handlelength=1.2, fontsize=6.9)
+    _clean_axis(ax_e)
 
 
 def _collect_key_stats(
@@ -623,6 +738,8 @@ def _collect_key_stats(
     geometry: pd.DataFrame,
     stability: pd.DataFrame,
     edge_ci: dict[str, dict[str, float]],
+    edge_endpoint: pd.DataFrame,
+    edge_enrichment: pd.DataFrame,
     qc: dict[str, float | int],
 ) -> dict[str, Any]:
     gain_block = gain[
@@ -700,6 +817,8 @@ def _collect_key_stats(
             "session_bootstrap_ci": edge_ci,
         },
         "edge_parallel_stability": stability.to_dict(orient="records"),
+        "edge_axis_endpoint_enrichment": edge_endpoint.to_dict(orient="records"),
+        "edge_axis_alignment_enrichment_curve": edge_enrichment.to_dict(orient="records"),
         "thumbnail_source": str(DEFAULT_THUMBNAIL),
     }
 
@@ -713,22 +832,25 @@ def _write_caption(stats: dict[str, Any], out_dir: Path) -> Path:
     best_gain = stats["gabor_empirical_gain"][0]
     controls = stats["gabor_empirical_control_contrasts"]
     absolute = stats["gabor_temporal_pca_absolute_gains"]
-    empirical_small = next(
-        r for r in absolute if r["family"] == "empirical" and r["scale_id"] == "rel_0p25x"
-    )
-    ou_small_abs = next(r for r in absolute if r["family"] == "ou" and r["scale_id"] == "rel_0p25x")
-    brownian_large_abs = next(
-        r for r in absolute if r["family"] == "brownian" and r["scale_id"] == "rel_2x"
-    )
     small_ou = next(r for r in controls if r["rhs_family"] == "ou" and r["scale_id"] == "rel_0p25x")
     small_brownian = next(
         r for r in controls if r["rhs_family"] == "brownian" and r["scale_id"] == "rel_0p25x"
     )
     edge = stats["edge_axis_alignment"]
+    endpoint = pd.DataFrame(stats["edge_axis_endpoint_enrichment"])
     qc = stats["motion_bookkeeping"]
     edge_ci = edge["session_bootstrap_ci"]
     all_ci = edge_ci.get("all_windows", {})
     reliable_ci = edge_ci.get("reliable_axes_coh_ge_0p20_aniso_ge_0p20", {})
+    endpoint_parallel = endpoint[
+        (endpoint["subset"] == "Reliable axes") & (endpoint["zone"] == "Parallel\n<=15 deg")
+    ].iloc[0]
+    endpoint_high_parallel = endpoint[
+        (endpoint["subset"] == "High confidence") & (endpoint["zone"] == "Parallel\n<=15 deg")
+    ].iloc[0]
+    endpoint_reliable_orth = endpoint[
+        (endpoint["subset"] == "Reliable axes") & (endpoint["zone"] == "Orthogonal\n>=75 deg")
+    ].iloc[0]
     lines = [
         "# Figure 4 Caption",
         "",
@@ -741,25 +863,24 @@ def _write_caption(stats: dict[str, Any], out_dir: Path) -> Path:
         f"The aggregate run used grouped-by-image CV, {qc['n_trace_sources']} sampled drift-only trace sources, "
         f"median effective/requested RMS {qc['median_effective_to_requested_rms']:.1f}, "
         f"and maximum clipping fraction {qc['max_clipped_fraction']:.1f}.",
-        "(C) Absolute temporal-PC gains for the primary Gabor k=4 readout show the scale-dependent family structure. Empirical drift was positive at small scale "
-        f"({empirical_small['incremental_gain_neg_mse']:.2f}; "
-        f"95% CI {empirical_small['ci95_low']:.2f} to {empirical_small['ci95_high']:.2f}), "
-        f"whereas OU-like motion was negative at the same scale ({ou_small_abs['incremental_gain_neg_mse']:.2f}). "
-        f"Brownian motion caught up at the largest scale ({brownian_large_abs['incremental_gain_neg_mse']:.2f}), "
-        "calibrating the control caveat.",
-        "(D) Empirical drift is not merely matched random confinement. Empirical drift outperformed OU-like confined motion across scale; at 0.25x the empirical-minus-OU contrast was "
+        "(C) Empirical drift is not merely matched random confinement. Empirical drift outperformed OU-like confined motion across scale; at 0.25x the empirical-minus-OU contrast was "
         f"{small_ou['incremental_gain_delta_neg_mse']:.2f} "
         f"(95% CI {small_ou['ci95_low']:.2f} to {small_ou['ci95_high']:.2f}). "
         "The advantage over Brownian/generic and rotated motion was strongest at small scales "
         f"(0.25x empirical-minus-Brownian {small_brownian['incremental_gain_delta_neg_mse']:.2f}) "
         "and narrowed at larger scales.",
-        "(E) Behavioral payoff: predicted image-stable directions match real drift behavior. The model-side stability screen first asks which local axes preserve the image and V1-twin response: edge-parallel motion was more stable than edge-orthogonal motion in both pixel and V1-twin metrics. The behavioral test then asks whether measured drift follows those axes. Real drift axes were aligned with local edge geometry "
+        "(D-E) Behavioral payoff: predicted image-stable directions match real drift behavior. Panel D first asks which local axes preserve the image and V1-twin response: edge-parallel motion was more stable than edge-orthogonal motion in both pixel and V1-twin metrics. Panel E then asks whether measured drift follows those axes across the full alignment distribution. Real drift axes were aligned with local edge geometry "
         f"(all-window weighted cos2 delta {edge['all_windows_weighted_mean_cos2_delta']:.3f}; "
         f"session-bootstrap 95% CI {all_ci.get('ci95_low', float('nan')):.3f} to {all_ci.get('ci95_high', float('nan')):.3f}; "
         f"reliable-axis delta {edge['reliable_weighted_mean_cos2_delta']:.3f}; "
         f"CI {reliable_ci.get('ci95_low', float('nan')):.3f} to {reliable_ci.get('ci95_high', float('nan')):.3f}), "
-        "consistent with a functional constraint that drift should add temporal samples while avoiding maximally disruptive local directions. "
-        "Panel E top bars show window fractions; text labels report sessions with positive advantage.",
+        f"and the endpoint-zone distribution showed enrichment near edge-parallel directions "
+        f"(reliable axes: {100.0 * float(endpoint_parallel['fraction']):.1f}% within 15 degrees versus "
+        f"{100.0 * float(endpoint_parallel['uniform_expected_fraction']):.1f}% uniform expectation; "
+        f"high-confidence windows: {100.0 * float(endpoint_high_parallel['fraction']):.1f}%; "
+        f"reliable orthogonal zone: {100.0 * float(endpoint_reliable_orth['fraction']):.1f}%). "
+        "This is consistent with a functional constraint that drift should add temporal samples while avoiding maximally disruptive local directions. "
+        "Endpoint-zone fractions are retained in the stats manifest rather than plotted as a separate main panel.",
         "",
         "Interpretation: FEM-induced variability is not only a confound to subtract. In the V1 twin, empirical drift-like motion supplies feature-relevant temporal samples of natural images, while local stability predicts image-preserving axes that match measured drift geometry. Guardrail: the aggregate decoder does not predict the exact real drift trajectory. The safer claim is a functional constraint: drift should generate feature-relevant temporal samples while preserving local structure. The deterministic ridge-decoding endpoint is a V1-twin feature-decoding proxy, not a literal mutual-information estimate or a claim that exact measured trajectory order is uniquely optimal. The result is an incremental static-plus-motion versus static-only claim, not a claim that moving responses globally beat static responses. Motion sanity checks are kept out of the main panels but remain in the manifest: effective/requested RMS median 1.0 and maximum clipping 0.0 across generated families/scales.",
         "",
@@ -811,8 +932,8 @@ def _write_readme(
                 "",
                 "- The figure is canonical 756-unit V1-twin evidence, not the older 16-channel natural-image movie-information endpoint.",
                 "- The endpoint is deterministic static-plus-motion feature-decoding gain over a static-only decoder in ridge -MSE units, not literal mutual information.",
-                "- The supported claim is distributional and scale/readout scoped: empirical drift-like motion supplies feature-relevant temporal samples beyond static responses and robustly beats OU-like controls, while the absolute temporal-PC family panel keeps the Brownian/rotated caveat visible.",
-                "- The local-geometry panel is the payoff: edge-parallel motion is predicted to preserve local image/V1-twin structure, and measured drift axes are biased toward those stable directions.",
+                "- The supported claim is distributional and scale/readout scoped: empirical drift-like motion supplies feature-relevant temporal samples beyond static responses and robustly beats OU-like controls, while the control panel keeps the Brownian/rotated caveat visible.",
+                "- Panels D-E are the local-geometry payoff: edge-parallel motion is predicted to preserve local image/V1-twin structure, and the behavior panel shows that measured drift axes overrepresent edge-parallel orientation zones.",
                 "- Do not read this as exact trajectory prediction; the supported claim is a functional constraint on drift geometry.",
                 "- Motion sanity is documented in the stats manifest rather than plotted as a main panel.",
                 "",
@@ -842,35 +963,46 @@ def make_figure(
     stability = _read_csv(stability_dir / "stability_summary.csv")
     qc = _motion_qc(aggregate_dir)
     edge_ci = _edge_axis_session_bootstrap_ci(geometry_windows)
+    edge_endpoint = _edge_axis_endpoint_summary(geometry_windows)
+    edge_enrichment = _edge_alignment_enrichment_curve(geometry_windows)
 
-    fig = plt.figure(figsize=(12.2, 10.4), constrained_layout=False)
+    fig = plt.figure(figsize=(12.2, 7.35), constrained_layout=False)
     gs = GridSpec(
-        3,
         2,
+        6,
         figure=fig,
         left=0.07,
         right=0.985,
-        bottom=0.065,
-        top=0.92,
-        wspace=0.28,
-        hspace=0.52,
-        height_ratios=[1.0, 1.0, 0.92],
+        bottom=0.095,
+        top=0.89,
+        wspace=0.82,
+        hspace=0.62,
+        height_ratios=[1.0, 0.96],
     )
     fig.suptitle(CAPTION_TITLE, x=0.07, y=0.975, ha="left", fontsize=13, fontweight="bold")
 
-    ax_a = fig.add_subplot(gs[0, 0])
-    ax_b = fig.add_subplot(gs[0, 1])
-    ax_c = fig.add_subplot(gs[1, 0])
-    ax_d = fig.add_subplot(gs[1, 1])
-    ax_e = fig.add_subplot(gs[2, :])
+    ax_a = fig.add_subplot(gs[0, 0:3])
+    ax_b = fig.add_subplot(gs[0, 3:6])
+    ax_c = fig.add_subplot(gs[1, 0:2])
+    ax_d = fig.add_subplot(gs[1, 2:4])
+    ax_e = fig.add_subplot(gs[1, 4:6])
 
     _plot_concept(ax_a)
     _plot_gain_vs_static(ax_b, gain, qc)
-    _plot_absolute_temporal_pca_gains(ax_c, gain)
-    _plot_control_contrasts(ax_d, contrasts)
-    _plot_local_geometry(ax_e, geometry, stability, edge_ci)
+    _plot_control_contrasts(ax_c, contrasts, label="C")
+    _plot_local_geometry(ax_d, ax_e, geometry, stability, edge_ci, edge_endpoint, edge_enrichment)
 
-    stats = _collect_key_stats(gain, contrasts, aggregate_dir, geometry, stability, edge_ci, qc)
+    stats = _collect_key_stats(
+        gain,
+        contrasts,
+        aggregate_dir,
+        geometry,
+        stability,
+        edge_ci,
+        edge_endpoint,
+        edge_enrichment,
+        qc,
+    )
     caption_path = _write_caption(stats, out_dir)
     caption_text = caption_path.read_text(encoding="utf-8")
     plain_caption = _plain_caption_text(caption_text)

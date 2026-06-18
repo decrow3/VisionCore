@@ -1,6 +1,6 @@
 # declan Analysis Narrative
 
-Last curated: 2026-06-16.
+Last curated: 2026-06-18.
 
 Companion to `MANIFEST.md`. The manifest answers "where is it?" This file
 answers "why did we do it, what happened, and how did later work change the
@@ -79,7 +79,22 @@ The story has moved through four broad phases:
    OU-like confined controls, and does not simply improve with more motion. The
    advantage over Brownian/generic motion is strongest at `0.25x-0.5x` and
    narrows at `1x-2x`, so the claim remains scale-, readout-, and twin-scoped
-   rather than a proof of exact trajectory optimality.
+   rather than a proof of exact trajectory optimality. The reopened local
+   BackImage pairing branch now adds a narrower positive: after fixing the
+   trace-bank, feature-geometry, and sampled matched-control logic, actual
+   image-trace pairings beat matched unpaired empirical trace swaps for
+   `delta_mean` feature-response gains in both Gabor and pyramid local fields.
+   This supports local image-contingent motion-delta structure beyond aggregate
+   empirical FEM statistics, but it is not yet a broad temporal-code or
+   unique-axis-optimality result because temporal PCA/DCT summaries are weak and
+   rotated-trace controls remain competitive. A separate axis-conditioned
+   BackImage observer branch now directly tests edge-parallel versus
+   edge-orthogonal priors with shared source catalogs. Both clean `n=64` runs
+   show joint-eye rescue above zero-eye, but the preferred axis depends on the
+   candidate set: matched-static weakly favors edge-parallel, while
+   hard-negative weakly favors edge-orthogonal. The old stronger `target128`
+   orthogonal advantage is now diagnostic-only because it predates the
+   unmatched-catalog fix.
 
 Numerical audit update, 2026-06-12:
 
@@ -443,6 +458,35 @@ Edge-parallel stability and twin metric audit:
   `r = +0.277`, CI `[+0.168, +0.417]`; diagonal-whitened
   `r = +0.287`, CI `[+0.139, +0.419]`. Session-mean correlations remain noisy.
 
+Axis-conditioned trajectory observer update:
+
+- The direct edge-axis observer branch is now implemented and has clean
+  shared-source `n=64`, `K=16`, scale `0.5x` runs for both primary candidate-set
+  pressures.
+- Clean matched-static run:
+  `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_axis_conditioned_matched_static_percandidate_gpu1_n64_c4_k16_v1`.
+  The manifest has `axis_shared_source_catalog=True` for `128/128` rows, source
+  Jaccard `1.0`, and zero paired motion-stat deltas. Accuracy: zero-eye
+  `0.641`, edge-parallel joint `0.859`, edge-orthogonal joint `0.828`;
+  parallel-minus-orthogonal `+0.031` (`+2/64` trials).
+- Clean hard-negative run:
+  `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_axis_conditioned_hard_negative_shared_source_gpu1_n64_c4_k16_v1`.
+  The manifest again has `axis_shared_source_catalog=True` for `128/128` rows,
+  source Jaccard `1.0`, and zero paired motion-stat deltas. Accuracy: zero-eye
+  `0.641`, edge-orthogonal joint `0.891`, edge-parallel joint `0.844`;
+  orthogonal-minus-parallel `+0.047`. Trial-paired discordance is orthogonal-only
+  `6` versus parallel-only `3` (exact McNemar `p ~= 0.51`), so this is a real
+  diagnostic pattern but not a claim-level axis preference.
+- The pre-fix `target128_c4_k32` hard-negative run remains useful as a warning,
+  not as biological evidence. It showed a larger orthogonal advantage
+  (`0.875` versus `0.766`, delta `+0.109`), but source Jaccard was only `0.143`
+  because the parallel and orthogonal catalogs were not yet strictly
+  same-source.
+- Interpretation: the unmatched-catalog bug no longer explains the entire
+  orthogonal tendency, but the clean effect is modest and candidate-set
+  dependent. The branch currently supports "axis priors rescue above zero-eye"
+  more strongly than "V1 prefers one biological edge axis."
+
 Updated BackImage claim boundary:
 
 ```text
@@ -455,9 +499,11 @@ global infomax result. The aggregate branch is now stronger than the local
 screen: empirical drift-like trajectories add feature-decoding signal beyond
 static responses and robustly beat OU in the cleaned `n=256` run. The guardrail
 is that Brownian/generic motion becomes competitive at larger scales and exact
-trajectory orientation is not established as uniquely optimal. Treat the
-aggregate result as readout- and scale-dependent support for empirical drift
-statistics, not as global infomax.
+trajectory orientation is not established as uniquely optimal. The new
+axis-conditioned observer results sharpen this boundary: clean axis priors help
+image inference, but the parallel/orthogonal sign is small and candidate-set
+dependent. Treat the aggregate result as readout- and scale-dependent support
+for empirical drift statistics, not as global infomax.
 ```
 
 Claim boundary:
@@ -478,9 +524,12 @@ Practical next gates:
 - Keep corrected coordinate order and the `270 px` full-image patch margin fixed.
 - Promote raw edge geometry to the baseline that any local active-sensing model
   must beat.
-- Build edge-parallel versus edge-orthogonal candidate traces and test whether
-  raw image geometry and signed preservation explain the observed drift-axis
-  bias.
+- Replicate the axis-conditioned observer with the shared-source catalog fixed:
+  larger `n`, both `matched_static_response` and `hard_negative_structure`, and
+  the half/natural/double scale sweep `0.5x`, `1.0x`, `2.0x`. Treat any pre-fix
+  unmatched-catalog orthogonal advantage as diagnostic-only.
+- Test whether raw image geometry, signed preservation, and candidate-set
+  pressure explain the now-observed axis-dependent observer pattern.
 - Use the twin next for revised objectives: sliding along edges, minimizing
   retinal change, V1 temporal-band whitening, pose precision, or constrained
   stability.
@@ -498,11 +547,33 @@ Practical next gates:
   linear decodability/information proxies unless a fixed noise/logdet model is
   added.
 - Reopen the local BackImage `I_z` branch only as a local-pairing test, not as
-  another broad fixed-axis optimizer screen. The new plan is
+  another broad fixed-axis optimizer screen. The plan is
   `backimage_local_pairing_Iz_revisit_plan.md`: test whether actual
   image-trace pairings beat matched unpaired empirical traces, rotated actual
   traces, OU/Brownian controls, and edge-axis baselines under grouped-by-image
   feature decoding.
+- The pre-patch local-pairing pathfinder outputs remain diagnostic only. A code
+  review after the first fixed-manifest `K_unpaired=32` pyramid result found
+  that `--window-manifest` also restricted the matched-unpaired trace bank to
+  the same 128 analysis windows, and the local runner used reduced feature
+  geometry (`patch_size_px=160`, `latent_crop_px=96`, `local_field_grid=4`)
+  rather than the corrected aggregate convention (`540`, `151`, `8`).
+- Clean local-pairing outputs now exist:
+  `backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_pyramid_rel025_1_v1`
+  and
+  `backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_gabor_pyramid_rel025_1_seed7_v1`.
+  They use a fixed 128-image manifest, full 3013-row trace pool, sampled
+  matched-unpaired controls, corrected Gabor `(128, 4608)` and pyramid
+  `(128, 3072)` feature geometry, zero same-trial matches, and zero clipping.
+  The claim-relevant file is `incremental_gain_contrasts.csv`, not
+  `decode_contrasts.csv`. Main result: actual paired traces beat matched
+  empirical trace swaps for `delta_mean` in both feature families, e.g. Gabor
+  `k=4` `0.25x` `+9.95` CI `[+0.73, +20.62]`, Gabor `k=4` `1x` `+8.27` CI
+  `[+2.70, +14.79]`, pyramid `k=8` `0.25x` `+6.09` CI `[+1.51, +10.53]`, and
+  pyramid `k=8` `1x` `+3.79` CI `[+1.46, +6.28]`. Temporal PCA/DCT summaries
+  do not show a clean actual-pairing advantage, and actual does not yet clearly
+  beat rotated actual traces, so the local result is a motion-delta/local
+  pairing result rather than a general temporal-code or optimal-axis result.
 - When rerunning revised free-viewing objectives, prefer a full canonical
   population or at least a larger sampled population. Keep 16-channel or
   smaller sampled variants as transfer checks, not discovery space.

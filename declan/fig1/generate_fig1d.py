@@ -400,20 +400,34 @@ def _eyepos_window_geometry(payload, segment_idx=None):
     return seg, eye, s_shift, e_shift, cx, cy, slope
 
 
-def _draw_projection_line(ax, slope, lw=1.0, color="0.3"):
-    """Draw a line through (0, 0) along the projection direction, sized to fill
-    the current axis limits."""
+def _draw_projection_line(ax, slope, lw=1.0, color="0.3", linestyle="-",
+                          point=(0.0, 0.0)):
+    """Draw a line through ``point`` along the projection direction."""
     x0, x1 = ax.get_xlim()
     y0, y1 = ax.get_ylim()
-    L = np.hypot(max(abs(x0), abs(x1)), max(abs(y0), abs(y1)))
+    px, py = point
+    L = np.hypot(x1 - x0, y1 - y0)
     theta = np.arctan(slope)
     dx = L * np.cos(theta); dy = L * np.sin(theta)
-    ax.plot([-dx, dx], [-dy, dy], color=color, lw=lw, zorder=2)
+    ax.plot([px - dx, px + dx], [py - dy, py + dy], color=color, lw=lw,
+            linestyle=linestyle, zorder=2)
 
 
 def _fmt_deg(v):
     s = f"{v:.2f}".rstrip("0").rstrip(".")
+    if s.startswith("-0."):
+        s = "-." + s[3:]
+    elif s.startswith("0."):
+        s = "." + s[2:]
     return s if s not in ("", "-") else "0"
+
+
+def _fmt_signed_deg(v):
+    if abs(v) < 5e-3:
+        return "0"
+    s = f"{v:+.2f}"
+    s = s.replace("+0.", "+.").replace("-0.", "-.")
+    return s
 
 
 def _style_top_axis(ax, half, tick=0.5):
@@ -528,7 +542,7 @@ def _style_roi_axis(ax):
 
 def _segment_raster_lines(spike_times_list, trial_t_bins_list, trial_indices,
                          seg_start_bin, seg_end_bin, y_positions,
-                         dt=DT, height=0.7):
+                         dt=DT, height=0.7, center_ticks=False):
     seg_start_s = seg_start_bin * dt
     seg_end_s = seg_end_bin * dt
     xs, ys = [], []
@@ -547,9 +561,11 @@ def _segment_raster_lines(spike_times_list, trial_t_bins_list, trial_indices,
             continue
         rel_ms = rel[mask] * 1000.0
         y0 = y_positions[k]
+        y_start = y0 - height / 2 if center_ticks else y0
+        y_end = y0 + height / 2 if center_ticks else y0 + height
         for x in rel_ms:
             xs.extend([x, x, np.nan])
-            ys.extend([y0, y0 + height, np.nan])
+            ys.extend([y_start, y_end, np.nan])
     return np.asarray(xs), np.asarray(ys)
 
 
@@ -583,13 +599,13 @@ def plot_psth_axis(ax, payload):
             if len(pos):
                 mean_pos[a - s0:b - s0] = np.nanmean(full[pos, a:b], axis=0) / DT
 
-    ax.plot(t_ms, mean_neg, color="#3b6db7", lw=0.9, alpha=0.85, zorder=1,
+    ax.plot(t_ms, mean_neg, color="#3b6db7", lw=1.25, alpha=0.9, zorder=1,
             label="proj < 0")
-    ax.plot(t_ms, mean_pos, color="#c43c3c", lw=0.9, alpha=0.85, zorder=1,
+    ax.plot(t_ms, mean_pos, color="#c43c3c", lw=1.25, alpha=0.9, zorder=1,
             label="proj > 0")
     ax.fill_between(t_ms, mean - sem, mean + sem,
                     color="0.6", alpha=0.4, linewidth=0, zorder=2)
-    ax.plot(t_ms, mean, color="k", lw=1.0, zorder=3, label="all")
+    ax.plot(t_ms, mean, color="k", lw=0.75, zorder=3, label="all")
     ax.set_xlim(0, (e0 - s0) * DT * 1000.0)
     ax.set_ylim(bottom=0)
     ax.set_ylabel("Spikes/s", fontsize=8)
@@ -598,7 +614,7 @@ def plot_psth_axis(ax, payload):
 
 
 def plot_raster_axis(ax, payload, tick_height=0.7, tick_lw=0.6,
-                    show_segment_dividers=True):
+                    show_segment_dividers=True, center_ticks=False):
     segments = payload["segments"]
     spike_times = payload["spike_times_all"]
     t_bins = payload["trial_t_bins_all"]
@@ -625,9 +641,34 @@ def plot_raster_axis(ax, payload, tick_height=0.7, tick_lw=0.6,
             y_pos = np.array([0.5 * (n_rows - 1)])
         else:
             y_pos = np.linspace(0, n_rows - 1, n)
+        sp = seg["signed_proj"]
+        if np.any(sp < 0) or np.any(sp > 0):
+            if np.any(sp < 0) and np.any(sp > 0):
+                j = int(np.argmax(sp >= 0))
+                if j == 0:
+                    y_zero = y_pos[0]
+                else:
+                    sp_lo, sp_hi = sp[j - 1], sp[j]
+                    t = (0.0 - sp_lo) / (sp_hi - sp_lo)
+                    y_zero = y_pos[j - 1] + t * (y_pos[j] - y_pos[j - 1])
+            else:
+                y_zero = 0.5 * (y_pos[0] + y_pos[-1])
+            x0 = seg["start"] * dt * 1000.0
+            x1 = seg["end"] * dt * 1000.0
+            ax.add_patch(Rectangle(
+                (x0, -0.5), x1 - x0, y_zero + 0.5,
+                facecolor="#e8f0ff", edgecolor="none", alpha=0.42,
+                zorder=0.2,
+            ))
+            ax.add_patch(Rectangle(
+                (x0, y_zero), x1 - x0, n_rows - y_zero,
+                facecolor="#fde1dc", edgecolor="none", alpha=0.42,
+                zorder=0.2,
+            ))
         xs, ys = _segment_raster_lines(
             spike_times, t_bins, iix,
             seg["start"], seg["end"], y_pos, dt=dt, height=tick_height,
+            center_ticks=center_ticks,
         )
         if xs.size:
             all_xs.append(xs); all_ys.append(ys)
@@ -648,7 +689,7 @@ def plot_raster_axis(ax, payload, tick_height=0.7, tick_lw=0.6,
     # Left axis: 0 / N_trials with terse title.
     ax.set_yticks([0, n_rows])
     ax.set_yticklabels(["0", str(n_rows)])
-    ax.set_ylabel("Trials, by gaze along oriented axis", fontsize=8)
+    ax.set_ylabel("Trials", fontsize=8)
     ax.tick_params(axis="y", labelsize=7, direction="in", length=3, left=True)
 
     # Single color strip to the right of the raster, for the last segment.
@@ -687,8 +728,8 @@ def plot_raster_axis(ax, payload, tick_height=0.7, tick_lw=0.6,
         else:
             y_zero = 0.5 * (y_pos_last[0] + y_pos_last[-1])
         ax_r.set_yticks([y_pos_last[0], y_zero, y_pos_last[-1]])
-        ax_r.set_yticklabels([f"{sp[0]:+.2f}", "0", f"{sp[-1]:+.2f}"])
-        ax_r.set_ylabel("Gaze proj. (°)", fontsize=8, labelpad=-5)
+        ax_r.set_yticklabels([_fmt_signed_deg(sp[0]), "0",
+                              _fmt_signed_deg(sp[-1])])
         # Pad past the color strip so tick labels don't overlap it.
         ax_r.tick_params(axis="y", labelsize=7, direction="in", length=3,
                          pad=12)
@@ -696,6 +737,61 @@ def plot_raster_axis(ax, payload, tick_height=0.7, tick_lw=0.6,
             s.set_visible(False)
 
     return ax
+
+
+def plot_trial_order_raster_axis(ax, payload, tick_height=0.7, tick_lw=0.55,
+                                 show_segment_dividers=True,
+                                 center_ticks=False):
+    """Raster for the same trial pool as the gaze-sorted panel, ordered by
+    original trial index instead of gaze projection."""
+    segments = payload["segments"]
+    spike_times = payload["spike_times_all"]
+    t_bins = payload["trial_t_bins_all"]
+    total_start_bin, total_end_bin = payload["total_window"]
+    total_dur_ms = (total_end_bin - total_start_bin) * DT * 1000.0
+
+    n_rows = max((len(s["iix"]) for s in segments), default=0)
+    if n_rows == 0:
+        ax.set_title("no valid trials")
+        return ax
+
+    all_xs, all_ys = [], []
+    for seg in segments:
+        iix = np.sort(np.asarray(seg["iix"], dtype=int))
+        if iix.size == 0:
+            continue
+        if iix.size == 1:
+            y_pos = np.array([0.5 * (n_rows - 1)])
+        else:
+            y_pos = np.linspace(0, n_rows - 1, iix.size)
+        xs, ys = _segment_raster_lines(
+            spike_times, t_bins, iix, seg["start"], seg["end"], y_pos,
+            dt=DT, height=tick_height, center_ticks=center_ticks,
+        )
+        if xs.size:
+            all_xs.append(xs)
+            all_ys.append(ys)
+
+    if all_xs:
+        ax.plot(np.concatenate(all_xs), np.concatenate(all_ys),
+                color="k", lw=tick_lw, rasterized=True, zorder=3)
+
+    if show_segment_dividers:
+        for seg in segments[1:]:
+            x_ms = seg["start"] * DT * 1000.0
+            ax.axvline(x_ms, color="0.7", lw=0.4, ls="-", alpha=0.7, zorder=0)
+
+    ax.set_xlim(0, total_dur_ms)
+    ax.set_ylim(n_rows, 0)
+    ax.set_xlabel("")
+    ax.set_yticks([0, n_rows])
+    ax.set_yticklabels(["0", str(n_rows)])
+    ax.set_ylabel("Trials", fontsize=8, labelpad=1)
+    ax.tick_params(direction="in", length=3, labelsize=7)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    return ax
+
 
 def _add_block_label(ax, letter, dx=-22, dy=6):
     ax.annotate(
@@ -766,13 +862,22 @@ def plot_panel_d_roi(ax=None, subject=SUBJECT, date=DATE, cell=DEFAULT_CELL,
     roi_extent = _cropped_roi_extent(payload)
     ax.set_xlim(roi_extent[0], roi_extent[1])
     ax.set_ylim(roi_extent[2], roi_extent[3])
+    seg = payload["segments"][payload["example_segment_idx"]]
+    roi_center = (
+        0.5 * (roi_extent[0] + roi_extent[1]),
+        0.5 * (roi_extent[2] + roi_extent[3]),
+    )
+    _draw_projection_line(
+        ax, float(seg["slope"]), lw=0.75, color="0.25", linestyle="--",
+        point=roi_center,
+    )
 
     _style_roi_axis(ax)
     ax.set_yticks([-0.5, 0.0, 0.5])
-    ax.set_yticklabels(["-0.5", "0", "0.5"])
+    ax.set_yticklabels([_fmt_deg(-0.5), "0", _fmt_deg(0.5)])
     ax.set_xlabel("")
     ax.set_ylabel("")
-    ax.set_title("Single unit STA", fontsize=8, pad=2)
+    ax.set_title("Single unit RF", fontsize=8, pad=2)
 
     if panel_letter is not None:
         _add_block_label(ax, panel_letter)
@@ -794,8 +899,28 @@ def plot_panel_d_gaze(ax=None, subject=SUBJECT, date=DATE, cell=DEFAULT_CELL,
     ax.set_xlim(-eye_half, eye_half)
     ax.set_ylim(-eye_half, eye_half)
     seg = payload["segments"][payload["example_segment_idx"]]
-    _draw_projection_line(ax, float(seg["slope"]), lw=1.4, color="0.25")
+    _draw_projection_line(
+        ax, float(seg["slope"]), lw=0.75, color="0.25", linestyle="--",
+    )
     _style_top_axis(ax, eye_half)
+    from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+    proj_vmax = _global_proj_vmax(payload)
+    sm = mpl.cm.ScalarMappable(
+        norm=mpl.colors.Normalize(vmin=-proj_vmax, vmax=proj_vmax),
+        cmap=plt.cm.coolwarm,
+    )
+    cax = inset_axes(
+        ax, width="5%", height="58%", loc="center right",
+        bbox_to_anchor=(0.18, 0.0, 1.0, 1.0),
+        bbox_transform=ax.transAxes, borderpad=0.0,
+    )
+    cb = ax.figure.colorbar(sm, cax=cax, ticks=[-proj_vmax, 0, proj_vmax])
+    cb.ax.invert_yaxis()
+    cb.ax.set_yticklabels([
+        _fmt_signed_deg(-proj_vmax), "0", _fmt_signed_deg(proj_vmax),
+    ])
+    cb.ax.tick_params(labelsize=5.5, length=2, pad=1)
+    cb.outline.set_linewidth(0.4)
     ax.set_xlabel("")
     ax.set_ylabel("")
     ax.set_title("Trial fixations", fontsize=8, pad=2)
@@ -806,29 +931,57 @@ def plot_panel_d_gaze(ax=None, subject=SUBJECT, date=DATE, cell=DEFAULT_CELL,
     return fig, ax
 
 
+def plot_panel_trial_order_raster(ax=None, subject=SUBJECT, date=DATE,
+                                  cell=DEFAULT_CELL, refresh=False,
+                                  panel_letter=None, tick_height=1.35,
+                                  tick_lw=0.75):
+    payload = load_cell_payload(subject, date, cell, refresh=refresh)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(2.4, 1.2), constrained_layout=True)
+    else:
+        fig = ax.figure
+
+    plot_trial_order_raster_axis(
+        ax, payload, tick_height=tick_height, tick_lw=tick_lw,
+        center_ticks=True,
+    )
+    ax.tick_params(labelbottom=False)
+    if panel_letter is not None:
+        _add_block_label(ax, panel_letter, dx=-8, dy=-12)
+    return fig, ax
+
+
 def plot_panel_ef(fig=None, subject=SUBJECT, date=DATE, cell=DEFAULT_CELL,
                   refresh=False, panel_letters=("F", "E"),
-                  vertical_pad=(0.0, 0.0), raster_height=2.6):
+                  vertical_pad=(0.0, 0.0), raster_height=2.6,
+                  psth_height=0.8, raster_tick_height=1.35,
+                  raster_tick_lw=0.75):
     payload = load_cell_payload(subject, date, cell, refresh=refresh)
 
     if fig is None:
         fig = plt.figure(figsize=(2.4, 6.0), constrained_layout=True)
 
     top_pad, bottom_pad = vertical_pad
+    panel_hspace = 0.10 if raster_height < 1.2 or psth_height < 0.8 else 0.05
     if top_pad or bottom_pad:
         gs = fig.add_gridspec(
             4, 1,
-            height_ratios=[top_pad, raster_height, 0.8, bottom_pad],
-            hspace=0.05,
+            height_ratios=[top_pad, raster_height, psth_height, bottom_pad],
+            hspace=panel_hspace,
         )
         ax_raster = fig.add_subplot(gs[1])
         ax_psth = fig.add_subplot(gs[2], sharex=ax_raster)
     else:
-        gs = fig.add_gridspec(2, 1, height_ratios=[raster_height, 0.8], hspace=0.05)
+        gs = fig.add_gridspec(2, 1, height_ratios=[raster_height, psth_height],
+                              hspace=panel_hspace)
         ax_raster = fig.add_subplot(gs[0])
         ax_psth = fig.add_subplot(gs[1], sharex=ax_raster)
 
-    plot_raster_axis(ax_raster, payload)
+    plot_raster_axis(
+        ax_raster, payload, tick_height=raster_tick_height,
+        tick_lw=raster_tick_lw, center_ticks=True,
+    )
     plot_psth_axis(ax_psth, payload)
 
     ax_raster.tick_params(labelbottom=False)

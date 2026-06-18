@@ -1,6 +1,6 @@
 # Local BackImage I_z Pairing Revisit
 
-Last curated: 2026-06-17.
+Last curated: 2026-06-18.
 
 ## Purpose
 
@@ -369,6 +369,146 @@ actual_paired ~= matched_unpaired but edge_axis > edge_orthogonal:
 
 actual_paired < matched_unpaired or rotated_actual > actual_paired:
   do not claim image-specific trace matching.
+```
+
+## Current Clean Status
+
+The first local-pairing pathfinders remain diagnostic only. They produced an
+encouraging fixed-manifest `K_unpaired=32` pyramid result at `0.25x`, but a code
+review found two implementation mismatches:
+
+```text
+1. With --window-manifest, the runner built the matched-unpaired trace bank
+   from the same 128 analysis windows. The K=32 control was therefore a
+   within-manifest permutation baseline, not the intended full strict
+   drift-only trace-bank baseline.
+
+2. The local runner used reduced feature geometry defaults:
+   patch_size_px=160, latent_crop_px=96, local_field_grid=4.
+   This yielded gabor_local_field (N, 1152) and pyramid_local_field (N, 768),
+   rather than the corrected aggregate/local-screen convention:
+   patch_size_px=540, latent_crop_px=151, local_field_grid=8,
+   gabor_local_field (N, 4608), pyramid_local_field (N, 3072).
+```
+
+Therefore the current local result should be described as a useful pathfinder:
+
+```text
+On one fixed window set, actual image-trace pairing beat a high-K matched
+within-manifest empirical baseline for small-scale pyramid temporal summaries.
+```
+
+It should not be described as:
+
+```text
+Actual image-trace pairing has beaten the intended full matched-unpaired
+empirical control.
+```
+
+The corrected runner now freezes the actual analysis windows while building the
+matched-unpaired trace bank from the full filtered source pool, and uses the
+aggregate feature geometry defaults listed above.
+
+A subsequent review of the corrected full-pool run found additional analysis
+bookkeeping caveats:
+
+```text
+1. decode_contrasts.csv is diagnostic only for matched-unpaired local claims.
+   It compares actual paired responses against the averaged K-trace
+   matched_unpaired_empirical response condition. The claim-relevant local
+   contrast is incremental_gain_contrasts.csv, which uses mean-over-sample
+   matched-unpaired gains.
+
+2. The original K_unpaired implementation selected deterministic nearest-K
+   matched traces; seed changes did not sample new matched controls for a fixed
+   manifest. The runner should instead sample without replacement from a
+   near-match candidate pool and write match distance/rank diagnostics.
+
+3. Runs without --window-manifest sample a new accepted-window set after strict
+   filtering. They are pathfinders, not seed replications. Use the saved
+   analysis_images.csv as a fixed manifest for control-draw or rerun
+   comparisons.
+
+4. Absolute temporal summaries such as temporal_pca and temporal_dct encode
+   R_static + R_motion_absolute in the incremental model. They should be read as
+   preservation/absolute-response diagnostics. Motion-contribution claims should
+   prioritize delta summaries or an explicit static-plus-delta feature contract.
+```
+
+Completed clean runs:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_pyramid_rel025_1_v1
+
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_gabor_pyramid_rel025_1_seed7_v1
+```
+
+Both runs used the same fixed `128`-image manifest, the full strict filtered
+trace pool (`3013` trace-bank rows), sampled matched-unpaired controls
+(`K_unpaired=32`), grouped-by-image decoding, the canonical `756`-unit twin, and
+scales `0.25x` and `1x`. Motion QC was clean: `0` same-trial matched controls,
+`0` clipping, and median effective/requested RMS `1.0` for every
+family/scale. The second run confirmed corrected feature dimensions:
+
+```text
+gabor_local_field   (128, 4608)
+pyramid_local_field (128, 3072)
+```
+
+The claim-relevant local-pairing file is:
+
+```text
+incremental_gain_contrasts.csv
+```
+
+Do not use `decode_contrasts.csv` as the local-pairing headline because its
+matched-unpaired condition decodes the averaged K-trace response vector. The
+local-pairing contrast uses mean-over-sample gains.
+
+Clean actual-paired minus matched-unpaired result, seed 7:
+
+```text
+delta_mean, gabor k=4,   0.25x: +9.95, CI [+0.73, +20.62]
+delta_mean, gabor k=4,   1x:    +8.27, CI [+2.70, +14.79]
+delta_mean, gabor k=8,   0.25x: +6.33, CI [+1.27, +11.90]
+delta_mean, gabor k=8,   1x:    +6.51, CI [+2.77, +11.07]
+
+delta_mean, pyramid k=4, 0.25x: +6.89, CI [+1.66, +12.17]
+delta_mean, pyramid k=4, 1x:    +2.63, CI [-1.26, +6.55]
+delta_mean, pyramid k=8, 0.25x: +6.09, CI [+1.51, +10.53]
+delta_mean, pyramid k=8, 1x:    +3.79, CI [+1.46, +6.28]
+```
+
+This is the current positive local result:
+
+```text
+Actual local fixation traces beat matched empirical trace swaps for
+motion-induced feature-response deltas, and this survives in both Gabor and
+pyramid local-field features.
+```
+
+The result does not yet support a broad temporal-code claim. For
+`temporal_pca` and `temporal_dct`, actual-minus-matched mostly crosses zero or
+goes negative, especially for Gabor. Actual paired traces also do not cleanly
+beat the `rotated_actual_90` control. Therefore the current claim boundary is:
+
+```text
+Local image-trace pairing carries extra feature-relevant response delta beyond
+matched aggregate empirical FEM statistics, but this has not yet become a
+general temporal-code result or a unique-axis-optimality result.
+```
+
+Relationship to the aggregate result:
+
+```text
+The aggregate BackImage FEM analysis shows that empirical drift statistics are
+useful distributionally. The local-pairing result adds a narrower possibility:
+the specific trace paired with its local image/fixation context can carry extra
+feature-relevant delta signal beyond matched empirical trace swaps. This is an
+additional local-image-contingent benefit, not a replacement for the aggregate
+distributional claim.
 ```
 
 ## Full Run

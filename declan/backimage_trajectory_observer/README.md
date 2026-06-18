@@ -109,6 +109,12 @@ compact_only:
 compact_removed:
   lambda_zero + (I - P_U) Delta
 
+log_compact_only:
+  lambda_zero * exp(P_U log(lambda_full / lambda_zero))
+
+log_compact_removed:
+  lambda_zero * exp((I - P_U) log(lambda_full / lambda_zero))
+
 random_k:
   compact_only with matched random subspaces
 
@@ -126,6 +132,13 @@ The first implemented analyzer is:
 
 ```text
 declan/backimage_trajectory_observer/analyze_compact_mechanism.py
+```
+
+Supporting follow-up utilities:
+
+```text
+declan/backimage_trajectory_observer/build_image_disjoint_compact_basis.py
+declan/backimage_trajectory_observer/summarize_compact_mechanism_followups.py
 ```
 
 It writes:
@@ -159,6 +172,50 @@ response cache if present, otherwise from `response_cache_manifest.csv`, and
 finally from `observer_trials.csv` for older runs. Future response-cache files
 written by `run_backimage_trajectory_table_observer.py` include
 `nearest_trajectory_distance` in both the `.npz` table and manifest.
+
+### Compact-Mechanism Promotion Gates
+
+The compact-mechanism result should not be promoted from diagnostic to a strong
+mechanistic claim until the following checks are satisfied, with
+`matched_static_response` as the primary candidate-set mode:
+
+```text
+compact_only > random_k
+compact_only > unit_shuffle_compact
+compact_only > gain_only
+compact_only >= or > static_pc_k
+compact_removed loses the exact-table rescue
+compact-only clipping remains low
+compact-removed loss is not explained by invalid projected negative rates
+the qualitative pattern survives an image-disjoint compact basis
+```
+
+The first full image-disjoint run passes the central qualitative gate:
+compact-only preserves much of the exact-table true-score rescue and beats
+random, unit-shuffle, and gain controls. Static-response PCs remain the serious
+open control because they recover substantial rescue too. The image-disjoint
+result should therefore be read as compact-geometry sufficiency above
+random/unit-shuffle/gain controls, not yet as unique superiority over every
+generic low-dimensional static-response subspace.
+
+`log_compact_only` and `log_compact_removed` provide that clipping-safe
+companion diagnostic. They project the log-rate ratio
+`log(lambda_full / lambda_zero)` and exponentiate back to rates, so the
+reconstructed response tables are positive by construction. These log-rate
+variants are not the same additive delta decomposition as `compact_only` and
+`compact_removed`; they are a robustness check for whether the necessity
+conclusion survives without projected negative rates. In the first
+image-disjoint run, `log_compact_removed` has zero clipping and removes most of
+the true-score rescue, reducing the concern that the linear compact-removal
+failure was only a negative-rate artifact.
+
+The strategic bridge being tested is:
+
+```text
+compact FEM geometry
+  -> carries motion-dependent likelihood structure
+  -> supports trajectory-marginalized natural-image inference
+```
 
 ## Relationship To Existing BackImage Aggregate Work
 
@@ -599,7 +656,7 @@ Suggested size:
 n_images = 32 or 64
 k_trajectories = 8 or 16
 families = static, empirical, ou_matched
-scales = 0.5x, 1x
+scales = 0.5x, 1x, 2.0x
 candidate_set_modes = random_global, matched_structure_bins, hard_negative_structure
 ```
 
@@ -615,6 +672,11 @@ nearest trajectory rank improves over chance
 Keep Stage 2 deliberately narrow. If it fails, we should know whether the
 failure is in the cache/likelihood/candidate-set/posterior machinery before
 adding Brownian, rotated, shuffled, and wider scale sweeps.
+
+Keep the `2.0x` scale as the above-natural sentinel, paired with `0.5x` for a
+half/natural/double sweep. Treat it as a check against the trivial interpretation
+that more motion is simply better or simply more damaging to zero-eye observers,
+and audit effective RMS and clipping.
 
 `random_global` is a positive control only. The primary Stage 2 readout should
 come from at least one of:
@@ -635,7 +697,7 @@ Suggested size:
 n_images = 128
 k_trajectories = 16 or 32
 families = static, empirical, ou_matched, brownian_matched, rotated_empirical
-scales = 0.25x, 0.5x, 1x
+scales = 0.25x, 0.5x, 1x, 2.0x
 ```
 
 Add:

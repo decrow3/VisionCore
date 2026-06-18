@@ -8,9 +8,10 @@ image-geometry support tables. The figure is intended as the functional
 counterpart to the paper's FEM-linked reafferent variability story: self-generated
 retinal motion is not only shared variability to subtract, but can supply
 feature-relevant temporal samples while being constrained by local
-image-preserving geometry. Panel E is arranged as prediction followed by
+image-preserving geometry. Panels D-E are arranged as prediction followed by
 behavior: edge-parallel motion is predicted to preserve local image/V1-twin
-structure, and measured drift axes are biased toward those stable directions.
+structure, and measured drift axes overrepresent edge-parallel orientation
+zones relative to a uniform axial baseline.
 The older active-sensing movie-information figure is now preserved as
 historical/supporting context rather than the default Figure 4 active-sensing
 output.
@@ -22,7 +23,7 @@ outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
   backimage_aggregate_fem_information_n256_k48_rel025-2_drift_only_common_unclipped_patched/
     incremental_static_plus_motion_relids
 outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
-  backimage_image_structure_reviewed_v2_screenfiltered
+  backimage_image_structure_reviewed_v2_screenfiltered_yfix
 outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
   backimage_edge_parallel_stability_screen_yfix_n256_pop256
 ```
@@ -52,10 +53,10 @@ Main claim boundary:
 - The supported claim is distributional and scale/readout scoped: empirical
   drift-like motion supplies feature-relevant temporal samples beyond static
   responses and robustly beats OU-like controls, with the clearest
-  Brownian/rotated advantage at small scales.
-- The local-geometry panel is the payoff: edge-parallel motion is predicted to
-  preserve local image/V1-twin structure, and measured drift axes are biased
-  toward those stable directions.
+  Brownian/rotated advantage at small scales retained in the control panel.
+- Panels D-E are the local-geometry payoff: edge-parallel motion is predicted to
+  preserve local image/V1-twin structure, and measured drift axes overrepresent
+  edge-parallel orientation zones.
 - Do not read this as exact trajectory prediction; the supported claim is a
   functional constraint on drift geometry.
 - Motion sanity checks are documented in the generated stats manifest rather

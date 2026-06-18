@@ -16,7 +16,9 @@ from declan.axis_conditioned_backimage_trajectory_observer.axis_conditioned_trac
     trace_metrics,
 )
 from declan.fixation_statistics_by_stimulus.run_backimage_trajectory_table_observer import (
+    _axis_candidate_meta_rows,
     _axis_per_candidate_prior_trajectories,
+    _axis_shared_sampled_source_indices,
     _nested_duplicate_trace_count,
     _trace_from_item,
     _trajectory_spec,
@@ -403,6 +405,102 @@ def test_per_candidate_axis_catalog_rejects_rendered_near_duplicate_traces() -> 
     assert len(traces) == len(specs) == 2
     assert specs[0][0]["source_row"] == 4
     assert specs[1][0]["source_row"] == 4
+
+
+def test_per_candidate_axis_families_can_share_source_samples() -> None:
+    trace = _source_trace()
+    trace_bank = [
+        {
+            "source_row": idx,
+            "session": "s",
+            "trace": trace * scale,
+            "observed_rms_deg": 0.08 * scale,
+            "path_length_deg": 0.5 * scale,
+            "lag1_autocorr": 0.1,
+            "source_max_radius_deg": 0.1,
+            "source_path_length_deg": 0.5 * scale,
+            "source_speed_p95_deg_s": 1.0,
+            "n_microsaccade_events": 0,
+        }
+        for idx, scale in [(1, 1.0), (2, 0.9), (3, 0.8), (4, 0.7), (5, 0.6), (6, 0.5)]
+    ]
+    work = pd.DataFrame(
+        {
+            "source_row": [1, 3],
+            "image_edge_axis_deg": [0.0, 90.0],
+        }
+    )
+    args = SimpleNamespace(
+        trajectory_prior_mode="leave_one_out",
+        loo_exclude_trace_rmse_deg=1e-9,
+        max_trace_source_rms_deg=None,
+        max_trace_source_radius_deg=None,
+        max_trace_source_path_length_deg=None,
+        max_rendered_trace_path_length_deg=None,
+        max_source_trace_path_length_deg=None,
+        max_trace_source_speed_p95_deg_s=None,
+        max_trace_source_microsaccade_events=None,
+        axis_source_column="image_edge_axis_deg",
+        axis_template_mode="same_dominant_projection",
+        axis_match_policy="strict",
+        max_rms_deg=0.2,
+        seed=3,
+    )
+    candidate_meta_rows = _axis_candidate_meta_rows(
+        candidate_indices=[0, 1],
+        candidate_ids=["true", "other"],
+        work=work,
+        args=args,
+    )
+    sampled = _axis_shared_sampled_source_indices(
+        current_source_row=1,
+        observation_trace=trace,
+        prior_families=["axis_edge_parallel", "axis_edge_orthogonal"],
+        prior_scale=0.5,
+        n_prior_trajectories=2,
+        trace_bank=trace_bank,
+        candidate_meta_rows=candidate_meta_rows,
+        args=args,
+        rng=np.random.default_rng(4),
+    )
+    _par_traces, par_specs, _true_idx, par_meta = _axis_per_candidate_prior_trajectories(
+        current_source_row=1,
+        observation_trace=trace,
+        prior_family="axis_edge_parallel",
+        prior_scale=0.5,
+        n_prior_trajectories=2,
+        trace_bank=trace_bank,
+        candidate_indices=[0, 1],
+        candidate_ids=["true", "other"],
+        work=work,
+        args=args,
+        rng=np.random.default_rng(0),
+        sampled_bank_indices=sampled,
+    )
+    _orth_traces, orth_specs, _true_idx, orth_meta = _axis_per_candidate_prior_trajectories(
+        current_source_row=1,
+        observation_trace=trace,
+        prior_family="axis_edge_orthogonal",
+        prior_scale=0.5,
+        n_prior_trajectories=2,
+        trace_bank=trace_bank,
+        candidate_indices=[0, 1],
+        candidate_ids=["true", "other"],
+        work=work,
+        args=args,
+        rng=np.random.default_rng(99),
+        sampled_bank_indices=sampled,
+    )
+    assert par_meta["axis_shared_source_catalog"] is True
+    assert orth_meta["axis_shared_source_catalog"] is True
+    for candidate_index in range(2):
+        par_source_rows = [spec["source_row"] for spec in par_specs[candidate_index]]
+        orth_source_rows = [spec["source_row"] for spec in orth_specs[candidate_index]]
+        assert par_source_rows == orth_source_rows
+        assert [spec["sample_index"] for spec in par_specs[candidate_index]] == [0, 1]
+        assert [spec["sample_index"] for spec in orth_specs[candidate_index]] == [0, 1]
+        assert {spec["axis_relation"] for spec in par_specs[candidate_index]} == {"parallel"}
+        assert {spec["axis_relation"] for spec in orth_specs[candidate_index]} == {"orthogonal"}
 
 
 def test_per_candidate_duplicate_count_is_within_candidate_only() -> None:

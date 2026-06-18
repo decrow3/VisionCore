@@ -500,31 +500,17 @@ def _prior_trajectories(
     return traces, specs, true_index, rejection_meta
 
 
-def _axis_per_candidate_prior_trajectories(
+def _axis_candidate_meta_rows(
     *,
-    current_source_row: int,
-    observation_trace: np.ndarray,
-    prior_family: str,
-    prior_scale: float,
-    n_prior_trajectories: int,
-    trace_bank: list[dict[str, Any]],
     candidate_indices: list[int],
     candidate_ids: list[str],
     work: pd.DataFrame,
     args: argparse.Namespace,
-    rng: np.random.Generator,
-) -> tuple[list[list[np.ndarray]], list[list[dict[str, Any]]], int, dict[str, Any]]:
-    """Build axis-conditioned catalogs using each candidate patch's own axis."""
-    if str(prior_family) not in AXIS_CONDITIONED_FAMILIES:
-        raise ValueError(f"per-candidate axis catalog requires an axis-conditioned family, got {prior_family!r}")
-    if str(args.trajectory_prior_mode) != "leave_one_out":
-        raise ValueError("axis_catalog_mode='per_candidate' currently requires trajectory_prior_mode='leave_one_out'")
-    if int(n_prior_trajectories) < 1:
-        raise ValueError("n_prior_trajectories must be positive for per-candidate axis catalogs")
+) -> list[dict[str, Any]]:
     if len(candidate_indices) != len(candidate_ids):
         raise ValueError("candidate_indices and candidate_ids must have the same length")
 
-    candidate_meta_rows: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for candidate_index, candidate_pos in enumerate(candidate_indices):
         candidate_row = work.iloc[int(candidate_pos)]
         candidate_axis = float(candidate_row[str(args.axis_source_column)])
@@ -533,7 +519,7 @@ def _axis_per_candidate_prior_trajectories(
                 f"Non-finite candidate axis for candidate_index={candidate_index}, "
                 f"source_row={candidate_row.get('source_row', 'unknown')}"
             )
-        candidate_meta_rows.append(
+        rows.append(
             {
                 "candidate_index": int(candidate_index),
                 "candidate_id": str(candidate_ids[int(candidate_index)]),
@@ -541,6 +527,21 @@ def _axis_per_candidate_prior_trajectories(
                 "axis_deg": float(candidate_axis),
             }
         )
+    return rows
+
+
+def _axis_per_candidate_retained_source_indices(
+    *,
+    current_source_row: int,
+    observation_trace: np.ndarray,
+    prior_family: str,
+    prior_scale: float,
+    trace_bank: list[dict[str, Any]],
+    candidate_meta_rows: list[dict[str, Any]],
+    args: argparse.Namespace,
+) -> tuple[list[int], dict[str, Any]]:
+    if str(prior_family) not in AXIS_CONDITIONED_FAMILIES:
+        raise ValueError(f"per-candidate axis catalog requires an axis-conditioned family, got {prior_family!r}")
     candidate_source_rows = sorted({int(row["source_row"]) for row in candidate_meta_rows})
     candidate_source_row_set = set(candidate_source_rows)
     rejection_meta = {
@@ -603,14 +604,108 @@ def _axis_per_candidate_prior_trajectories(
                 break
         if not reject_source:
             retained.append(int(bank_index))
+    return retained, rejection_meta
 
-    if len(retained) < int(n_prior_trajectories):
+
+def _axis_shared_sampled_source_indices(
+    *,
+    current_source_row: int,
+    observation_trace: np.ndarray,
+    prior_families: list[str],
+    prior_scale: float,
+    n_prior_trajectories: int,
+    trace_bank: list[dict[str, Any]],
+    candidate_meta_rows: list[dict[str, Any]],
+    args: argparse.Namespace,
+    rng: np.random.Generator,
+) -> list[int]:
+    retained_sets = []
+    retained_sizes: dict[str, int] = {}
+    for prior_family in prior_families:
+        retained, _meta = _axis_per_candidate_retained_source_indices(
+            current_source_row=int(current_source_row),
+            observation_trace=observation_trace,
+            prior_family=str(prior_family),
+            prior_scale=float(prior_scale),
+            trace_bank=trace_bank,
+            candidate_meta_rows=candidate_meta_rows,
+            args=args,
+        )
+        retained_sets.append(set(int(v) for v in retained))
+        retained_sizes[str(prior_family)] = int(len(retained))
+    shared = sorted(set.intersection(*retained_sets)) if retained_sets else []
+    if len(shared) < int(n_prior_trajectories):
+        raise ValueError(
+            f"Need {int(n_prior_trajectories)} shared retained source traces for per-candidate "
+            f"axis families={','.join(str(family) for family in prior_families)}, but only "
+            f"{len(shared)} are retained by every family; per-family retained sizes={retained_sizes}"
+        )
+    sampled = rng.choice(np.asarray(shared, dtype=int), size=int(n_prior_trajectories), replace=False)
+    return [int(v) for v in sampled]
+
+
+def _axis_per_candidate_prior_trajectories(
+    *,
+    current_source_row: int,
+    observation_trace: np.ndarray,
+    prior_family: str,
+    prior_scale: float,
+    n_prior_trajectories: int,
+    trace_bank: list[dict[str, Any]],
+    candidate_indices: list[int],
+    candidate_ids: list[str],
+    work: pd.DataFrame,
+    args: argparse.Namespace,
+    rng: np.random.Generator,
+    sampled_bank_indices: list[int] | None = None,
+) -> tuple[list[list[np.ndarray]], list[list[dict[str, Any]]], int, dict[str, Any]]:
+    """Build axis-conditioned catalogs using each candidate patch's own axis."""
+    if str(prior_family) not in AXIS_CONDITIONED_FAMILIES:
+        raise ValueError(f"per-candidate axis catalog requires an axis-conditioned family, got {prior_family!r}")
+    if str(args.trajectory_prior_mode) != "leave_one_out":
+        raise ValueError("axis_catalog_mode='per_candidate' currently requires trajectory_prior_mode='leave_one_out'")
+    if int(n_prior_trajectories) < 1:
+        raise ValueError("n_prior_trajectories must be positive for per-candidate axis catalogs")
+    candidate_meta_rows = _axis_candidate_meta_rows(
+        candidate_indices=candidate_indices,
+        candidate_ids=candidate_ids,
+        work=work,
+        args=args,
+    )
+    retained, rejection_meta = _axis_per_candidate_retained_source_indices(
+        current_source_row=int(current_source_row),
+        observation_trace=observation_trace,
+        prior_family=str(prior_family),
+        prior_scale=float(prior_scale),
+        trace_bank=trace_bank,
+        candidate_meta_rows=candidate_meta_rows,
+        args=args,
+    )
+
+    if sampled_bank_indices is None and len(retained) < int(n_prior_trajectories):
         raise ValueError(
             f"Need {int(n_prior_trajectories)} retained prior trace sources for per-candidate "
             f"family={prior_family!r}, but only {len(retained)} eligible sources are available "
             "after candidate-source and rendered-duplicate exclusion"
         )
-    sampled = rng.choice(np.asarray(retained, dtype=int), size=int(n_prior_trajectories), replace=False)
+    if sampled_bank_indices is None:
+        sampled = rng.choice(np.asarray(retained, dtype=int), size=int(n_prior_trajectories), replace=False)
+        rejection_meta["axis_shared_source_catalog"] = False
+    else:
+        sampled = np.asarray([int(v) for v in sampled_bank_indices], dtype=int)
+        if len(sampled) != int(n_prior_trajectories):
+            raise ValueError(
+                f"Expected {int(n_prior_trajectories)} sampled source indices, got {len(sampled)}"
+            )
+        invalid = sorted(set(int(v) for v in sampled).difference(retained))
+        if invalid:
+            raise ValueError(
+                f"Shared sampled source indices are not retained for family={prior_family!r}: {invalid[:8]}"
+            )
+        rejection_meta["axis_shared_source_catalog"] = True
+        rejection_meta["axis_shared_sampled_source_rows"] = ";".join(
+            str(int(trace_bank[int(bank_index)]["source_row"])) for bank_index in sampled
+        )
     all_traces: list[list[np.ndarray]] = []
     all_specs: list[list[dict[str, Any]]] = []
     for candidate_meta in candidate_meta_rows:
@@ -944,6 +1039,39 @@ def run(args: argparse.Namespace) -> Path:
                         patches.append(patch)
                         candidate_patch_meta.append(_meta)
 
+                axis_shared_sampled_bank_indices: list[int] | None = None
+                axis_per_candidate_families = [
+                    str(family)
+                    for family in prior_families
+                    if str(args.axis_catalog_mode) == "per_candidate"
+                    and str(family) in AXIS_CONDITIONED_FAMILIES
+                ]
+                if len(axis_per_candidate_families) > 1:
+                    axis_candidate_meta_rows = _axis_candidate_meta_rows(
+                        candidate_indices=[int(v) for v in cand["candidate_indices"]],
+                        candidate_ids=[str(v) for v in cand["candidate_ids"]],
+                        work=work,
+                        args=args,
+                    )
+                    axis_shared_sampled_bank_indices = _axis_shared_sampled_source_indices(
+                        current_source_row=true_source_row,
+                        observation_trace=obs_trace,
+                        prior_families=axis_per_candidate_families,
+                        prior_scale=float(scale),
+                        n_prior_trajectories=int(args.n_prior_trajectories),
+                        trace_bank=trace_bank,
+                        candidate_meta_rows=axis_candidate_meta_rows,
+                        args=args,
+                        rng=_child_rng(
+                            int(args.seed),
+                            "axis-shared-prior-source-set",
+                            true_source_row,
+                            float(scale),
+                            candidate_mode,
+                            args.trajectory_prior_mode,
+                        ),
+                    )
+
                 for prior_family in prior_families:
                     prior_rng = _child_rng(
                         int(args.seed),
@@ -972,6 +1100,7 @@ def run(args: argparse.Namespace) -> Path:
                                 work=work,
                                 args=args,
                                 rng=prior_rng,
+                                sampled_bank_indices=axis_shared_sampled_bank_indices,
                             )
                         )
                         for candidate_index, specs in enumerate(prior_specs_by_candidate):

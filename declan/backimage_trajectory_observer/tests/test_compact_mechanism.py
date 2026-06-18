@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from declan.backimage_trajectory_observer.build_image_disjoint_compact_basis import build as build_image_disjoint_basis
+from declan.backimage_trajectory_observer.build_image_disjoint_compact_basis import build_parser as build_image_disjoint_parser
 from declan.backimage_trajectory_observer.analyze_compact_mechanism import (
     _project_delta,
     _random_basis,
@@ -66,6 +68,26 @@ def test_compact_only_and_removed_shapes_match_full() -> None:
     assert removed_known.shape == known.shape
     assert removed_zero.shape == zero.shape
     assert np.allclose((compact_prior - zero[:, None]) + (removed_prior - zero[:, None]), prior - zero[:, None])
+
+
+def test_log_compact_removed_stays_positive() -> None:
+    rng = np.random.default_rng(22)
+    zero = rng.uniform(0.1, 1.0, size=(3, 5, 6))
+    prior = zero[:, None, :, :] * np.exp(rng.normal(scale=0.3, size=(3, 4, 5, 6)))
+    known = zero * np.exp(rng.normal(scale=0.3, size=(3, 5, 6)))
+    u = _random_basis(6, 2, rng)
+    log_removed_prior, log_removed_known, log_removed_zero = _variant_tables(
+        "log_compact_removed",
+        prior_full=prior,
+        known_full=known,
+        zero=zero,
+        u=u,
+    )
+    assert log_removed_prior.shape == prior.shape
+    assert log_removed_known.shape == known.shape
+    assert log_removed_zero.shape == zero.shape
+    assert np.min(log_removed_prior) > 0.0
+    assert np.min(log_removed_known) > 0.0
 
 
 def test_full_exact_reproduces_original_scores_on_toy_table() -> None:
@@ -295,6 +317,44 @@ def test_image_disjoint_basis_mode_accepts_declared_provenance() -> None:
         )
         analyze(args)
         assert (out_dir / "compact_mechanism_run_metadata.json").exists()
+
+
+def test_build_image_disjoint_basis_exports_verified_metadata() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        tfts = root / "tfts"
+        tangent_dir = tfts / "tangent_maps"
+        tangent_dir.mkdir(parents=True)
+        payload = {}
+        for i in range(6):
+            payload[f"obj{i}"] = {
+                "bx": np.eye(4)[i % 4].astype(float),
+                "by": np.roll(np.eye(4)[i % 4], 1).astype(float),
+                "image_id": i,
+            }
+        import pickle
+
+        with (tangent_dir / "twin_tangent_maps.pkl").open("wb") as handle:
+            pickle.dump({"delta_arcmins": [0.25], "object_payload": {0.25: payload}}, handle)
+        out_dir = root / "out"
+        args = build_image_disjoint_parser().parse_args(
+            [
+                "--tfts-root",
+                str(tfts),
+                "--out-dir",
+                str(out_dir),
+                "--n-folds",
+                "2",
+                "--heldout-fold",
+                "0",
+                "--quiet",
+            ]
+        )
+        basis_path = build_image_disjoint_basis(args)
+        with np.load(basis_path, allow_pickle=True) as data:
+            assert bool(np.asarray(data["image_disjoint"]).reshape(-1)[0])
+            assert str(np.asarray(data["basis_mode"]).reshape(-1)[0]) == "image_disjoint"
+            assert data["basis"].shape[0] == 4
 
 
 def test_compact_score_validation_rejects_bad_inputs() -> None:

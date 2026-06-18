@@ -52,9 +52,9 @@ def plot_panel_e(ax=None, refresh=False, data=None):
         # Raw de-emphasized: dashed, open markers. Corrected is the hero: solid,
         # filled markers. Linestyle convention matches panel D.
         ax.errorbar(WINDOWS_MS, s_unc, yerr=_yerr(s_unc, ci_unc), fmt="o--",
-                    color=color, lw=1.5, capsize=3, markerfacecolor="white")
+                    color=color, lw=1.5, capsize=0, markerfacecolor="white")
         ax.errorbar(WINDOWS_MS, s_cor, yerr=_yerr(s_cor, ci_cor), fmt="o-",
-                    color=color, lw=1.5, capsize=3)
+                    color=color, lw=1.5, capsize=0)
         series[subj] = dict(ci_cor=ci_cor, p=p_list)
 
     ax.axhline(1.0, color="gray", linestyle=":", alpha=0.6)
@@ -76,7 +76,7 @@ def plot_panel_e(ax=None, refresh=False, data=None):
 
     ax.set_ylim(bottom=overall_bot - 0.04 * span)
     ax.set_xlabel("Counting window (ms)")
-    ax.set_ylabel("Population Fano factor")
+    ax.set_ylabel("Variability (Fano factor)")
     ax.set_xticks(WINDOWS_MS)
     ax.set_xticklabels([f"{w:.0f}" for w in WINDOWS_MS])
     ax.spines["top"].set_visible(False)

@@ -6,9 +6,8 @@ Compose a combined Figure 2/3 main figure:
     C: Fano factor before/after FEM correction
     D: compact covariance decomposition
     E: mean pairwise Fisher-z noise correlations before/after correction
-    F: pairwise noise correlations at 8 ms
-    G: PSTH/FEM participation ratio
-    H: PSTH/FEM subspace alignment
+    F: PSTH/FEM participation ratio by session
+    G: PSTH/FEM subspace alignment
 
 Usage:
     uv run declan/fig2/generate_figure2_3_combined.py
@@ -36,16 +35,14 @@ from generate_fig2a import (
 )
 from generate_fig2c import plot_panel_c as plot_fem_fraction
 from generate_fig2e import plot_panel_e as plot_fano
-from generate_fig3b import plot_panel_b as plot_pairwise_noise_corr
 from generate_fig3c import plot_panel_c as plot_noise_corr
-from generate_fig3f import plot_panel_f as plot_participation_ratio
-from generate_fig3g import plot_panel_g as plot_subspace_alignment
 
 TARGET_SESSION = "Allen_2022-02-16"
 WINDOW_IDX = 0
 OMIT_SUBJECTS = {"Luke"}
 POOLED_SUBJECT = "Pooled"
 POOLED_COLOR = "tab:blue"
+SIG_ALPHA = 0.01
 
 
 def _label(ax, letter):
@@ -322,18 +319,18 @@ def _plot_covariance_mismatch_panel(fig, subplot_spec):
 def _make_compact_cov_axes(fig, subplot_spec):
     gs = GridSpecFromSubplotSpec(
         2,
-        9,
+        7,
         subplot_spec=subplot_spec,
-        width_ratios=[1.0, 0.12, 1.0, 0.12, 1.0, 0.05, 0.22, 0.12, 1.0],
+        width_ratios=[1.0, 0.12, 1.0, 0.12, 1.0, 0.12, 1.0],
         height_ratios=[1.0, 1.0],
         wspace=0.04,
         hspace=0.12,
     )
     top_mats = [fig.add_subplot(gs[0, c]) for c in (0, 2, 4)]
-    bot_mats = [fig.add_subplot(gs[1, c]) for c in (0, 2, 4, 8)]
+    bot_mats = [fig.add_subplot(gs[1, c]) for c in (0, 2, 4, 6)]
     top_seps = [fig.add_subplot(gs[0, c]) for c in (1, 3)]
-    bot_seps = [fig.add_subplot(gs[1, c]) for c in (1, 3, 7)]
-    note_axes = [fig.add_subplot(gs[:, 6])]
+    bot_seps = [fig.add_subplot(gs[1, c]) for c in (1, 3, 5)]
+    note_axes = []
     for ax in top_seps + bot_seps + note_axes:
         ax.axis("off")
     return top_mats, top_seps, bot_mats, bot_seps, note_axes
@@ -343,6 +340,23 @@ def _shift_axes_down(axes, dy=0.018):
     for ax in axes:
         pos = ax.get_position()
         ax.set_position([pos.x0, pos.y0 - dy, pos.width, pos.height])
+
+
+def _expand_axes_group_from_lower_right(axes, scale=1.055):
+    positions = [ax.get_position() for ax in axes]
+    left = min(p.x0 for p in positions)
+    right = max(p.x1 for p in positions)
+    bottom = min(p.y0 for p in positions)
+
+    for ax, pos in zip(axes, positions):
+        new_x0 = right - (right - pos.x0) * scale
+        new_y0 = bottom + (pos.y0 - bottom) * scale
+        ax.set_position([
+            new_x0,
+            new_y0,
+            pos.width * scale,
+            pos.height * scale,
+        ])
 
 
 def _plot_compact_cov_decomp(fig, subplot_spec, data, letter="D"):
@@ -447,16 +461,16 @@ def _plot_compact_cov_decomp(fig, subplot_spec, data, letter="D"):
         **arrow_kw))
 
     bot_axes[3].annotate(
-        "Independent\nvariance\nalong\ndiagonal",
-        xy=(0.42, 0.58),
+        "Independent variance\nalong diagonal",
+        xy=(0.46, 0.56),
         xycoords=bot_axes[3].transAxes,
-        xytext=(1.02, 0.73),
+        xytext=(0.72, 1.24),
         textcoords=bot_axes[3].transAxes,
         arrowprops=dict(arrowstyle="->", color="0.45", lw=1.2,
                         shrinkA=2, shrinkB=2),
         fontsize=7.2,
-        ha="right",
-        va="center",
+        ha="center",
+        va="bottom",
         clip_on=False,
     )
 
@@ -483,7 +497,7 @@ def _plot_noise_corr_panel(fig, subplot_spec, data):
     _, primary = plot_noise_corr(ax=ax_main, data=data)
     _normalize_axis_text(primary)
     _label(primary, "E")
-    primary.yaxis.set_label_coords(-0.04, 0.5)
+    primary.yaxis.set_label_coords(-0.15, 0.5)
     _add_condition_legend(primary, loc="upper left")
     primary.text(
         0.12,
@@ -498,10 +512,147 @@ def _plot_noise_corr_panel(fig, subplot_spec, data):
     return primary
 
 
-def _add_pr_annotations(ax):
-    legend = ax.get_legend()
-    if legend is not None:
-        legend.remove()
+def _plot_participation_ratio_bars(fig, subplot_spec, data, split_subjects=False):
+    ax = fig.add_subplot(subplot_spec)
+    pr_fem = np.asarray(data.get("pr_fem_list", []), dtype=float)
+    pr_psth = np.asarray(data.get("pr_psth_list", []), dtype=float)
+    subjects = np.asarray(data.get("sub_subjects", []), dtype=object)
+
+    ok = np.isfinite(pr_fem) & np.isfinite(pr_psth)
+    pr_fem = pr_fem[ok]
+    pr_psth = pr_psth[ok]
+    if subjects.size == ok.size:
+        subjects = subjects[ok]
+    else:
+        subjects = np.full(pr_fem.shape, POOLED_SUBJECT, dtype=object)
+
+    if pr_fem.size == 0:
+        ax.text(0.5, 0.5, "No PR data", transform=ax.transAxes,
+                ha="center", va="center", fontsize=8)
+        ax.set_axis_off()
+        return ax
+
+    if split_subjects:
+        sort_idx = np.lexsort((pr_psth, subjects.astype(str)))
+    else:
+        sort_idx = np.argsort(pr_psth)
+    pr_fem = pr_fem[sort_idx]
+    pr_psth = pr_psth[sort_idx]
+    subjects = subjects[sort_idx]
+
+    x = np.arange(pr_fem.size)
+    width = 0.38
+    psth_color = "#9ecae1"
+    fem_color = POOLED_COLOR
+    edge = "#263746"
+    ax.bar(x - width / 2, pr_psth, width, color=psth_color,
+           edgecolor=edge, linewidth=0.35, label="Stimulus covariance")
+    ax.bar(x + width / 2, pr_fem, width, color=fem_color,
+           edgecolor=edge, linewidth=0.35, label="FEM component")
+
+    ymax = max(float(np.nanmax(pr_psth)), float(np.nanmax(pr_fem)))
+    ax.axhline(2.0, color="0.45", lw=0.8, ls="--", alpha=0.45, zorder=0)
+    ax.set_ylim(0, ymax * 1.18)
+    tick_step = max(1, int(np.ceil(pr_fem.size / 8)))
+    tick_idx = np.arange(0, pr_fem.size, tick_step)
+    ax.set_xticks(tick_idx)
+    ax.set_xticklabels([str(i + 1) for i in tick_idx])
+    ax.set_xlabel("Session (sorted by stimulus PR)")
+    ax.set_ylabel("Participation ratio")
+    ax.legend(frameon=False, fontsize=6.8, loc="upper left",
+              ncol=2, handlelength=1.4, columnspacing=0.9)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(axis="y", alpha=0.22, linewidth=0.6)
+
+    if split_subjects and np.unique(subjects).size > 1:
+        boundaries = np.flatnonzero(subjects[1:] != subjects[:-1]) + 0.5
+        for boundary in boundaries:
+            ax.axvline(boundary, color="0.72", lw=0.6, ls=":", zorder=0)
+
+    return ax
+
+
+def _emp_p_greater(null_vals, observed):
+    null_vals = np.asarray(null_vals, dtype=float)
+    null_vals = null_vals[np.isfinite(null_vals)]
+    if null_vals.size == 0 or not np.isfinite(observed):
+        return np.nan
+    return (np.sum(null_vals >= observed) + 1) / (null_vals.size + 1)
+
+
+def _plot_subspace_alignment_vs_shuffle(fig, subplot_spec, data):
+    ax = fig.add_subplot(subplot_spec)
+    observed = np.column_stack([
+        np.asarray(data.get("var_p_given_f", []), dtype=float),
+        np.asarray(data.get("var_f_given_p", []), dtype=float),
+    ])
+    null_session_idx = np.asarray(data.get("null_session_idx", []), dtype=int)
+    null_x = np.asarray(data.get("null_var_p_given_f", []), dtype=float)
+    null_y = np.asarray(data.get("null_var_f_given_p", []), dtype=float)
+    nulls = [
+        null_x[np.isfinite(null_x)],
+        null_y[np.isfinite(null_y)],
+    ]
+
+    if observed.size == 0 or not all(n.size for n in nulls):
+        ax.text(0.5, 0.5, "No alignment data", transform=ax.transAxes,
+                ha="center", va="center", fontsize=8)
+        ax.set_axis_off()
+        return ax
+
+    px = np.full(observed.shape[0], np.nan)
+    py = np.full(observed.shape[0], np.nan)
+    for i in range(observed.shape[0]):
+        m = null_session_idx == i
+        if not np.any(m):
+            continue
+        px[i] = _emp_p_greater(null_x[m], observed[i, 0])
+        py[i] = _emp_p_greater(null_y[m], observed[i, 1])
+    sig = (px < SIG_ALPHA) & (py < SIG_ALPHA)
+
+    viol = ax.violinplot(
+        nulls,
+        positions=[0, 1],
+        widths=0.55,
+        showmeans=False,
+        showmedians=False,
+        showextrema=False,
+    )
+    for body in viol["bodies"]:
+        body.set_facecolor("#d7e6ef")
+        body.set_edgecolor("none")
+        body.set_alpha(0.9)
+
+    rng = np.random.default_rng(11)
+    for j in range(2):
+        ok = np.isfinite(observed[:, j])
+        jitter = rng.normal(0, 0.055, ok.sum())
+        edgecolors = np.where(sig[ok], "crimson", "black")
+        linewidths = np.where(sig[ok], 1.2, 0.45)
+        ax.scatter(
+            np.full(ok.sum(), j) + jitter,
+            observed[ok, j],
+            s=28,
+            color=POOLED_COLOR,
+            edgecolor=edgecolors,
+            linewidth=linewidths,
+            zorder=3,
+        )
+        ax.plot([j - 0.22, j + 0.22], [np.nanmedian(observed[:, j])] * 2,
+                color=POOLED_COLOR, lw=2.0, zorder=4)
+        ax.plot([j - 0.22, j + 0.22], [np.nanmedian(nulls[j])] * 2,
+                color="0.35", lw=1.1, zorder=4)
+
+    ax.set_xticks([0, 1])
+    ax.set_xticklabels(["Stimulus in\nFEM subspace",
+                        "FEM in\nstimulus subspace"])
+    ax.set_ylabel("Variance captured")
+    ax.set_ylim(0, 1)
+    ax.grid(axis="y", alpha=0.25, linewidth=0.6)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    return ax
 
 
 def compose(refresh=False, split_subjects=False):
@@ -539,15 +690,33 @@ def compose(refresh=False, split_subjects=False):
         panel_specs = [
             ("B", plot_fem_fraction, gs[0, 2:4]),
             ("C", plot_fano, gs[0, 4:6]),
-            ("F", plot_pairwise_noise_corr, gs[2, 0:2]),
-            ("G", plot_participation_ratio, gs[2, 2:4]),
-            ("H", plot_subspace_alignment, gs[2, 4:6]),
         ]
-        middle_axes = []
-        middle_axes.extend(_plot_compact_cov_decomp(fig, gs[1, 0:4],
-                                                    data, letter="D"))
-        middle_axes.append(_plot_noise_corr_panel(fig, gs[1, 4:6], data))
-        _shift_axes_down(middle_axes)
+        d_axes = _plot_compact_cov_decomp(fig, gs[1, 0:4],
+                                          data, letter="D")
+        _expand_axes_group_from_lower_right(d_axes)
+        e_ax = _plot_noise_corr_panel(fig, gs[1, 4:6], data)
+        _shift_axes_down([e_ax])
+
+        pr_ax = _plot_participation_ratio_bars(
+            fig, gs[2, 0:4], data, split_subjects=split_subjects
+        )
+        _normalize_axis_text(pr_ax)
+        _panel_header(
+            pr_ax,
+            "F",
+            "FEM covariance is compact across sessions",
+            y=1.02,
+        )
+
+        align_ax = _plot_subspace_alignment_vs_shuffle(fig, gs[2, 4:6], data)
+        _normalize_axis_text(align_ax)
+        _panel_header(
+            align_ax,
+            "G",
+            "and largely lives in the stimulus subspace",
+            y=1.02,
+        )
+
         for letter, plot_fn, spec in panel_specs:
             ax = fig.add_subplot(spec)
             _, primary_ax = plot_fn(ax=ax, data=data)
@@ -558,31 +727,6 @@ def compose(refresh=False, split_subjects=False):
             elif letter == "C":
                 _label(primary_ax, letter)
                 _add_condition_legend(primary_ax, loc="upper left")
-            elif letter == "F":
-                primary_ax.set_title("", loc="center")
-                _panel_header(
-                    primary_ax,
-                    letter,
-                    "Accounting for FEM covariance\nrecenters pair-wise correlations around zero",
-                    y=1.02,
-                )
-            elif letter == "G":
-                _panel_header(
-                    primary_ax,
-                    letter,
-                    "FEM covariance is low dimensional...",
-                    y=1.02,
-                )
-                _add_pr_annotations(primary_ax)
-            elif letter == "H":
-                _panel_header(
-                    primary_ax,
-                    letter,
-                    "and largely lives in the stimulus subspace",
-                    y=1.02,
-                )
-                primary_ax.set_xlabel("PSTH var in FEM subspace")
-                primary_ax.set_ylabel("FEM var in PSTH subspace")
             else:
                 _label(primary_ax, letter)
 

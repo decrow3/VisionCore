@@ -222,7 +222,7 @@ def _matched_unpaired_indices(
     *,
     n: int,
     rng: np.random.Generator,
-) -> list[int]:
+) -> list[tuple[int, dict[str, Any]]]:
     if not eligible:
         return []
     features = np.vstack([_trace_match_features(trace_bank[j]) for j in eligible])
@@ -231,9 +231,36 @@ def _matched_unpaired_indices(
     scale[~np.isfinite(scale) | (scale < 1e-6)] = 1.0
     dist = np.sqrt(np.sum(((features - center) / scale) ** 2, axis=1))
     same_session = np.asarray([str(trace_bank[j]["session"]) == str(actual_item["session"]) for j in eligible])
-    rank_score = dist - 0.25 * same_session.astype(np.float64) + rng.uniform(0.0, 1e-6, size=len(eligible))
+    rank_score = dist - 0.25 * same_session.astype(np.float64)
     order = np.argsort(rank_score)
-    return [int(eligible[i]) for i in order[: min(int(n), len(order))]]
+    pool_size = int(min(len(order), max(int(n), int(n) * 8)))
+    pool_order = order[:pool_size]
+    if pool_order.size <= int(n):
+        selected_order = pool_order
+    else:
+        weights = 1.0 / (1.0 + np.arange(pool_order.size, dtype=np.float64))
+        weights /= np.sum(weights)
+        selected_pos = rng.choice(pool_order.size, size=int(n), replace=False, p=weights)
+        selected_order = pool_order[np.sort(selected_pos)]
+    ranked_position = {int(order_pos): rank for rank, order_pos in enumerate(order)}
+    selected: list[tuple[int, dict[str, Any]]] = []
+    for order_pos in selected_order:
+        order_pos = int(order_pos)
+        idx = int(eligible[order_pos])
+        selected.append(
+            (
+                idx,
+                {
+                    "match_distance": float(dist[order_pos]),
+                    "match_rank": int(ranked_position[order_pos]),
+                    "match_pool_size": int(pool_size),
+                    "eligible_pool_size": int(len(eligible)),
+                    "match_selection_mode": "rank_weighted_without_replacement",
+                    "same_session_match_bonus": 0.25,
+                },
+            )
+        )
+    return selected
 
 
 def _motion_summary_rows(motion_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -511,10 +538,10 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--observed-rms-scales", default="0.25,0.5,1.0")
-    parser.add_argument("--patch-size-px", type=int, default=160)
-    parser.add_argument("--latent-crop-px", type=int, default=96)
-    parser.add_argument("--center-crop-px", type=int, default=64)
-    parser.add_argument("--local-field-grid", type=int, default=4)
+    parser.add_argument("--patch-size-px", type=int, default=540)
+    parser.add_argument("--latent-crop-px", type=int, default=151)
+    parser.add_argument("--center-crop-px", type=int, default=41)
+    parser.add_argument("--local-field-grid", type=int, default=8)
     parser.add_argument(
         "--n-timepoints",
         type=int,
@@ -577,10 +604,19 @@ def run(args: argparse.Namespace) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(int(args.seed))
     target_accepted_images = int(args.max_images)
-    prepare_args = argparse.Namespace(**vars(args))
+
+    trace_pool_args = argparse.Namespace(**vars(args))
+    trace_pool_args.window_manifest = None
+    if target_accepted_images > 0:
+        trace_pool_args.max_images = 0
+    trace_pool_work = _prepare_windows(trace_pool_args)
+    if trace_pool_work.empty:
+        raise ValueError("No BackImage windows survived filters for the matched trace pool.")
+
+    analysis_args = argparse.Namespace(**vars(args))
     if args.window_manifest is None and target_accepted_images > 0:
-        prepare_args.max_images = 0
-    work = _prepare_windows(prepare_args)
+        analysis_args.max_images = 0
+    work = _prepare_windows(analysis_args)
     if work.empty:
         raise ValueError("No BackImage windows survived filters.")
     if not bool(args.reuse_trace_sources_across_scales):
@@ -661,11 +697,14 @@ def run(args: argparse.Namespace) -> Path:
         dry_run=bool(args.dry_run),
     )
     _write_json(out_dir / "run_metadata.json", {"config": asdict(cfg), "steerable_pyramid": HAVE_STEERABLE_PYRAMID})
-    _progress(f"prepared {work.shape[0]} windows; families={families}; scales={scales}; dry_run={args.dry_run}")
+    _progress(
+        f"prepared {work.shape[0]} analysis windows and {trace_pool_work.shape[0]} trace-pool windows; "
+        f"families={families}; scales={scales}; dry_run={args.dry_run}"
+    )
 
-    eyepos_by_session = _session_dataset_cache(work["session"].astype(str).to_list())
+    eyepos_by_session = _session_dataset_cache(trace_pool_work["session"].astype(str).to_list())
     trace_bank = _build_trace_bank(
-        work,
+        trace_pool_work,
         eyepos_by_session,
         int(args.n_timepoints),
         microsaccade_speed_threshold_dps=(
@@ -814,29 +853,32 @@ def run(args: argparse.Namespace) -> Path:
                     and int(trace_bank[j]["trial_idx"]) == int(actual_item["trial_idx"])
                 )
             ]
-        matched_indices = _matched_unpaired_indices(
+        matched_entries = _matched_unpaired_indices(
             trace_bank,
             actual_item,
             eligible,
             n=int(args.unpaired_samples_per_image),
             rng=rng,
         )
-        if "matched_unpaired_empirical" in families and len(matched_indices) != int(args.unpaired_samples_per_image):
+        if "matched_unpaired_empirical" in families and len(matched_entries) != int(args.unpaired_samples_per_image):
             raise ValueError(
                 "Matched unpaired trace pool is too small after filtering: "
-                f"needed {int(args.unpaired_samples_per_image)}, got {len(matched_indices)} "
+                f"needed {int(args.unpaired_samples_per_image)}, got {len(matched_entries)} "
                 f"for source_row={int(row['source_row'])}."
             )
 
         raw_cache: dict[str, list[tuple[int, np.ndarray, dict[str, Any]]]] = {}
+        match_meta_by_bank_index: dict[int, dict[str, Any]] = {}
         raw_cache["actual_paired_empirical"] = [(actual_bank_index, np.asarray(actual_item["trace"], dtype=np.float32), actual_item)]
         raw_cache["rotated_actual_90"] = [(actual_bank_index, _rotated_trace_fixed(actual_item["trace"], 90.0), actual_item)]
-        raw_cache["edge_axis"] = [
-            (actual_bank_index, _axis_constrained_temporal_trace(actual_item["trace"], float(row["image_edge_axis_deg"])), actual_item)
-        ]
-        raw_cache["edge_orthogonal"] = [
-            (actual_bank_index, _axis_constrained_temporal_trace(actual_item["trace"], float(row["image_edge_axis_deg"]) + 90.0), actual_item)
-        ]
+        if "edge_axis" in families:
+            raw_cache["edge_axis"] = [
+                (actual_bank_index, _axis_constrained_temporal_trace(actual_item["trace"], float(row["image_edge_axis_deg"])), actual_item)
+            ]
+        if "edge_orthogonal" in families:
+            raw_cache["edge_orthogonal"] = [
+                (actual_bank_index, _axis_constrained_temporal_trace(actual_item["trace"], float(row["image_edge_axis_deg"]) + 90.0), actual_item)
+            ]
         if "rotated_actual_random" in families:
             raw_cache["rotated_actual_random"] = [
                 (
@@ -886,8 +928,10 @@ def run(args: argparse.Namespace) -> Path:
                 )
             ]
         if "matched_unpaired_empirical" in families:
+            for j, meta in matched_entries:
+                match_meta_by_bank_index[int(j)] = dict(meta)
             raw_cache["matched_unpaired_empirical"] = [
-                (j, np.asarray(trace_bank[j]["trace"], dtype=np.float32), trace_bank[j]) for j in matched_indices
+                (j, np.asarray(trace_bank[j]["trace"], dtype=np.float32), trace_bank[j]) for j, _meta in matched_entries
             ]
 
         for scale in scales:
@@ -932,6 +976,16 @@ def run(args: argparse.Namespace) -> Path:
                             "rendered_n_microsaccade_events": int(source_item["rendered_n_microsaccade_events"]),
                             "rendered_fraction_microsaccade_samples": float(source_item["rendered_fraction_microsaccade_samples"]),
                             "rendered_peak_microsaccade_speed_dps": float(source_item["rendered_peak_microsaccade_speed_dps"]),
+                            "match_distance": float(match_meta_by_bank_index.get(int(bank_index), {}).get("match_distance", np.nan)),
+                            "match_rank": int(match_meta_by_bank_index.get(int(bank_index), {}).get("match_rank", -1)),
+                            "match_pool_size": int(match_meta_by_bank_index.get(int(bank_index), {}).get("match_pool_size", 0)),
+                            "eligible_pool_size": int(match_meta_by_bank_index.get(int(bank_index), {}).get("eligible_pool_size", 0)),
+                            "match_selection_mode": str(
+                                match_meta_by_bank_index.get(int(bank_index), {}).get("match_selection_mode", "")
+                            ),
+                            "same_session_match_bonus": float(
+                                match_meta_by_bank_index.get(int(bank_index), {}).get("same_session_match_bonus", np.nan)
+                            ),
                             "requested_rms_deg": requested,
                             "effective_rms_deg": float(meta["effective_rms_deg"]),
                             "effective_to_requested_rms": float(meta["effective_rms_deg"]) / requested if requested > 0 else np.nan,
@@ -1054,6 +1108,10 @@ def run(args: argparse.Namespace) -> Path:
         rows, per_image = _decode_rows(by_condition, latent_arrays, decode_groups, args)
         for row in rows:
             row["response_summary"] = summary
+            row["readout_contract"] = (
+                "diagnostic_condition_decode; matched_unpaired_empirical averages K response vectors before decoding; "
+                "use incremental_gain_contrasts.csv for the claim-relevant mean-over-sample-gains local contrast"
+            )
             all_decode_rows.append(row)
         for key, values in per_image.items():
             all_per_image[(summary, *key)] = values
@@ -1066,6 +1124,10 @@ def run(args: argparse.Namespace) -> Path:
         per_image = {key[1:]: value for key, value in all_per_image.items() if key[0] == summary}
         for crow in _contrast_rows(rows, per_image, sessions, args):
             crow["response_summary"] = summary
+            crow["readout_contract"] = (
+                "diagnostic_condition_contrast; matched_unpaired_empirical averages K response vectors before decoding; "
+                "use incremental_gain_contrasts.csv for the claim-relevant mean-over-sample-gains local contrast"
+            )
             contrast_rows.append(crow)
     _write_csv(out_dir / "decode_contrasts.csv", contrast_rows)
 

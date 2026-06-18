@@ -108,6 +108,15 @@ FIG_DIR.mkdir(parents=True, exist_ok=True)
 PANEL_LABEL_FONTSIZE_PT = 16
 
 
+def _fmt_deg_tick(v):
+    s = f"{v:.1f}".rstrip("0").rstrip(".")
+    if s.startswith("-0."):
+        s = "-." + s[3:]
+    elif s.startswith("0."):
+        s = "." + s[2:]
+    return s if s not in ("", "-") else "0"
+
+
 # ---------------------------------------------------------------------------
 # Data loading: cache the full fixrsvp payload per-session
 # ---------------------------------------------------------------------------
@@ -453,10 +462,12 @@ def plot_gaze_axis(ax, payload, c0_trials, c1_trials, dim,
     label = "Az." if dim == 0 else "El."
     ax.set_ylabel("")
     ax.text(
-        0.01, 0.86, f"{label} (°)",
+        0.018, 0.96, f"{label} (°)",
         transform=ax.transAxes, ha="left", va="top",
         fontsize=8, color="0.1",
     )
+    ax.set_yticks([-0.5, 0.0, 0.5])
+    ax.set_yticklabels([_fmt_deg_tick(-0.5), "0", _fmt_deg_tick(0.5)])
     ax.tick_params(direction="in", length=3, width=0.8, labelsize=7)
     for s in ("top", "right"):
         ax.spines[s].set_visible(False)
@@ -515,13 +526,46 @@ def _cluster_psth(payload, trials, window_ms, bin_ms=PSTH_BIN_MS):
     return centers_ms, rate
 
 
+def _trial_psth_rows(payload, trials, window_ms, bin_ms=PSTH_BIN_MS):
+    """Per-trial population spike-rate rows for mean/SEM summaries."""
+    spike_times = payload["spike_times_trials"]
+    t_bins = payload["trial_t_bins"]
+    n_cells = payload["robs"].shape[2]
+    t0_bin = int(round(window_ms[0] / 1000.0 / DT))
+    t1_bin = int(round(window_ms[1] / 1000.0 / DT))
+    win_start_s = t0_bin * DT
+    win_end_s = t1_bin * DT
+    bin_s = bin_ms / 1000.0
+    edges = np.arange(win_start_s, win_end_s + bin_s / 2, bin_s)
+    centers_ms = 0.5 * (edges[:-1] + edges[1:]) * 1000.0
+    rows = []
+    for tid in trials:
+        ts, _ = _trial_spike_times_in_window(
+            spike_times[tid], t_bins[tid], t0_bin, t1_bin,
+        )
+        counts, _ = np.histogram(ts, bins=edges)
+        rows.append(counts / bin_s / n_cells)
+    if not rows:
+        return centers_ms, np.empty((0, len(edges) - 1))
+    return centers_ms, np.asarray(rows)
+
+
 def plot_psth_axis(ax, payload, c0_trials, c1_trials,
                    window_ms=RASTER_WINDOW_MS, bin_ms=PSTH_BIN_MS):
     """Line-plot PSTHs for the two cluster groups."""
     x0, p0 = _cluster_psth(payload, c0_trials, window_ms, bin_ms=bin_ms)
     x1, p1 = _cluster_psth(payload, c1_trials, window_ms, bin_ms=bin_ms)
-    ax.plot(x0, p0, color=GROUP_BLUE, lw=1.0, alpha=0.9)
-    ax.plot(x1, p1, color=GROUP_RED, lw=1.0, alpha=0.9)
+    x_all, rows = _trial_psth_rows(
+        payload, list(c0_trials) + list(c1_trials), window_ms, bin_ms=bin_ms,
+    )
+    if rows.size:
+        mean = np.nanmean(rows, axis=0)
+        sem = np.nanstd(rows, axis=0) / np.sqrt(max(rows.shape[0], 1))
+        ax.fill_between(x_all, mean - sem, mean + sem,
+                        color="0.6", alpha=0.35, linewidth=0, zorder=1)
+        ax.plot(x_all, mean, color="k", lw=0.75, alpha=0.95, zorder=2)
+    ax.plot(x0, p0, color=GROUP_BLUE, lw=1.35, alpha=0.95, zorder=3)
+    ax.plot(x1, p1, color=GROUP_RED, lw=1.35, alpha=0.95, zorder=3)
 
     ax.set_xlim(window_ms[0], window_ms[1])
     ax.set_ylim(bottom=0)
@@ -655,7 +699,7 @@ def _add_gaze_raster_links(ax_gaze, ax_raster):
     """Connect the colored gaze traces to the matching raster trial groups."""
     links = [
         (GROUP_BLUE, (1.02, 0.97), 0.73, -0.10),
-        (GROUP_RED, (1.055, 0.54), 0.34, 0.10),
+        (GROUP_RED, (1.055, 0.54), 0.34, -0.10),
     ]
     for color, xy_a, raster_y, rad in links:
         con = ConnectionPatch(
@@ -679,7 +723,8 @@ def _add_gaze_raster_links(ax_gaze, ax_raster):
 
 
 def plot_panel_f(fig=None, subject=SUBJECT, date=DATE, refresh=False,
-                 panel_letters=("G", "H", "I"), bottom_pad=0.0):
+                 panel_letters=("G", "H", "I"), bottom_pad=0.0,
+                 raster_height=2.45, gaze_height=1.25, psth_height=0.55):
     payload = load_panel_payload(subject, date, refresh=refresh)
 
     c0_all, c1_all = _ordered_cluster_trials(payload["iix"], payload["clusters"])
@@ -692,12 +737,13 @@ def plot_panel_f(fig=None, subject=SUBJECT, date=DATE, refresh=False,
     if bottom_pad:
         outer = fig.add_gridspec(
             4, 1,
-            height_ratios=[1.25, 2.45, 0.55, bottom_pad],
+            height_ratios=[gaze_height, raster_height, psth_height, bottom_pad],
             hspace=-0.06,
         )
     else:
         outer = fig.add_gridspec(
-            3, 1, height_ratios=[1.25, 2.45, 0.55], hspace=-0.06,
+            3, 1, height_ratios=[gaze_height, raster_height, psth_height],
+            hspace=-0.06,
         )
     gaze_gs = outer[0].subgridspec(2, 1, hspace=-0.04)
     ax_h = fig.add_subplot(gaze_gs[0])
