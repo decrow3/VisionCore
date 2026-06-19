@@ -1,6 +1,6 @@
 # declan Analysis Narrative
 
-Last curated: 2026-06-18.
+Last curated: 2026-06-19.
 
 Companion to `MANIFEST.md`. The manifest answers "where is it?" This file
 answers "why did we do it, what happened, and how did later work change the
@@ -92,9 +92,17 @@ The story has moved through four broad phases:
    edge-orthogonal priors with shared source catalogs. Both clean `n=64` runs
    show joint-eye rescue above zero-eye, but the preferred axis depends on the
    candidate set: matched-static weakly favors edge-parallel, while
-   hard-negative weakly favors edge-orthogonal. The old stronger `target128`
+   hard-negative weakly favors edge-orthogonal. A feature-posterior
+   joint-decoding posthoc now sharpens the functional endpoint: joint feature
+   recovery beats zero-eye robustly, but the axis result is bounded by the new
+   bootstrap/permutation uncertainty. Matched-static keeps a parallel-positive
+   feature-recovery signal, strongest for `pyramid k8`, whereas hard-negative
+   feature recovery trends orthogonal with no significant axis contrasts. The
+   safest current interpretation is therefore trajectory-aware feature recovery,
+   not yet a clean along-contour mechanism split. The old stronger `target128`
    orthogonal advantage is now diagnostic-only because it predates the
-   unmatched-catalog fix.
+   unmatched-catalog fix, and the active `n=128`, `0.5x/1x/2x` shared-source run
+   is the next replication gate.
 
 Numerical audit update, 2026-06-12:
 
@@ -120,6 +128,140 @@ Numerical audit update, 2026-06-12:
   promoted bridge: pseudo controls pass clearly, the all-unit recorded effect is
   not robust, and the gain-bottom positive does not yet survive the fold/session
   sensitivity work as a preregistered targeted result.
+
+## 2026-06-19: Shape of the Translation Geometry / Flow-Manifold Interpretation
+
+Status: `Open / supportive geometry intuition, not yet a formal manifold theorem`.
+
+Primary code and outputs:
+
+- `backimage_trajectory_observer/analyze_global_fixation_geometry.py`
+- `backimage_trajectory_observer/plot_global_fixation_trajectory_lines_3d.py`
+- `backimage_trajectory_observer/analyze_global_fixation_trajectory_flow.py`
+- `backimage_trajectory_observer/plot_local_fixation_fan_geometry.py`
+- `backimage_trajectory_observer/run_phase_aware_response_geometry_pilot.py`
+- `twin_feature_tangent_structure/run_shape_atlas_probe.py`
+- `twin_feature_tangent_structure/run_phase_rotation_probe.py`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_trajectory_table_observer_confirm_matched_static_n64_c8_k8_v1/global_fixation_geometry_hardneg_empirical_scale0p5/`
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_axis_conditioned_trajectory_observer_percandidate_gpu1_target128_c4_k32/local_fixation_fan_dense16_patchpx_axisfamilies_v1/`
+- `outputs/twin_feature_tangent_structure_prod_v2/shape_atlas_probe/`
+- `outputs/twin_feature_tangent_structure_prod_v2/shape_atlas_probe_finite_smoke/`
+- `outputs/twin_feature_tangent_structure_prod_v2/phase_rotation_probe_centered_check/`
+
+Motivation:
+
+The phrase "compact tangent geometry" is correct but opaque. This follow-up
+asked what shape the geometry actually has when rendered as response activity:
+a torus, loops, ribbons, sheets, a fan, or a vector field attached to static
+image content. It also asked whether Fourier/spatial-frequency intuition helps:
+translation should rotate local phase, with phase advance scaling with spatial
+frequency, so the compact tangent subspace might reveal phase-like coordinates.
+
+What changed conceptually:
+
+The most useful frame is no longer "a 2D manifold because translation is 2D."
+Each fixation-local image patch should be treated as its own object. Static
+responses identify local content, and translations attach a local vector field
+or trajectory family to those content states. The recognizable object in the
+BackImage cache is therefore closer to:
+
+```text
+a static content manifold with a shared, structured translation-flow field
+```
+
+than to a clean global x/y coordinate sheet or torus.
+
+Global BackImage trajectory geometry:
+
+- In the original hard-negative empirical cache, the `motion_delta` response
+  cloud was globally low-dimensional and fan-like: PC1 explained about `71.5%`,
+  PC1-2 about `83.3%`, and the top 10 PCs about `92.4%` of sampled
+  state-timepoint variance.
+- Linking complete trajectories was more informative than plotting the
+  downsampled point cloud. The full selected set contained `4096` complete
+  candidate/trajectory paths and `163840` response states. Sparse linked plots
+  made the geometry look like directed curves moving through a curved sheet or
+  fan, not independent dust.
+- A flow metric on all directed segments supported the visual impression. With
+  `159744` directed segments, local direction coherence was `0.309` versus a
+  shuffled-direction null of `0.138` (`2.23x`), and angular-momentum coherence
+  was `0.138` versus `0.0099` (`13.9x`). PC3 stretching made the figure easier
+  to see but did not create the effect; the unscaled PC3 metric stayed strong.
+- The best verbal description is "curved flowing sheet" or "fan with shared
+  local flow and rotational/curl component", not "single rigid vortex" and not
+  "closed torus".
+
+Local smoothness check:
+
+- Zooming into dense BackImage fixation neighborhoods preserved local flow
+  coherence. In the larger axis-conditioned cache, the densest 16 source
+  windows covered a radius of about `28 px`, with `5504` trajectory groups and
+  `220160` response points.
+- In that local patch, direction coherence in the global fan PCA was `0.328`
+  versus `0.159` under shuffled segment directions (`2.06x`); local-only PCA
+  gave a similar `2.01x` lift.
+- But physical closeness of fixation centers only weakly predicted neural
+  trajectory-centroid closeness: source-position versus neural-centroid
+  distance Spearman was about `0.18`. The older `n=64` empirical cache showed
+  the same pattern more weakly, with Spearman about `0.14`.
+- Therefore the smooth object is the local flow field through response space,
+  not a simple surface smoothly parameterized by image x/y position alone.
+
+Phase-aware / spatial-frequency readout:
+
+- A corrected phase-aware pilot used relative Fourier phase advance targets.
+  It found that `motion_delta` responses cross-validatedly predict relative
+  phase in spatial-frequency bands: for example `2-4 cpd` neural-to-phase mean
+  R2 was `0.340`, and `4-8 cpd` was `0.386`, with high phase-vector cosine on
+  held-out data.
+- Absolute averaged phase was a bad simple target because component phases
+  cancel; target resultant lengths were low and neural prediction was poor.
+- The phase-aware projection did not turn the neural activity into a clean
+  circular phase plane. This supports the mechanism-level intuition that
+  response flow carries spatial-frequency-scaled phase-advance information,
+  while rejecting the stronger visual claim that the manifold is obviously a
+  simple phase circle or torus.
+
+Compact tangent subspace shape:
+
+- The compact tangent atlas gave the clearest shape language for the Figure 4
+  tangent result. Cached cardinal endpoints in the compact tangent basis were
+  far above random-basis capture and were mostly planar-but-irregular or
+  line/ribbon-like. At `delta=0.25`, `k=10`, compact endpoint energy was about
+  `0.612` versus random about `0.013`, with plane fraction about `0.923`.
+- Regenerated finite ring/grid orbits on a 12-object smoke run showed stronger
+  curvature: at `k=10`, plane fraction was about `0.932`, linear sheet R2 about
+  `0.540`, quadratic sheet R2 about `0.967`, with `3/12` objects labeled
+  `elliptical_loop`.
+- The phase-rotation probe found paired-plane hints and moderately elliptical
+  local loops. At `k=10`, ellipse circularity median was about `0.714`, but the
+  global generator fit remained weak (`R2` about `0.22`). This argues for
+  partial phase-like organization inside compact tangent geometry, not a clean
+  shared translation generator.
+
+Interpretation:
+
+The current intuition should be:
+
+```text
+Small retinal translations move V1-twin responses through a compact,
+curved, fan-like flow geometry. Locally, each fixation/image patch has its own
+x/y tangent chart. Across many patches, those charts do not align as universal
+signed x/y axes, but their finite trajectories share a low-dimensional,
+locally coherent flow field. Spatial-frequency phase advance is present in the
+responses, yet the neural geometry expresses it as ribbons, curved sheets, and
+flow/curl structure rather than as a clean torus.
+```
+
+Claim boundary:
+
+This is a visualization/geometry intuition layer, not a promoted functional
+claim. It should help explain the compact tangent result and guide figures, but
+it should not be used to claim a formal manifold topology, behavioral
+optimality, or a globally smooth map from retinal position to neural state. The
+strongest current statement is that the shape is recognizable and
+low-dimensional as a response-flow field, while local image content and
+frequency structure modulate the chart attached to each fixation.
 
 ## 2026-06-13: Active-Sensing Roadmap After Vernier, Fixation Regime, Image Structure, and Input Whitening
 
@@ -524,6 +666,11 @@ Practical next gates:
 - Keep corrected coordinate order and the `270 px` full-image patch margin fixed.
 - Promote raw edge geometry to the baseline that any local active-sensing model
   must beat.
+- Make feature-posterior joint decoding the next big observer push: reuse the
+  exact-cache image posterior, attach Gabor/pyramid feature vectors to candidate
+  images, and score feature recovery, joint-minus-zero feature gain, and
+  known-minus-joint pose cost before treating image-identity accuracy as the
+  endpoint for along-contour utility.
 - Replicate the axis-conditioned observer with the shared-source catalog fixed:
   larger `n`, both `matched_static_response` and `hard_negative_structure`, and
   the half/natural/double scale sweep `0.5x`, `1.0x`, `2.0x`. Treat any pre-fix

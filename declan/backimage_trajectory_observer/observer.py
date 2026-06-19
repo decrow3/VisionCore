@@ -60,7 +60,7 @@ def _score_summary(prefix: str, scores: np.ndarray, true_candidate_index: int, c
     }
 
 
-def score_image_identity_table(
+def score_image_identity_score_vectors(
     *,
     y_obs_counts: np.ndarray,
     prior_lambda_counts: np.ndarray,
@@ -69,19 +69,10 @@ def score_image_identity_table(
     true_candidate_index: int,
     candidate_ids: list[str] | None = None,
     log_trajectory_prior: np.ndarray | None = None,
-    true_trajectory_index: int | None = None,
-    nearest_trajectory_index: int | None = None,
-    nearest_trajectory_distance: float | None = None,
     eps: float = 1e-8,
     likelihood_scale: float = 1.0,
 ) -> dict[str, Any]:
-    """Score one observed response against finite image and trajectory tables.
-
-    The prior table is used only by the joint-eye and best-single-trajectory
-    diagnostic.
-    Known-eye and zero-eye are separate candidate tables so that leave-one-out
-    trajectory priors can still report a non-leaky known-eye upper bound.
-    """
+    """Return full candidate score vectors for finite image/trajectory tables."""
     prior = _as_prior_table(prior_lambda_counts, "prior_lambda_counts")
     n_candidates, n_traj, n_time, n_units = prior.shape
     expected_candidate_shape = (n_candidates, n_time, n_units)
@@ -120,6 +111,133 @@ def score_image_identity_table(
     log_prior = normalized_log_weights(log_trajectory_prior, n_traj)
     joint_scores = logsumexp(prior_ll + log_prior[None, :], axis=1)
     best_single_tau_scores = np.max(prior_ll, axis=1)
+    return {
+        "prior_log_likelihood": prior_ll,
+        "log_trajectory_prior": log_prior,
+        "known_scores": known_scores,
+        "zero_scores": zero_scores,
+        "joint_scores": joint_scores,
+        "best_single_tau_scores": best_single_tau_scores,
+        "candidate_ids": ids,
+        "n_candidates": int(n_candidates),
+        "n_trajectories": int(n_traj),
+        "n_timebins": int(n_time),
+        "n_units": int(n_units),
+        "true_candidate_index": int(true_idx),
+    }
+
+
+def posterior_weighted_feature(
+    scores: np.ndarray,
+    candidate_features: np.ndarray,
+    *,
+    temperature: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Estimate a feature vector by posterior averaging over candidate scores."""
+    vals = np.asarray(scores, dtype=np.float64)
+    features = np.asarray(candidate_features, dtype=np.float64)
+    if vals.ndim != 1:
+        raise ValueError(f"scores must be 1D, got {vals.shape}")
+    if features.ndim != 2:
+        raise ValueError(f"candidate_features must be 2D, got {features.shape}")
+    if features.shape[0] != vals.shape[0]:
+        raise ValueError(
+            f"candidate_features has {features.shape[0]} candidates, but scores has {vals.shape[0]}"
+        )
+    if not np.isfinite(features).all():
+        raise ValueError("candidate_features contains non-finite values")
+    temp = float(temperature)
+    if temp <= 0.0 or not np.isfinite(temp):
+        raise ValueError("temperature must be positive and finite")
+    posterior = posterior_from_log_scores(vals / temp)
+    if not np.isfinite(posterior).all():
+        return np.full(features.shape[1], np.nan, dtype=np.float64), posterior
+    return posterior @ features, posterior
+
+
+def feature_recovery_metrics(z_hat: np.ndarray, z_true: np.ndarray) -> dict[str, float]:
+    """Return compact feature-recovery metrics where larger neg-MSE is better."""
+    pred = np.asarray(z_hat, dtype=np.float64)
+    true = np.asarray(z_true, dtype=np.float64)
+    if pred.shape != true.shape:
+        raise ValueError(f"z_hat shape {pred.shape} does not match z_true shape {true.shape}")
+    if pred.ndim != 1:
+        raise ValueError(f"feature vectors must be 1D, got {pred.shape}")
+    if pred.size == 0:
+        raise ValueError("feature vectors must contain at least one value")
+    if not np.isfinite(pred).all() or not np.isfinite(true).all():
+        return {
+            "feature_mse": float("nan"),
+            "feature_neg_mse": float("nan"),
+            "feature_rmse": float("nan"),
+            "feature_l2_error": float("nan"),
+            "feature_cosine": float("nan"),
+            "feature_true_norm": float("nan"),
+            "feature_pred_norm": float("nan"),
+        }
+    diff = pred - true
+    mse = float(np.mean(diff * diff))
+    l2 = float(np.sqrt(np.sum(diff * diff)))
+    pred_norm = float(np.sqrt(np.sum(pred * pred)))
+    true_norm = float(np.sqrt(np.sum(true * true)))
+    denom = pred_norm * true_norm
+    cosine = float(np.sum(pred * true) / denom) if denom > 1e-12 else float("nan")
+    return {
+        "feature_mse": mse,
+        "feature_neg_mse": -mse,
+        "feature_rmse": float(np.sqrt(mse)),
+        "feature_l2_error": l2,
+        "feature_cosine": cosine,
+        "feature_true_norm": true_norm,
+        "feature_pred_norm": pred_norm,
+    }
+
+
+def score_image_identity_table(
+    *,
+    y_obs_counts: np.ndarray,
+    prior_lambda_counts: np.ndarray,
+    known_lambda_counts: np.ndarray,
+    zero_lambda_counts: np.ndarray,
+    true_candidate_index: int,
+    candidate_ids: list[str] | None = None,
+    log_trajectory_prior: np.ndarray | None = None,
+    true_trajectory_index: int | None = None,
+    nearest_trajectory_index: int | None = None,
+    nearest_trajectory_distance: float | None = None,
+    eps: float = 1e-8,
+    likelihood_scale: float = 1.0,
+) -> dict[str, Any]:
+    """Score one observed response against finite image and trajectory tables.
+
+    The prior table is used only by the joint-eye and best-single-trajectory
+    diagnostic.
+    Known-eye and zero-eye are separate candidate tables so that leave-one-out
+    trajectory priors can still report a non-leaky known-eye upper bound.
+    """
+    vectors = score_image_identity_score_vectors(
+        y_obs_counts=y_obs_counts,
+        prior_lambda_counts=prior_lambda_counts,
+        known_lambda_counts=known_lambda_counts,
+        zero_lambda_counts=zero_lambda_counts,
+        true_candidate_index=true_candidate_index,
+        candidate_ids=candidate_ids,
+        log_trajectory_prior=log_trajectory_prior,
+        eps=eps,
+        likelihood_scale=likelihood_scale,
+    )
+    prior_ll = np.asarray(vectors["prior_log_likelihood"], dtype=np.float64)
+    log_prior = np.asarray(vectors["log_trajectory_prior"], dtype=np.float64)
+    known_scores = np.asarray(vectors["known_scores"], dtype=np.float64)
+    zero_scores = np.asarray(vectors["zero_scores"], dtype=np.float64)
+    joint_scores = np.asarray(vectors["joint_scores"], dtype=np.float64)
+    best_single_tau_scores = np.asarray(vectors["best_single_tau_scores"], dtype=np.float64)
+    ids = list(vectors["candidate_ids"])
+    n_candidates = int(vectors["n_candidates"])
+    n_traj = int(vectors["n_trajectories"])
+    n_time = int(vectors["n_timebins"])
+    n_units = int(vectors["n_units"])
+    true_idx = int(vectors["true_candidate_index"])
 
     true_log_posterior_unnorm = prior_ll[true_idx] + log_prior
     posterior = posterior_from_log_scores(true_log_posterior_unnorm)

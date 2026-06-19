@@ -9,7 +9,13 @@ import pandas as pd
 
 from declan.backimage_trajectory_observer.candidate_sets import build_candidate_set
 from declan.backimage_trajectory_observer.likelihood import poisson_expected_count_loglik
-from declan.backimage_trajectory_observer.observer import score_image_identity_table, summarize_observer_rows
+from declan.backimage_trajectory_observer.observer import (
+    feature_recovery_metrics,
+    posterior_weighted_feature,
+    score_image_identity_score_vectors,
+    score_image_identity_table,
+    summarize_observer_rows,
+)
 from declan.fixation_statistics_by_stimulus.run_backimage_trajectory_table_observer import _trajectory_spec
 
 
@@ -86,6 +92,76 @@ def test_image_identity_observer_keeps_known_eye_separate_from_loo_prior() -> No
     assert 1.0 <= result["N_eff_true_image"] <= 2.0
     assert result["joint_vs_best_single_tau_gap"] >= 0.0
     assert result["joint_vs_best_dilution_gap"] >= 0.0
+
+
+def test_image_identity_score_vectors_match_summary_scores() -> None:
+    y = np.asarray([[8.0, 1.0], [7.0, 1.0]], dtype=np.float64)
+    known = np.asarray(
+        [
+            [[8.0, 1.0], [7.0, 1.0]],
+            [[1.0, 8.0], [1.0, 7.0]],
+        ],
+        dtype=np.float64,
+    )
+    zero = np.asarray(
+        [
+            [[3.0, 3.0], [3.0, 3.0]],
+            [[3.0, 3.0], [3.0, 3.0]],
+        ],
+        dtype=np.float64,
+    )
+    prior = np.asarray(
+        [
+            [
+                [[5.0, 2.0], [5.0, 2.0]],
+                [[4.0, 2.0], [4.0, 2.0]],
+            ],
+            [
+                [[2.0, 5.0], [2.0, 5.0]],
+                [[2.0, 4.0], [2.0, 4.0]],
+            ],
+        ],
+        dtype=np.float64,
+    )
+    vectors = score_image_identity_score_vectors(
+        y_obs_counts=y,
+        prior_lambda_counts=prior,
+        known_lambda_counts=known,
+        zero_lambda_counts=zero,
+        true_candidate_index=0,
+        candidate_ids=["true", "other"],
+    )
+    summary = score_image_identity_table(
+        y_obs_counts=y,
+        prior_lambda_counts=prior,
+        known_lambda_counts=known,
+        zero_lambda_counts=zero,
+        true_candidate_index=0,
+        candidate_ids=["true", "other"],
+    )
+    assert vectors["prior_log_likelihood"].shape == (2, 2)
+    assert vectors["known_scores"].shape == (2,)
+    assert vectors["joint_scores"].shape == (2,)
+    assert vectors["best_single_tau_scores"].shape == (2,)
+    assert vectors["known_scores"][0] > vectors["known_scores"][1]
+    assert vectors["joint_scores"][0] > vectors["joint_scores"][1]
+    assert summary["known_true_score"] == vectors["known_scores"][0]
+    assert summary["zero_true_score"] == vectors["zero_scores"][0]
+    assert summary["joint_true_score"] == vectors["joint_scores"][0]
+    assert summary["best_single_tau_true_score"] == vectors["best_single_tau_scores"][0]
+
+
+def test_posterior_weighted_feature_and_recovery_metrics() -> None:
+    scores = np.asarray([4.0, 0.0], dtype=np.float64)
+    features = np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
+    z_hat, posterior = posterior_weighted_feature(scores, features)
+    metrics = feature_recovery_metrics(z_hat, features[0])
+    uniform_metrics = feature_recovery_metrics(np.mean(features, axis=0), features[0])
+    assert posterior.shape == (2,)
+    assert posterior[0] > 0.95
+    assert z_hat.shape == (2,)
+    assert metrics["feature_neg_mse"] > uniform_metrics["feature_neg_mse"]
+    assert metrics["feature_cosine"] > 0.95
 
 
 def test_candidate_set_contains_true_once_and_reports_distances() -> None:

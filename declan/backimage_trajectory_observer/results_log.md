@@ -1,6 +1,6 @@
 # BackImage Trajectory-Table Observer Results Log
 
-Last updated: 2026-06-18.
+Last updated: 2026-06-19.
 
 ## Scope Boundary
 
@@ -102,9 +102,10 @@ Important caveats:
 - The posterior does not collapse to one trajectory. Median `N_eff / K` is
   often around `0.55-0.75`, so this is partial pose localization, not perfect
   trajectory inference.
-- `matched_static_response` is not yet implemented as a cache-backed candidate
-  mode, so the current hard-negative condition matches image structure but not
-  stabilized twin responses.
+- At the time of this pilot, `matched_static_response` was not yet implemented
+  as a cache-backed candidate mode, so this hard-negative condition matched
+  image structure but not stabilized twin responses. Later matched-static runs
+  below supersede this caveat.
 
 Claim boundary:
 
@@ -1093,6 +1094,220 @@ by 2 trials. Treat this as a positive pilot and a rationale for replication, not
 as claim-level evidence.
 ```
 
+## Feature-Posterior Axis Matched-Static Run: Gabor/Pyramid k4/k8
+
+Output:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_axis_conditioned_matched_static_feature_posterior_gabor_pyramid_k4_8_v1/
+```
+
+Base exact-cache run:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_axis_conditioned_matched_static_percandidate_gpu1_n64_c4_k16_v1/
+```
+
+Configuration:
+
+```text
+candidate_set_mode = matched_static_response
+observation_family = empirical
+prior_families = axis_edge_parallel, axis_edge_orthogonal
+axis_catalog_mode = per_candidate
+axis_shared_source_catalog = True
+scale = 0.5
+n_images = 64
+n_candidates = 4
+n_prior_trajectories = 16
+likelihood_scale = 1.0
+latents = gabor_local_field, pyramid_local_field
+feature PCA k = 4, 8
+feature source = computed BackImage patch latents
+```
+
+Runtime:
+
+```text
+feature extraction = 64/64 windows in ~8m26s
+cache scoring = 128/128 response tables in ~5s
+```
+
+Outputs:
+
+```text
+feature_posterior_trials.csv
+feature_posterior_summary.csv
+feature_axis_contrasts.csv
+feature_motion_evidence_contrasts.csv
+feature_posterior_qc.csv
+feature_posterior_report.md
+feature_posterior_metadata.json
+feature_latent_arrays.npz
+```
+
+QC:
+
+```text
+response cache rows scored = 128
+manifest rows without response cache = 0
+gabor raw feature dim = 4608
+pyramid raw feature dim = 3072
+nonfinite feature count = 0
+
+PCA variance fraction:
+  gabor k4 = 0.178
+  gabor k8 = 0.306
+  pyramid k4 = 0.208
+  pyramid k8 = 0.329
+```
+
+Summary table, mean feature MSE reduction relative to zero-eye:
+
+```text
+orthogonal gabor k4:
+  zero MSE = 61.10
+  joint MSE = 55.43
+  reduction = 9.3%
+
+orthogonal gabor k8:
+  zero MSE = 77.38
+  joint MSE = 66.57
+  reduction = 14.0%
+
+orthogonal pyramid k4:
+  zero MSE = 40.37
+  joint MSE = 36.28
+  reduction = 10.1%
+
+orthogonal pyramid k8:
+  zero MSE = 42.21
+  joint MSE = 38.53
+  reduction = 8.7%
+
+parallel gabor k4:
+  zero MSE = 61.10
+  joint MSE = 54.24
+  reduction = 11.2%
+
+parallel gabor k8:
+  zero MSE = 77.38
+  joint MSE = 63.14
+  reduction = 18.4%
+
+parallel pyramid k4:
+  zero MSE = 40.37
+  joint MSE = 34.40
+  reduction = 14.8%
+
+parallel pyramid k8:
+  zero MSE = 42.21
+  joint MSE = 36.16
+  reduction = 14.3%
+```
+
+Axis feature-recovery contrasts:
+
+```text
+parallel - orthogonal, joint feature recovery:
+
+gabor k4:
+  mean = +1.19
+  median = +0.37
+  parallel wins per trial = 57.8%
+
+gabor k8:
+  mean = +3.43
+  median = +0.91
+  parallel wins per trial = 56.2%
+
+pyramid k4:
+  mean = +1.88
+  median = +0.61
+  parallel wins per trial = 53.1%
+
+pyramid k8:
+  mean = +2.37
+  median = +0.11
+  parallel wins per trial = 51.6%
+```
+
+Posterior diagnostics:
+
+```text
+zero-eye true candidate mass ~= 0.371
+orthogonal joint true candidate mass ~= 0.383
+parallel joint true candidate mass ~= 0.393
+known-eye true candidate mass ~= 0.461
+
+zero-eye median candidate N_eff fraction ~= 0.801
+orthogonal joint median candidate N_eff fraction ~= 0.929
+parallel joint median candidate N_eff fraction ~= 0.922
+```
+
+Known-eye remains substantially better than joint-eye. Known beats joint on
+roughly `86-92%` of per-trial feature rows depending on latent, k, and prior.
+This is a useful ceiling check: trajectory marginalization recovers feature
+information above zero-eye, but does not close the gap to a known trajectory.
+
+`best_single_tau` is close to joint. The gap is usually small relative to the
+zero-eye MSE scale (`~0.3-2%`), so the feature-posterior result is not dominated
+by a catastrophic dilution penalty from marginalizing over trajectories.
+
+The `motion_delta` rows should be read carefully:
+
+```text
+motion_delta = joint candidate score - zero candidate score
+```
+
+This is a candidate-wise log-likelihood-ratio diagnostic, not a calibrated
+generative posterior. It is useful for isolating the motion-added score
+component, but as a standalone softmax posterior it produces much worse feature
+MSE than zero/joint. Do not interpret that as motion evidence being useless.
+
+Interpretation:
+
+This is the first successful feature-posterior unification of the exact
+trajectory-table observer and the Gabor/pyramid feature-decomposition branches.
+The main result is:
+
+```text
+joint-eye feature recovery > zero-eye feature recovery
+parallel-axis joint feature recovery > orthogonal-axis joint feature recovery
+```
+
+The parallel-over-orthogonal effect is directionally consistent across all four
+feature/k settings, but heterogeneous across trials. It is strongest in the
+mean for `gabor_local_field, k=8`, while per-trial win rates are modest
+(`~52-58%`). This should be read as a positive feature-preservation signal, not
+as a saturated per-trial classifier.
+
+Current best wording:
+
+```text
+The exact joint trajectory-table observer carries recoverable image-feature
+information beyond zero-eye. In the clean matched-static axis cache,
+edge-parallel priors recover more Gabor/pyramid feature structure than
+edge-orthogonal priors, even though the effect is heterogeneous and known-eye
+still has a large ceiling advantage. This supports the along-contour
+feature-preservation interpretation more directly than finite-candidate image
+identity accuracy alone.
+```
+
+Immediate follow-ups:
+
+```text
+1. Add bootstrap or permutation confidence intervals for joint-minus-zero
+   feature gain and parallel-minus-orthogonal feature gain.
+2. Run the same feature-posterior endpoint on the non-axis empirical-vs-OU
+   matched-static exact cache.
+3. Reuse the saved feature_latent_arrays.npz when running additional
+   likelihood-scale or subset analyses to avoid recomputing Gabor/pyramid
+   features.
+```
+
 ## Axis-Conditioned Shared-Source Hard-Negative Replacement
 
 Output:
@@ -1202,6 +1417,339 @@ is not yet stable across candidate modes. Matched-static weakly favors
 edge-parallel; hard-negative favors edge-orthogonal in accuracy while retaining
 some edge-parallel score diagnostics. Treat the axis-specific biology as
 unresolved pending larger shared-source replications.
+```
+
+## Axis-Conditioned Shared-Source Hard-Negative n128 Scale Sweep
+
+Source exact-cache output:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_axis_conditioned_hard_negative_shared_source_gpu1_n128_c4_k16_scales_0p5_1_2_v1/
+```
+
+Feature-posterior posthoc output:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_axis_conditioned_hard_negative_n128_scale_sweep_feature_posterior_gabor_pyramid_k4_8_uncertainty_v1/
+```
+
+Configuration:
+
+```text
+candidate_set_mode = hard_negative_structure
+observation_family = empirical
+prior_families = axis_edge_parallel, axis_edge_orthogonal
+axis_catalog_mode = per_candidate
+n_images = 128
+n_candidates = 4
+n_prior_trajectories = 16
+scales = 0.5, 1.0, 2.0
+trajectory_prior_mode = leave_one_out
+likelihood_scale = 1.0 primary
+axis_shared_source_catalog = True
+```
+
+Runtime and cache:
+
+```text
+observer run = 14h07m26s on CUDA GPU1
+selected windows = 128
+response caches = 768/768
+observer rows = 1536
+feature-posterior response tables scored = 768
+feature-posterior bootstrap/permutation resamples = 10000 / 10000
+```
+
+Primary image-identity readout at likelihood scale `1.0`:
+
+```text
+scale 0.5x:
+  known-eye = 1.000
+  zero-eye = 0.609
+  axis_edge_parallel joint = 0.8125
+  axis_edge_orthogonal joint = 0.7813
+  paired discordance: parallel-only 13, orthogonal-only 9, p = 0.523
+
+scale 1.0x:
+  known-eye = 1.000
+  zero-eye = 0.391
+  axis_edge_parallel joint = 0.7969
+  axis_edge_orthogonal joint = 0.8047
+  paired discordance: parallel-only 12, orthogonal-only 13, p = 1.000
+
+scale 2.0x:
+  known-eye = 1.000
+  zero-eye = 0.336
+  axis_edge_parallel joint = 0.6797
+  axis_edge_orthogonal joint = 0.7422
+  paired discordance: parallel-only 13, orthogonal-only 21, p = 0.229
+```
+
+Feature-posterior posthoc:
+
+```text
+latents = gabor_local_field, pyramid_local_field
+feature PCA k = 4, 8
+feature source = computed BackImage patch latents
+axis contrast gating = axis_shared_source_catalog must be true
+motion_delta = joint candidate score - zero candidate score
+```
+
+K-choice note:
+
+The `k=4,8` feature PCA setting was chosen as a conservative bridge to the
+existing low-dimensional Gabor/pyramid decomposition branch. It keeps the
+posterior-MSE readout interpretable with only four image candidates per trial
+and with PCA fit over selected-window feature rows. It should not be read as a
+final rejection of richer feature spaces. The next principled sensitivity run
+is:
+
+```text
+k = 2, 4, 8, 16, 32
+```
+
+The key question is whether the 1x parallel feature-recovery advantage is
+strongest at `k8`, survives at `k16/k32`, or washes out when broader
+fine-grained feature reconstruction is included.
+
+Current small-signal readout:
+
+```text
+k8 looks like the more scale-sensitive current setting. The axis-pooled
+absolute joint MSE is still mostly flat, so this is not an overall 1x optimum.
+The promising signal is narrower: the parallel-vs-orthogonal feature-recovery
+contrast is most positive near 1x and is easier to see in the richer k8 readout
+than in the coarser k4 readout, especially for Gabor features.
+```
+
+Joint-minus-zero feature recovery is the durable result. It is positive for
+every scale, axis, latent, and k row, with sign-flip permutation
+`p ~= 0.0001` throughout.
+
+Mean joint MSE reduction relative to zero-eye:
+
+```text
+0.5x: 46-55% across axis/latent/k rows
+1.0x: 62-70% across axis/latent/k rows
+2.0x: 71-78% across axis/latent/k rows
+```
+
+Parallel-minus-orthogonal joint feature recovery:
+
+```text
+0.5x:
+  gabor k4:    +3.36, CI [-4.16, 13.01], p = 0.536
+  gabor k8:    +0.71, CI [-4.03,  6.68], p = 0.831
+  pyramid k4:  +1.68, CI [-2.29,  6.34], p = 0.471
+  pyramid k8:  +1.74, CI [-1.30,  5.41], p = 0.341
+
+1.0x:
+  gabor k4:    +7.20, CI [-2.85, 20.71], p = 0.283
+  gabor k8:    +3.22, CI [-3.62, 11.78], p = 0.470
+  pyramid k4:  +2.91, CI [-2.60,  9.53], p = 0.366
+  pyramid k8:  +2.34, CI [-1.95,  7.43], p = 0.355
+
+2.0x:
+  gabor k4:    -0.02, CI [-13.40, 12.43], p = 0.998
+  gabor k8:    -4.60, CI [-14.41,  4.66], p = 0.356
+  pyramid k4:  -1.56, CI [-10.41,  5.86], p = 0.745
+  pyramid k8:  -3.39, CI [-10.70,  2.93], p = 0.353
+```
+
+Interpretation:
+
+The n128 scale sweep upgrades the feature-posterior bridge from a narrow pilot
+to a substantial clean-cache result. The robust claim is that joint trajectory
+marginalization rescues image identity and Gabor/pyramid feature recovery
+relative to zero-eye under hard negatives. The axis-specific claim remains
+bounded. Parallel trends positive for feature recovery at `0.5x` and `1.0x`,
+but the paired uncertainty intervals are broad; at `2.0x`, the direction
+reverses toward orthogonal. Image-identity accuracy also does not give a stable
+parallel advantage under hard negatives. The current best reading is a
+scale- and endpoint-dependent reconciliation: edge-orthogonal motion can be a
+better discriminating probe for hard-negative identity, while edge-parallel
+motion may be feature-preserving at natural scales, but the unified model has
+not yet made that mechanism claim decisive.
+
+Compact tangent geometry status:
+
+```text
+image-identity compact mechanism:
+  possible now as a cache-only posthoc on this response cache using
+  analyze_compact_mechanism.py
+
+feature-posterior compact mechanism:
+  not yet wired; requires emitting compact-variant candidate score vectors
+  and feeding them into analyze_feature_posterior.py
+
+V1 forward rerun:
+  not required for the initial compact mechanism tests
+```
+
+## Compact-Mechanism Image-Disjoint n128 Hard-Negative Scale Sweep
+
+Output:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_axis_conditioned_hard_negative_shared_source_gpu1_n128_c4_k16_scales_0p5_1_2_v1/
+    compact_mechanism_image_disjoint_fold0_n768_k2_5_10_20_rand8_log_v1/
+```
+
+Configuration:
+
+```text
+source exact cache = backimage_axis_conditioned_hard_negative_shared_source_gpu1_n128_c4_k16_scales_0p5_1_2_v1
+selected response tables = 768/768
+basis_mode = image_disjoint
+basis shape = 756 x 50
+basis source = backimage_image_disjoint_compact_basis_delta025_v1/image_disjoint_compact_basis_delta0p25_fold0of2.npz
+variants = full_exact, zero_static, compact_only, compact_removed,
+           log_compact_only, log_compact_removed, random_k,
+           unit_shuffle_compact, gain_only, static_pc_k
+k = 2, 5, 10, 20
+n_random = 8
+likelihood_scales = 0.5, 1.0
+```
+
+QC:
+
+```text
+image_disjoint_basis_verified = true
+max prior reconstruction error ~= 1.7e-18
+max known reconstruction error ~= 1.7e-18
+trial rows = 90,624
+summary rows = 372
+```
+
+Primary likelihood-scale `1.0` result:
+
+```text
+compact_only:
+  preserves substantial full-minus-zero accuracy rescue at every scale
+  k5 is usually the best compact-only setting by accuracy
+  median true-score rescue is typically ~0.84-0.90 of full exact
+
+compact_removed:
+  falls to zero-static or below in most rows
+  median true-score rescue is negative
+
+log_compact_removed:
+  has zero clipping
+  remains near zero-static
+  supports the compact-removal result without the linear negative-rate caveat
+
+random_k:
+  weak or below zero-static
+
+unit_shuffle_compact:
+  partial but much weaker than compact_only
+
+gain_only:
+  partial but not sufficient
+
+static_pc_k:
+  competitive with compact_only and sometimes better in accuracy
+```
+
+Selected accuracy rows at likelihood scale `1.0`:
+
+```text
+0.5x orthogonal:
+  zero = 0.609
+  full_exact = 0.781
+  compact_only k20 = 0.734
+  compact_removed k20 = 0.586
+  static_pc k20 = 0.750
+
+0.5x parallel:
+  zero = 0.609
+  full_exact = 0.812
+  compact_only k20 = 0.703
+  compact_removed k20 = 0.578
+  static_pc k20 = 0.766
+
+1.0x orthogonal:
+  zero = 0.391
+  full_exact = 0.805
+  compact_only k20 = 0.648
+  compact_removed k20 = 0.375
+  static_pc k20 = 0.703
+
+1.0x parallel:
+  zero = 0.391
+  full_exact = 0.797
+  compact_only k20 = 0.641
+  compact_removed k20 = 0.445
+  static_pc k20 = 0.641
+
+2.0x orthogonal:
+  zero = 0.336
+  full_exact = 0.742
+  compact_only k20 = 0.586
+  compact_removed k20 = 0.305
+  static_pc k20 = 0.578
+
+2.0x parallel:
+  zero = 0.336
+  full_exact = 0.680
+  compact_only k20 = 0.555
+  compact_removed k20 = 0.305
+  static_pc k20 = 0.547
+```
+
+Best compact-only `k` by accuracy:
+
+```text
+0.5x orthogonal: k5,  joint = 0.750
+0.5x parallel:   k2,  joint = 0.773
+1.0x orthogonal: k5,  joint = 0.680
+1.0x parallel:   k5,  joint = 0.656
+2.0x orthogonal: k5,  joint = 0.617
+2.0x parallel:   k10, joint = 0.570
+```
+
+Interpretation:
+
+This is a positive compact-mechanism result for image-identity joint decoding.
+An image-disjoint compact tangent basis is sufficient for much of the exact
+joint-eye rescue, and removing that compact component destroys most of the
+rescue. The clipping-safe log-removal variants make the necessity result more
+credible than the earlier linear-only removal result.
+
+The result does not yet prove compact geometry is unique. Static-response PCs
+are a serious control and remain competitive. This is a fair dimensionality
+control because it asks whether a generic low-dimensional static-response
+subspace can carry the same likelihood structure. However, static PCs are not a
+compact-excluding negative control. If compact translation directions are
+embedded in high-variance static-response axes, static PCs can inherit part of
+the compact geometry. Therefore strong static-PC performance weakens the claim
+that the compact basis is uniquely special, but it does not falsify the compact
+geometry mechanism.
+
+Current best wording:
+
+```text
+In the hard-negative n128 axis-conditioned cache, an image-disjoint compact
+translation basis carries a large fraction of the exact joint-eye likelihood
+rescue, and compact removal collapses the rescue. This links compact
+translation geometry to trajectory-marginalized image inference. Static PCs
+remain competitive, so the current claim is compact sufficiency/necessity
+relative to random, unit-shuffle, gain, and removal controls, not uniqueness
+over all low-dimensional response subspaces.
+```
+
+Next compact controls:
+
+```text
+1. Measure compact-vs-static-PC subspace overlap for this n128 hard-negative
+   cache.
+2. Residualize compact against static PCs and static PCs against compact to ask
+   which component uniquely carries rescue.
+3. Add compact-only / compact-removed score variants to the feature-posterior
+   bridge, especially for the k8, 1x, parallel-vs-orthogonal feature signal.
 ```
 
 ### Pre-Fix Axis Runs

@@ -411,6 +411,11 @@ def analyze(args: argparse.Namespace) -> Path:
     manifest = _filter_manifest(manifest, args)
     if manifest.empty:
         raise ValueError("No response tables selected after filters")
+    print(
+        f"[compact-mechanism] selected response tables={len(manifest)}; "
+        f"k_dims={args.k_dims}; variants={args.variants}; likelihood_scales={args.likelihood_scales}",
+        flush=True,
+    )
     first = _load_npz_table(base / str(manifest.iloc[0]["response_cache_path"]))
     n_units = int(first["prior_lambda_counts"].shape[-1])
     max_k = max(_parse_int_list(args.k_dims))
@@ -421,10 +426,14 @@ def analyze(args: argparse.Namespace) -> Path:
 
     zero_tables_for_static = []
     if "static_pc_k" in set(_parse_list(args.variants)):
-        for _, row in manifest.iterrows():
+        print("[compact-mechanism] building static response PC basis", flush=True)
+        for static_i, (_, row) in enumerate(manifest.iterrows(), start=1):
             tab = _load_npz_table(base / str(row["response_cache_path"]))
             zero_tables_for_static.append(np.asarray(tab["zero_lambda_counts"], dtype=np.float32))
+            if static_i == 1 or static_i % 64 == 0 or static_i == len(manifest):
+                print(f"[compact-mechanism] static PC cache load {static_i}/{len(manifest)}", flush=True)
         static_basis = _static_pc_basis(zero_tables_for_static, n_units=n_units, k_max=max_k)
+        print("[compact-mechanism] static response PC basis ready", flush=True)
     else:
         static_basis = None
 
@@ -442,7 +451,9 @@ def analyze(args: argparse.Namespace) -> Path:
             random_bases[(k, null_id)] = _random_basis(n_units, k, np.random.default_rng(int(args.seed) + 100_000 * k + null_id))
     observer_distance_lookup = _load_nearest_distance_lookup(base)
 
-    for table_index, man_row in manifest.iterrows():
+    for progress_i, (table_index, man_row) in enumerate(manifest.iterrows(), start=1):
+        if progress_i == 1 or progress_i % 16 == 0 or progress_i == len(manifest):
+            print(f"[compact-mechanism] scoring table {progress_i}/{len(manifest)}", flush=True)
         table_path = base / str(man_row["response_cache_path"])
         table = _load_npz_table(table_path)
         prior_full = np.asarray(table["prior_lambda_counts"], dtype=np.float64)

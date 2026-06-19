@@ -1,6 +1,6 @@
 # BackImage Trajectory-Table Observer Plan
 
-Last curated: 2026-06-16.
+Last curated: 2026-06-19.
 
 ## Goal
 
@@ -30,6 +30,39 @@ log p(y | I)
 
 The desired latent is image identity, local feature identity, or image-feature
 class. The trajectory is nuisance state.
+
+## Current Analysis Status
+
+The strongest current result is not an axis-direction claim by itself. It is
+that exact trajectory marginalization gives a robust pose-uncertainty rescue:
+joint-eye image identity and posterior-weighted feature recovery beat the
+zero-eye observer across the clean shared-source axis-conditioned hard-negative
+scale sweep.
+
+The completed hard-negative `n128/c4/k16` scale sweep covers `0.5x`, `1.0x`,
+and `2.0x` motion scales for `axis_edge_parallel` and
+`axis_edge_orthogonal`, with shared source catalogs for every paired axis
+comparison. At likelihood scale `1.0`, joint-eye image identity remains far
+above zero-eye at every motion scale. The feature-posterior posthoc on the same
+cache also shows strongly positive joint-minus-zero Gabor/pyramid recovery for
+all axis/scale/feature/k rows.
+
+Axis direction is still claim-bounded. Feature recovery trends edge-parallel at
+`0.5x` and `1.0x`, trends edge-orthogonal at `2.0x`, and the paired
+parallel-minus-orthogonal feature contrasts are not individually significant.
+This should be read as a scale-dependent reconciliation problem rather than a
+failed result: orthogonal motion can be a strong hard-negative discriminator,
+while along-contour motion may still be better for feature-preserving recovery
+in some natural-scale settings.
+
+Compact tangent geometry is now a central mechanism question. The n128
+hard-negative compact-mechanism posthoc is complete for the image-identity
+observer: compact-only preserves much of the exact joint-eye rescue, and
+compact removal collapses it. The fully unified compact-by-feature-posterior
+analysis is not wired yet, but it should also be a cache-only extension: reuse
+cached response tensors, apply the same compact-only/compact-removed/log-rate
+projections, emit compact-variant score vectors, and feed those into the
+feature-posterior bridge.
 
 ## Scope Boundary: Exact Tables, Not Compact Geometry
 
@@ -72,8 +105,8 @@ full Wu-style image reconstruction
 ```
 
 The current result validates the trajectory-marginalized decision logic for
-natural-image candidates. A future compact-geometry observer would ask whether
-a low-dimensional or lagged translation approximation can reproduce the same
+natural-image candidates. The compact-mechanism posthoc now asks whether a
+low-dimensional or lagged translation approximation can reproduce the same
 joint-eye rescue without evaluating the full exact response table.
 
 ## Compact-Mechanism Post-Hoc Analysis
@@ -198,6 +231,32 @@ result should therefore be read as compact-geometry sufficiency above
 random/unit-shuffle/gain controls, not yet as unique superiority over every
 generic low-dimensional static-response subspace.
 
+The n128 shared-source hard-negative scale sweep extends that conclusion to the
+axis-conditioned cache. The image-disjoint compact basis again carries most of
+the full exact true-score rescue, compact removal collapses the rescue, and
+`log_compact_removed` shows the same qualitative loss without negative-rate
+clipping. At likelihood scale `1.0`, `compact_only` preserves roughly
+`46-82%` of the full-minus-zero accuracy rescue depending on axis, scale, and
+`k`, and roughly `0.84-0.90` of the median true-score rescue for the strongest
+compact settings. `compact_removed` usually falls to zero-static or worse.
+
+Static-response PCs remain a fair but subtle control. They are fair because
+they ask whether any low-dimensional unit-space basis drawn from the static
+response ensemble can carry the same observer rescue. They are subtle because
+they are not designed to exclude compact translation geometry: if the compact
+translation directions align with high-variance stabilized/static response
+axes, static PCs can inherit part of the compact geometry. Strong static-PC
+performance therefore weakens a uniqueness claim, but it does not by itself
+falsify compact geometry as the mechanism. The stronger next control is an
+overlap and residualization analysis:
+
+```text
+compact vs static-PC subspace overlap
+compact-only after removing static-PC overlap
+static-PC-only after removing compact overlap
+feature-posterior compact-only / compact-removed scoring
+```
+
 `log_compact_only` and `log_compact_removed` provide that clipping-safe
 companion diagnostic. They project the log-rate ratio
 `log(lambda_full / lambda_zero)` and exponentiate back to rates, so the
@@ -215,6 +274,17 @@ The strategic bridge being tested is:
 compact FEM geometry
   -> carries motion-dependent likelihood structure
   -> supports trajectory-marginalized natural-image inference
+```
+
+For the current axis-conditioned feature-posterior branch, compact geometry has
+two statuses:
+
+```text
+image-identity compact mechanism:
+  possible now as a cache-only posthoc on the response tables
+
+feature-posterior compact mechanism:
+  requires a small analyzer extension, but not a new V1 forward rerun
 ```
 
 ## Relationship To Existing BackImage Aggregate Work
@@ -337,6 +407,159 @@ zero-eye:
 
 joint-eye:
   log mean_tau p(y_obs | I_i, tau)
+```
+
+Image identity is only one endpoint. The implemented feature-posterior bridge
+attaches a feature vector to every candidate image and decodes the
+posterior-weighted feature estimate:
+
+```text
+z_i = phi(I_i)
+p_mode(I_i | y_obs) = softmax(score_mode(I_i))
+z_hat_mode = sum_i p_mode(I_i | y_obs) z_i
+feature_error_mode = ||z_hat_mode - z_true||^2
+```
+
+Run this for `known-eye`, `zero-eye`, `joint-eye`, and the `best_single_tau`
+diagnostic. The first implemented posthoc runner also writes a `motion_delta`
+diagnostic using:
+
+```text
+Delta S_i = S_joint(I_i) - S_zero(I_i)
+z_hat_delta = sum_i softmax(Delta S_i) z_i
+```
+
+`motion_delta` is a candidate-wise log-likelihood-ratio diagnostic, not an
+independent generative likelihood. It is useful for isolating the motion-added
+score component, but it should not be read as a calibrated standalone observer.
+
+The primary implemented feature targets match the BackImage positive branches:
+
+```text
+gabor_local_field
+pyramid_local_field
+```
+
+The runner is:
+
+```text
+declan/backimage_trajectory_observer/analyze_feature_posterior.py
+```
+
+It is cache-first: it consumes existing exact response-table runs and does not
+rerun the V1 twin unless it needs to compute image feature vectors from patches.
+It writes:
+
+```text
+feature_posterior_trials.csv
+feature_posterior_summary.csv
+feature_axis_contrasts.csv
+feature_motion_evidence_contrasts.csv
+feature_posterior_uncertainty.csv
+feature_posterior_qc.csv
+feature_posterior_report.md
+feature_posterior_metadata.json
+```
+
+Guardrails:
+
+- candidate IDs from `candidate_sets.csv` are checked against response-table
+  candidate IDs before candidate feature vectors are aligned;
+- external feature NPZ files must validate all shared row identities
+  (`source_row`, `image_index`) or be passed with an explicit
+  `--trust-feature-row-order` override;
+- dry-run or cache-skipped manifests fail with a clear no-response-cache error;
+- `feature_axis_contrasts.csv` only includes parallel-vs-orthogonal rows whose
+  source trajectory catalogs were shared (`axis_shared_source_catalog=True`).
+
+The first completed feature-posterior run is:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_axis_conditioned_matched_static_feature_posterior_gabor_pyramid_k4_8_v1/
+```
+
+It scored the clean shared-source matched-static axis cache:
+
+```text
+base run = backimage_axis_conditioned_matched_static_percandidate_gpu1_n64_c4_k16_v1
+n_windows = 64
+response tables = 128
+candidate_set_mode = matched_static_response
+priors = axis_edge_parallel, axis_edge_orthogonal
+latents = gabor_local_field, pyramid_local_field
+k = 4, 8
+likelihood_scale = 1.0
+```
+
+The initial `k=4,8` PCA feature sweep was deliberately conservative rather
+than definitive. It matched the low-dimensional Gabor/pyramid feature
+decomposition branch, kept the posterior-MSE readout interpretable with only
+four image candidates per trial, and avoided pushing too hard on a PCA fit over
+the selected-window feature rows (`128 x 4608` for Gabor and `128 x 3072` for
+pyramid in the n128 scale sweep). The follow-up question is whether the
+natural-scale axis interaction survives or sharpens in a richer feature
+subspace. A principled next sweep is:
+
+```text
+k = 2, 4, 8, 16, 32
+```
+
+Interpret the sweep as:
+
+```text
+k2/k4:
+  coarse dominant feature recovery
+
+k8:
+  richer but still compact feature recovery; current most sensitive readout,
+  with a small exploratory preference for the natural 1x scale in the
+  parallel/axis-by-scale feature-recovery contrast
+
+k16/k32:
+  broader feature reconstruction, useful only if the axis-by-scale interaction
+  survives without being dominated by noisy or idiosyncratic dimensions
+```
+
+Headline readout:
+
+```text
+joint feature recovery > zero-eye feature recovery in all 8 summary rows
+parallel joint feature recovery > orthogonal joint feature recovery in all 4
+  feature/k axis contrasts
+```
+
+Mean joint MSE reduction relative to zero-eye:
+
+```text
+orthogonal gabor k4:    9.3%
+orthogonal gabor k8:   14.0%
+orthogonal pyramid k4: 10.1%
+orthogonal pyramid k8:  8.7%
+parallel gabor k4:     11.2%
+parallel gabor k8:     18.4%
+parallel pyramid k4:   14.8%
+parallel pyramid k8:   14.3%
+```
+
+Parallel-minus-orthogonal joint feature recovery:
+
+```text
+gabor k4:    mean +1.19, median +0.37, parallel wins 57.8% of trials
+gabor k8:    mean +3.43, median +0.91, parallel wins 56.2% of trials
+pyramid k4:  mean +1.88, median +0.61, parallel wins 53.1% of trials
+pyramid k8:  mean +2.37, median +0.11, parallel wins 51.6% of trials
+```
+
+Interpretation:
+
+```text
+The exact joint trajectory-table observer carries recoverable image-feature
+information beyond zero-eye. In the clean matched-static axis cache, the
+edge-parallel prior recovers more Gabor/pyramid feature structure than the
+edge-orthogonal prior, even though the effect is heterogeneous across trials.
+Known-eye remains well above joint-eye, so this is a partial pose-uncertainty
+rescue rather than complete trajectory recovery.
 ```
 
 The first pass should use the same deterministic expected-count Poisson score
@@ -789,6 +1012,9 @@ score_known_eye(loglik_table, true_trajectory_index)
 score_zero_eye(loglik_table, zero_trajectory_index)
 score_joint_eye(loglik_table, log_trajectory_prior=None, temperature=1.0)
 rank_of_true(scores, true_candidate_index)
+posterior_from_scores(scores, temperature=1.0)
+posterior_weighted_feature(scores, candidate_features)
+feature_recovery_metrics(z_hat, z_true)
 ```
 
 Shape convention:
@@ -798,6 +1024,8 @@ loglik_table: [n_candidates, n_trajectories]
 known_score: [n_candidates]
 zero_score: [n_candidates]
 joint_score: [n_candidates]
+candidate_features: [n_candidates, n_features]
+z_hat: [n_features]
 ```
 
 ## Proposed Module Layout

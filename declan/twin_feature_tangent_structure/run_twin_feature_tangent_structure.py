@@ -18,6 +18,13 @@ import torch.nn.functional as F
 from VisionCore.paths import VISIONCORE_ROOT
 from eval.fixrsvp import get_fixrsvp_data
 
+try:
+    from jake.twininfo.common import N_LAGS as DEFAULT_N_LAGS
+    from jake.twininfo.common import PPD as DEFAULT_MODEL_PPD
+except Exception:
+    DEFAULT_N_LAGS = 32
+    DEFAULT_MODEL_PPD = 37.50476617
+
 
 def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -989,7 +996,7 @@ def _load_twin_context(model_device: str) -> TwinContext:
         readout=readout,
         compute_rate_map_fn=compute_rate_map,
         n_units=int(readout.n_units),
-        n_lags=32,
+        n_lags=int(DEFAULT_N_LAGS),
         manifest_rows=manifest_rows,
     )
 
@@ -1166,7 +1173,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--primary-delta", type=float, default=None)
     p.add_argument("--history-gap-frames", type=int, default=32)
-    p.add_argument("--model-ppd", type=float, default=37.5)
+    p.add_argument("--model-ppd", type=float, default=float(DEFAULT_MODEL_PPD))
     p.add_argument("--max-eye-samples", type=int, default=128)
     p.add_argument(
         "--eye-cloud-mode",
@@ -1991,7 +1998,7 @@ def main() -> None:
     _write_csv(out_root / "covariance_approx" / "twin_linear_covariance_approx.csv", cov_rows)
 
     _write_csv(
-        out_root / "tangent_maps" / "twin_tangent_image_metrics.csv",
+        out_root / "tangent_maps" / "twin_tangent_image_metrics_summary.csv",
         [
             {
                 "summary_type": "image_averaged_history_tangent",
@@ -2002,7 +2009,22 @@ def main() -> None:
     )
 
     with (out_root / "tangent_maps" / "twin_tangent_maps.pkl").open("wb") as handle:
-        pickle.dump({"delta_arcmins": delta_arcmins, "object_payload": object_payload}, handle)
+        pickle.dump(
+            {
+                "delta_arcmins": delta_arcmins,
+                "object_payload": object_payload,
+                "metadata": {
+                    "model_ppd": float(args.model_ppd),
+                    "history_length_frames": int(ctx.n_lags),
+                    "arcmin_to_model_px": float(arcmin_to_model_px),
+                    "tangent_derivative_units": "response_per_model_pixel",
+                    "response_reduction": "spatial_amax_over_population_rate_map",
+                    "finite_difference_shift_convention": "grid_sample_border_align_corners_true",
+                    "source_runner": "declan.twin_feature_tangent_structure.run_twin_feature_tangent_structure",
+                },
+            },
+            handle,
+        )
 
     prediction_abs_diffs = np.asarray([float(cast(Any, r["max_abs_diff"])) for r in prediction_rows], dtype=np.float64)
     prediction_corrs = np.asarray([float(cast(Any, r.get("corr_across_units", float("nan")))) for r in prediction_rows], dtype=np.float64)

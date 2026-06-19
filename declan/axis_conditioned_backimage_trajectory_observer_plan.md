@@ -473,6 +473,232 @@ run_metadata.json
 summary_report.md
 ```
 
+### Stage 5b: feature-posterior joint decoding endpoint
+
+The image-identity observer is not the only meaningful endpoint. Edge-orthogonal
+motion can help finite-candidate image identity by creating large, discriminating
+response perturbations among hard negatives. Edge-parallel motion may instead be
+useful because it preserves and refines local feature structure while making
+exact pose less costly.
+
+Keep the exact-cache likelihood machinery, but attach feature vectors to the
+candidate images and score posterior-weighted feature recovery:
+
+```text
+z_i = phi(I_i)
+p_joint(I_i | y) proportional to exp(S_joint(I_i))
+z_hat_joint = sum_i p_joint(I_i | y) z_i
+feature_error_joint = ||z_hat_joint - z_true||^2
+```
+
+Run this for known-eye, zero-eye, and joint-eye posteriors:
+
+```text
+known feature recovery
+zero feature recovery
+joint feature recovery
+joint-minus-zero feature gain
+known-minus-joint pose cost
+```
+
+Also compute an incremental motion-evidence posterior:
+
+```text
+Delta S_i = S_joint(I_i) - S_zero(I_i)
+z_hat_delta = sum_i softmax(Delta S_i) z_i
+```
+
+Primary feature targets should match the existing positive decomposition branch:
+
+```text
+gabor_local_field
+pyramid_local_field
+```
+
+`delta_mean`, `temporal_pca`, and `temporal_dct` are response-summary targets
+from the aggregate/local feature-decoding branches. They remain useful
+follow-ups, but the first implemented posthoc uses image-feature vectors
+attached to candidate patches:
+
+```text
+gabor_local_field
+pyramid_local_field
+```
+
+Implemented runner:
+
+```text
+declan/backimage_trajectory_observer/analyze_feature_posterior.py
+```
+
+This is a cache-first posthoc over existing exact response tables. It computes
+known-eye, zero-eye, joint-eye, best-single-tau, and `motion_delta` feature
+posteriors. `motion_delta = S_joint - S_zero` is labeled as a candidate-wise
+log-likelihood-ratio diagnostic, not as an independent generative likelihood.
+
+Required posthoc outputs:
+
+```text
+feature_posterior_trials.csv
+feature_posterior_summary.csv
+feature_axis_contrasts.csv
+feature_motion_evidence_contrasts.csv
+feature_posterior_uncertainty.csv
+feature_posterior_qc.csv
+```
+
+Primary axis contrasts:
+
+```text
+parallel joint feature recovery - orthogonal joint feature recovery
+parallel joint-minus-zero feature gain - orthogonal joint-minus-zero feature gain
+parallel known-minus-joint pose cost - orthogonal known-minus-joint pose cost
+parallel motion-added feature evidence - orthogonal motion-added feature evidence
+```
+
+Promotion logic for this endpoint:
+
+```text
+If parallel wins feature recovery but orthogonal wins hard-negative image
+identity, treat the observer branch as evidence for a mechanism split:
+orthogonal motion is a discriminating probe; parallel motion is
+feature-preserving / pose-tolerant.
+```
+
+This was implemented first as a posthoc over existing exact-cache tables, so
+new response-table runs are not required for the initial feature-posterior
+readout.
+
+Status as of 2026-06-19:
+
+```text
+Stage 5b implemented.
+Completed uncertainty outputs:
+
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_axis_conditioned_matched_static_feature_posterior_gabor_pyramid_k4_8_v1/
+  backimage_axis_conditioned_matched_static_feature_posterior_gabor_pyramid_k4_8_uncertainty_v2/
+  backimage_axis_conditioned_hard_negative_feature_posterior_gabor_pyramid_k4_8_uncertainty_v1/
+  backimage_axis_conditioned_hard_negative_n128_scale_sweep_feature_posterior_gabor_pyramid_k4_8_uncertainty_v1/
+```
+
+First matched-static result:
+
+```text
+base run = backimage_axis_conditioned_matched_static_percandidate_gpu1_n64_c4_k16_v1
+candidate_set_mode = matched_static_response
+axis_shared_source_catalog = True
+n_windows = 64
+response tables = 128
+latents = gabor_local_field, pyramid_local_field
+k = 4, 8
+```
+
+K-choice note:
+
+```text
+The first bridge used k=4,8 because this matched the existing low-dimensional
+Gabor/pyramid feature-decomposition branch and kept the posterior-MSE readout
+conservative with only four image candidates per trial. It is not a final claim
+that higher-k feature spaces are irrelevant.
+
+Next feature-space sweep:
+  k = 2, 4, 8, 16, 32
+
+Question:
+  Does the 1x parallel feature-recovery advantage survive or sharpen as the
+  feature subspace becomes richer, or is it concentrated in the dominant
+  low-dimensional feature axes?
+
+Current hint:
+  k8 may be the more mechanism-relevant setting than k4 because the small 1x
+  preference is more visible in the richer feature readout. Treat this as an
+  exploratory axis-by-scale signal, not an unconditioned absolute-MSE optimum.
+```
+
+Headline:
+
+```text
+joint feature recovery > zero-eye feature recovery in all summary rows
+parallel joint feature recovery > orthogonal joint feature recovery in all
+  feature/k contrasts
+```
+
+Uncertainty-bounded update:
+
+```text
+matched-static n64:
+  parallel-minus-orthogonal feature recovery remains positive in all rows
+  strongest row = pyramid k8, +2.37, CI [0.38, 4.62], p = 0.025
+
+hard-negative n64:
+  joint-minus-zero feature recovery is robust
+  parallel-minus-orthogonal feature recovery trends orthogonal
+  no axis feature row is significant
+
+hard-negative n128 scale sweep:
+  response tables scored = 768
+  scales = 0.5x, 1.0x, 2.0x
+  joint-minus-zero feature recovery is positive in every axis/scale/latent/k row
+  sign-flip p ~= 0.0001 throughout
+  parallel-minus-orthogonal feature recovery trends positive at 0.5x and 1.0x
+  parallel-minus-orthogonal feature recovery trends orthogonal at 2.0x
+  all n128 axis feature CIs include zero
+```
+
+Mean joint MSE reduction relative to zero-eye:
+
+```text
+orthogonal gabor k4:    9.3%
+orthogonal gabor k8:   14.0%
+orthogonal pyramid k4: 10.1%
+orthogonal pyramid k8:  8.7%
+parallel gabor k4:     11.2%
+parallel gabor k8:     18.4%
+parallel pyramid k4:   14.8%
+parallel pyramid k8:   14.3%
+```
+
+Parallel-minus-orthogonal joint feature recovery:
+
+```text
+gabor k4:    mean +1.19, median +0.37, parallel wins 57.8%
+gabor k8:    mean +3.43, median +0.91, parallel wins 56.2%
+pyramid k4:  mean +1.88, median +0.61, parallel wins 53.1%
+pyramid k8:  mean +2.37, median +0.11, parallel wins 51.6%
+```
+
+Updated interpretation:
+
+```text
+The feature-posterior endpoint gives the strongest current support for the
+general joint-decoding claim: trajectory marginalization recovers local
+Gabor/pyramid feature structure above zero-eye under hard negatives and across
+the 0.5x/1.0x/2.0x scale sweep. It does not yet give a claim-level
+along-contour mechanism by itself. Matched-static keeps a parallel-positive
+feature-recovery signal, hard-negative identity can favor orthogonal motion,
+and the hard-negative n128 feature direction is scale-dependent.
+```
+
+Compact tangent geometry status for Stage 5b:
+
+```text
+The existing compact-mechanism analyzer has now tested compact-only and
+compact-removed image-identity rescue on the n128 hard-negative scale-sweep
+cache. The result is positive for compact sufficiency and necessity:
+compact_only preserves much of the full exact rescue, while compact_removed and
+log_compact_removed fall near zero-static.
+
+Static PCs remain the major specificity caveat. They are a fair control for
+generic low-dimensional response structure, but they may overlap the compact
+translation geometry rather than excluding it. The next image-identity compact
+control should quantify compact-vs-static-PC overlap and residualize each
+subspace against the other.
+
+The feature-posterior compact test still needs a cache-only score-vector
+extension, but it should not require rerunning the V1 response pipeline.
+```
+
 ### Stage 6: model-derived residual prediction
 
 Only after Stage 5 is stable, ask whether the observer objective explains real
@@ -540,7 +766,7 @@ coherence and pixel stability.
 
 ## First concrete implementation checklist
 
-1. Summarize the active matched-static observer run.
+1. Summarize the completed matched-static and hard-negative scale-sweep runs.
 2. Add `axis_conditioned_traces.py`.
 3. Add unit tests for trace matching and metadata.
 4. Add axis-conditioned family support to the trajectory observer runner.
