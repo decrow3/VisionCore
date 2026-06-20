@@ -1,0 +1,6 @@
+status,item
+supported,Measured FEM axes align with local edges
+supported,Alignment strengthens for reliable axes
+supported,Parallel endpoint zone is enriched
+guardrail,Weighted and unweighted summaries differ
+guardrail,Current response objectives do not beat raw edge

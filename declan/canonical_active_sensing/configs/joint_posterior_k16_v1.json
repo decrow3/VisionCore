@@ -1,0 +1,55 @@
+{
+  "description": "Canonical joint posterior observer/posthoc completion for rel0.25 and pyramid/Gabor k2-32 support.",
+  "observer_rel0p25": {
+    "args": {
+      "input": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_image_structure_reviewed_v2_screenfiltered_yfix/backimage_image_fem_windows.csv",
+      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_axis_conditioned_hard_negative_shared_source_gpu1_n128_c4_k16_scale_0p25_v1",
+      "max_images": 128,
+      "n_candidates": 4,
+      "candidate_set_modes": "hard_negative_structure",
+      "observation_family": "empirical",
+      "prior_families": "axis_edge_parallel,axis_edge_orthogonal",
+      "observed_rms_scales": "0.25",
+      "trajectory_prior_mode": "leave_one_out",
+      "n_prior_trajectories": 16,
+      "axis_source_column": "image_edge_axis_deg",
+      "axis_template_mode": "same_dominant_projection",
+      "axis_match_policy": "strict",
+      "axis_catalog_mode": "per_candidate",
+      "likelihood_scales": "0.5,1.0",
+      "eps": 1e-8,
+      "bin_seconds": 0.008333333333333333,
+      "loo_exclude_trace_rmse_deg": 1e-9,
+      "patch_size_px": 540,
+      "n_timepoints": 40,
+      "reliable_image_coherence_min": 0.2,
+      "reliable_drift_anisotropy_min": 0.2,
+      "min_duration_s": 0.1,
+      "max_rms_deg": 0.12,
+      "twin_batch_size": 24,
+      "twin_trace_batch_size": 1,
+      "device": "cuda:1",
+      "seed": 0,
+      "progress_every": 8
+    }
+  },
+  "posterior_rel0p25": {
+    "args": {
+      "run_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_axis_conditioned_hard_negative_shared_source_gpu1_n128_c4_k16_scale_0p25_v1",
+      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_axis_conditioned_hard_negative_n128_rel0p25_feature_posterior_gabor_pyramid_k2_4_8_16_32_uncertainty_v1",
+      "feature_npz": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_axis_conditioned_hard_negative_n128_scale_sweep_feature_posterior_gabor_pyramid_k4_8_uncertainty_v1/feature_latent_arrays.npz",
+      "latent_names": "gabor_local_field,pyramid_local_field",
+      "pca_k_list": "2,4,8,16,32",
+      "likelihood_scales": "1.0",
+      "posterior_temperature": 1.0,
+      "candidate_set_modes": "hard_negative_structure",
+      "priors": "axis_edge_parallel,axis_edge_orthogonal",
+      "motion_scales": "0.25",
+      "n_bootstrap": 10000,
+      "n_permutations": 10000,
+      "uncertainty_seed": 17,
+      "progress_every": 16
+    }
+  }
+}
+

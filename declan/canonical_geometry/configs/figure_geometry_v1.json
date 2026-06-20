@@ -1,0 +1,18 @@
+{
+  "description": "Canonical cache-first geometry figure pack for panels D/E plus raw-edge roadblock provenance.",
+  "geometry_figure_pack": {
+    "args": {
+      "atlas_dir": "declan/figure4_active_sensing_atlas",
+      "matched_axis_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_axis_conditioned_matched_static_percandidate_gpu1_n64_c4_k16_v1",
+      "hardneg_axis_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_axis_conditioned_hard_negative_shared_source_gpu1_n128_c4_k16_scales_0p5_1_2_v1",
+      "stability_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_edge_parallel_stability_screen_yfix_n256_pop256",
+      "objective_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_conditional_fixation_objectives_twin_axis_only_n256",
+      "alignment_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_edge_alignment_distribution_inspection",
+      "window_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_image_structure_reviewed_v2_screenfiltered_yfix",
+      "raw_edge_audit_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_raw_edge_roadblock_residual_adjudication_canonical_v1",
+      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_geometry_figure_pack_canonical_v1",
+      "claim_boundary": "geometry behavior evidence; raw-edge residual bridge candidate; not feature-readout proof",
+      "require_raw_edge_audit": true
+    }
+  }
+}

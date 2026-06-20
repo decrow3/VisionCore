@@ -1,0 +1,3 @@
+screen,n_windows,n_sessions,mean_parallel_cost_window,mean_orthogonal_cost_window,mean_advantage_window,mean_advantage_session_mean,ci95_low_session_mean,ci95_high_session_mean,n_sessions_positive_advantage,fraction_windows_positive_advantage
+pixel,256,29,1229.8177885655314,1541.551880568266,311.73409200273454,300.5400437095934,172.78864426599705,408.9609469210731,26,0.80078125
+twin,256,29,0.0011920961983591,0.0016530054463714,0.0004609092480123,0.0004544966484948,0.0003710473267919,0.0005365190224445,29,0.859375

@@ -1,0 +1,9 @@
+evidence_class,metric,label,n_rows,n_sessions,fraction_session_mean,fraction_session_sem,notes
+compact_reafferent_numerator_candidate,direct_recorded_derivative_compact_capture,"compact
+derivative",1008,13,0.4835847840051744,0.0296264452034138,"Fraction of target covariance captured by compact derivative basis within a context. Good numerator candidate; denominator is target covariance for that context, not full reliable shared covariance."
+finite_difference_reafferent_numerator_candidate,finite_difference_tangent_capture,"finite-diff
+tangent",15,1,0.4361839225567466,0.0,"Fraction of target covariance captured by finite-difference tangent basis. Good mechanistic numerator candidate; denominator is target covariance, not full reliable shared covariance."
+noise_correlation_eye_correction_proxy,noise_corr_reduction_fraction,"noise-corr
+eye correction",4,4,0.3332373609393633,0.0374721621286924,"Median pairwise noise-correlation reduction after eye correction. Useful corroborating denominator evidence, but pairwise-correlation based."
+reliable_shared_denominator_proxy,aggregation_true_minus_eye_shuffle_fraction,"reliable-shared
+proxy",4,4,0.8484371920018655,0.0403061810908717,Fraction of aggregation reliability above eye-shuffle reliability. This is denominator-like but not yet a raw covariance trace fraction.

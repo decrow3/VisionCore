@@ -1,0 +1,82 @@
+{
+  "description": "Canonical local I_z pairing configs for the pyramid k16 delta_mean sensitivity readout.",
+  "local_pairing_primary": {
+    "args": {
+      "input": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_image_structure_reviewed_v2_screenfiltered_yfix/backimage_image_fem_windows.csv",
+      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_local_pairing_Iz_canonical_pyramid_k16_rel025_0p5_1_seed7_v1",
+      "window_manifest": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_local_pairing_Iz_revisit_clean_n128_k32_pyramid_rel025_1_fullpool_geom_v1/analysis_images.csv",
+      "max_images": 128,
+      "unpaired_samples_per_image": 32,
+      "candidate_families": "actual_paired_empirical,matched_unpaired_empirical,rotated_actual_90,ou_matched_actual,brownian_matched_actual",
+      "observed_rms_scales": "0.25,0.5,1.0",
+      "latent_names": "pyramid_local_field",
+      "pca_k_list": "16",
+      "n_timepoints": 48,
+      "fixed_ridge_alpha": 10.0,
+      "n_bootstrap": 10000,
+      "device": "cuda:0",
+      "twin_batch_size": 48,
+      "twin_trace_batch_size": 2,
+      "progress_every": 4,
+      "seed": 7
+    }
+  },
+  "local_pairing_sentinel": {
+    "args": {
+      "input": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_image_structure_reviewed_v2_screenfiltered_yfix/backimage_image_fem_windows.csv",
+      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_local_pairing_Iz_canonical_pyramid_k16_rel2_seed7_v1",
+      "window_manifest": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_local_pairing_Iz_revisit_clean_n128_k32_pyramid_rel025_1_fullpool_geom_v1/analysis_images.csv",
+      "max_images": 128,
+      "unpaired_samples_per_image": 32,
+      "candidate_families": "actual_paired_empirical,matched_unpaired_empirical,rotated_actual_90,ou_matched_actual,brownian_matched_actual",
+      "observed_rms_scales": "2.0",
+      "latent_names": "pyramid_local_field",
+      "pca_k_list": "16",
+      "n_timepoints": 48,
+      "fixed_ridge_alpha": 10.0,
+      "n_bootstrap": 10000,
+      "device": "cuda:0",
+      "twin_batch_size": 48,
+      "twin_trace_batch_size": 2,
+      "progress_every": 4,
+      "seed": 7
+    }
+  },
+  "local_incremental_primary": {
+    "args": {
+      "run_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_local_pairing_Iz_canonical_pyramid_k16_rel025_0p5_1_seed7_v1",
+      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_local_pairing_Iz_canonical_pyramid_k16_rel025_0p5_1_seed7_v1/incremental_static_plus_motion_tworeadout_v1",
+      "summaries": "delta_mean,temporal_pca",
+      "families": "actual_paired_empirical,matched_unpaired_empirical,rotated_actual_90,ou_matched_actual,brownian_matched_actual",
+      "contrast_pairs": "actual_paired_empirical:matched_unpaired_empirical,actual_paired_empirical:rotated_actual_90,actual_paired_empirical:ou_matched_actual,actual_paired_empirical:brownian_matched_actual",
+      "scale_ids": "all",
+      "latent_names": "pyramid_local_field",
+      "pca_k_list": "16",
+      "fixed_ridge_alpha": 10.0,
+      "outer_folds": 5,
+      "inner_folds": 3,
+      "decode_group_mode": "image",
+      "n_bootstrap": 10000,
+      "seed": 0
+    }
+  },
+  "local_incremental_sentinel": {
+    "args": {
+      "run_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_local_pairing_Iz_canonical_pyramid_k16_rel2_seed7_v1",
+      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_local_pairing_Iz_canonical_pyramid_k16_rel2_seed7_v1/incremental_static_plus_motion_tworeadout_v1",
+      "summaries": "delta_mean,temporal_pca",
+      "families": "actual_paired_empirical,matched_unpaired_empirical,rotated_actual_90,ou_matched_actual,brownian_matched_actual",
+      "contrast_pairs": "actual_paired_empirical:matched_unpaired_empirical,actual_paired_empirical:rotated_actual_90,actual_paired_empirical:ou_matched_actual,actual_paired_empirical:brownian_matched_actual",
+      "scale_ids": "all",
+      "latent_names": "pyramid_local_field",
+      "pca_k_list": "16",
+      "fixed_ridge_alpha": 10.0,
+      "outer_folds": 5,
+      "inner_folds": 3,
+      "decode_group_mode": "image",
+      "n_bootstrap": 10000,
+      "seed": 0
+    }
+  }
+}
+

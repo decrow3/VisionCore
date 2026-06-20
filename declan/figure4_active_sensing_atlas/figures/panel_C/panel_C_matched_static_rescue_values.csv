@@ -1,0 +1,5 @@
+observer,accuracy,color_key,recovery_fraction
+zero eye,0.328125,zero,
+joint empirical,0.765625,empirical,0.6511627906976745
+joint OU,0.796875,ou,0.6976744186046512
+known eye,1.0,known,1.0

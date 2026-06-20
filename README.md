@@ -1,6 +1,8 @@
 # VisionCore
 multidataset training for digital twin models of visual cortex
 
+For coding-agent navigation, start with [`AGENT_CONTEXT.md`](AGENT_CONTEXT.md).
+
 ## Installation
 
 Requires [uv](https://docs.astral.sh/uv/getting-started/installation/) and Python 3.12.

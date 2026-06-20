@@ -1,0 +1,2 @@
+session,trial_idx,phase,image_edge_axis_deg,drift_orientation_deg,drift_edge_delta_deg,drift_edge_cos2,image_orientation_coherence,anisotropy,abs_edge_delta_deg,example_score
+Allen_2022-04-15,414,mid_fixation,-88.47690616643148,88.50548269796325,-3.0176111356052804,0.9944574491433636,0.9979514602515968,0.9031556581669598,3.0176111356052786,0.8710856241552307

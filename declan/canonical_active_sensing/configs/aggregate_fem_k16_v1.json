@@ -1,0 +1,61 @@
+{
+  "description": "Canonical aggregate BackImage FEM candidate around pyramid_local_field k16 temporal_pca with delta_mean posthoc sensitivity.",
+  "aggregate_fem": {
+    "args": {
+      "input": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_image_structure_reviewed_v2_screenfiltered_yfix/backimage_image_fem_windows.csv",
+      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_pyramid_k16_tworeadout_rel025-2_canonical_v1",
+      "max_images": 256,
+      "trace_samples_per_condition": 4,
+      "motion_families": "empirical,ou,brownian,rotated",
+      "observed_rms_scales": "0.25,0.5,1.0,1.5,2.0",
+      "patch_size_px": 540,
+      "min_patch_image_margin_px": 270.0,
+      "latent_names": "pyramid_local_field",
+      "pca_k_list": "16",
+      "latent_crop_px": 151,
+      "center_crop_px": 41,
+      "local_field_grid": 8,
+      "n_timepoints": 40,
+      "temporal_pc_components": 4,
+      "fixed_ridge_alpha": 10.0,
+      "decode_group_mode": "image",
+      "outer_folds": 5,
+      "inner_folds": 3,
+      "n_bootstrap": 10000,
+      "reliable_image_coherence_min": 0.2,
+      "reliable_drift_anisotropy_min": 0.2,
+      "min_duration_s": 0.1,
+      "max_rms_deg": 0.12,
+      "max_trace_source_rms_deg": 0.06,
+      "max_trace_source_radius_deg": 0.2,
+      "max_trace_source_speed_p95_deg_s": 20.0,
+      "max_trace_source_microsaccade_events": 0,
+      "max_rendered_trace_path_length_deg": 1.5,
+      "reuse_trace_sources_across_scales": true,
+      "twin_batch_size": 48,
+      "twin_trace_batch_size": 2,
+      "device": "cuda:0",
+      "seed": 0,
+      "progress_every": 4
+    }
+  },
+  "aggregate_incremental": {
+    "args": {
+      "run_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_pyramid_k16_tworeadout_rel025-2_canonical_v1",
+      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_pyramid_k16_tworeadout_rel025-2_canonical_v1/incremental_static_plus_motion_tworeadout_v1",
+      "summaries": "temporal_pca,delta_mean",
+      "families": "empirical,ou,brownian,rotated",
+      "contrast_pairs": "empirical:ou,empirical:brownian,empirical:rotated,empirical:static",
+      "scale_ids": "all",
+      "latent_names": "pyramid_local_field",
+      "pca_k_list": "16",
+      "fixed_ridge_alpha": 10.0,
+      "outer_folds": 5,
+      "inner_folds": 3,
+      "decode_group_mode": "image",
+      "n_bootstrap": 10000,
+      "seed": 0
+    }
+  }
+}
+

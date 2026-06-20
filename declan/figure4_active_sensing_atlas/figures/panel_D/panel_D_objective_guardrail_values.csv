@@ -1,0 +1,7 @@
+objective,baseline_objective,n_sessions,mean_delta_cos2_session,median_delta_cos2_session,ci95_low,ci95_high,n_sessions_delta_positive,order,label,objective_class
+optimized_response_stability,raw_edge_axis,29,-0.2014250922231553,-0.2416750184552565,-0.348846372608326,-0.0685780275273873,5,0,response stability,response
+optimized_response_refresh_lambda_0.25,raw_edge_axis,29,-0.2440381349642275,-0.1204574703254776,-0.4123283364254523,-0.0861412217381178,8,1,response refresh,response
+optimized_PA,raw_edge_axis,29,-0.1899843737081964,-0.0905113649231311,-0.3871508326630203,0.0049644246692682,11,2,pose-aware response,response
+optimized_PB,raw_edge_axis,29,-0.2014250922231553,-0.2416750184552565,-0.3395688281023382,-0.0618063369798892,5,3,pose-blind response,response
+optimized_pixel_isophote,raw_edge_axis,29,0.0175830907915007,-0.0237590808218927,-0.046426945531934,0.0847242500915036,12,4,pixel isophote,pixel_objective
+optimized_refresh_only,raw_edge_axis,29,0.1682270053371511,0.1073201845603532,0.0216620448729146,0.3151358460116555,19,5,pixel refresh control,pixel_objective

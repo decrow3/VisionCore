@@ -1,0 +1,4 @@
+metric,label,real_mean,stabilized_mean,real_relative_to_real,stabilized_relative_to_real,n
+temporal_contrast_rms_mean,temporal contrast,11.244911853913909,0.0,1.0,0.0,108
+motion_power_vs_matched_stabilized_mean,motion power,1462.4311997448956,0.0,1.0,0.0,108
+movie_power_mean,movie power,15178.17738172743,15185.18211082176,1.0,1.0004615000153287,108

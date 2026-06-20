@@ -1,0 +1,21 @@
+{
+  "description": "Canonical raw-edge roadblock audit wrapper config.",
+  "raw_edge_audit": {
+    "args": {
+      "windows_csv": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_image_structure_reviewed_v2_screenfiltered_yfix/backimage_image_fem_windows.csv",
+      "stability_window_csv": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_twin_stability_metric_audit/twin_stability_metric_by_window.csv",
+      "feature_preservation_window_csv": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_twin_stability_metric_audit/endpoint_feature_preservation_static_decoder/feature_preservation_by_window.csv",
+      "observer_trials_csv": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_axis_conditioned_hard_negative_shared_source_gpu1_n128_c4_k16_scales_0p5_1_2_v1/observer_trials.csv",
+      "feature_posterior_trials_csv": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_axis_conditioned_hard_negative_n128_scale_sweep_feature_posterior_gabor_pyramid_k2_4_8_16_32_uncertainty_v1/feature_posterior_trials.csv",
+      "feature_axis_contrasts_csv": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_axis_conditioned_hard_negative_n128_scale_sweep_feature_posterior_gabor_pyramid_k2_4_8_16_32_uncertainty_v1/feature_axis_contrasts.csv",
+      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_raw_edge_roadblock_residual_adjudication_canonical_v1",
+      "primary_scale": 1.0,
+      "include_scales": "0.5,1.0,2.0",
+      "primary_likelihood_scale": 1.0,
+      "session_bootstrap_n": 200,
+      "predictor_bootstrap_n": 20,
+      "reduced_bootstrap_n": 200,
+      "random_seed": 0
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "description": "Canonical aggregate figure pack config for the two-readout feature target.",
+  "aggregate_figure_pack": {
+    "args": {
+      "run_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_pyramid_k16_tworeadout_rel025-2_canonical_v1",
+      "incremental_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_pyramid_k16_tworeadout_rel025-2_canonical_v1/incremental_static_plus_motion_tworeadout_v1",
+      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_pyramid_k16_tworeadout_rel025-2_canonical_v1/figure_pack_tworeadout_v1",
+      "expected_scales": "rel_0p25x,rel_0p5x,rel_1x,rel_1p5x,rel_2x",
+      "primary_summary": "temporal_pca",
+      "primary_gain_rows": "pyramid_local_field:16",
+      "primary_contrast_latent": "pyramid_local_field",
+      "primary_contrast_k": 16
+    }
+  }
+}

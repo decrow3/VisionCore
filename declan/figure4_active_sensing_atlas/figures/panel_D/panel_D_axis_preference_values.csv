@@ -1,0 +1,5 @@
+condition,condition_order,parallel_minus_orthogonal
+matched static 0.5x,0,0.03125
+hard negatives 0.5x,1,0.03125
+hard negatives 1.0x,2,-0.0078125
+hard negatives 2.0x,3,-0.0625

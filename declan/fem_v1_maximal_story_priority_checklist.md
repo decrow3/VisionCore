@@ -1,6 +1,6 @@
 # FEM-V1 Maximal Story Priority Checklist
 
-Last updated: 2026-06-19
+Last updated: 2026-06-20
 
 ## Purpose
 
@@ -71,6 +71,58 @@ cleanly and compact geometry carries the functional rescue.
   significant.
 - [ ] Model-derived observer or geometry metrics have not yet beaten raw edge
   geometry as an explanation of observed drift axes.
+- [x] Claim-critical diagnostics are now consolidated in
+  `declan/figure4_active_sensing_atlas/claim_critical_diagnostics_queue.md`.
+  Use that document as the current gatekeeping index before promoting main
+  claims or treating long canonical runs as final.
+- [x] Canonical production surfaces now exist:
+  `declan/canonical_active_sensing/` for aggregate/local/joint/adjudication and
+  active-sensing figure-pack jobs, and `declan/canonical_geometry/` for raw-edge
+  residual adjudication plus geometry figure-pack jobs.
+- [x] Current feature target is a two-readout candidate rather than a final
+  lock: aggregate/ensemble `pyramid_local_field k16 temporal_pca`, local
+  mechanistic sensitivity `pyramid_local_field k16 delta_mean`.
+
+## Priority 0: Claim-Critical Diagnostics And Canonical Preflight
+
+Goal:
+
+```text
+Make sure every claim-critical active-sensing result has an explicit failure
+mode diagnostic before it is promoted or used to justify a long canonical run.
+```
+
+Current source of truth:
+
+```text
+declan/figure4_active_sensing_atlas/claim_critical_diagnostics_queue.md
+```
+
+Required gates:
+
+- [ ] `canonical_active_sensing.validate_configs` and
+  `canonical_geometry.validate_configs` pass before production runs.
+- [ ] Use `--print-command` for every long canonical wrapper launch.
+- [ ] Do not overwrite non-empty production output folders unless the refresh
+  is intentional and documented.
+- [ ] Keep the two-readout feature target provisional until joint `rel_0p25x`
+  completion and final adjudication review are closed.
+- [ ] Treat model-objective panels as diagnostic/deep-dive triggers unless they
+  explain residual behavior beyond raw edge geometry on a shared window table.
+
+Model-objective deep-dive gates:
+
+- [ ] Build a same-window objective-vs-raw master table with raw edge,
+  behavior, objective axes, confidence, border distance, candidate hardness,
+  and source flags.
+- [ ] Run within-session residual tests after raw edge confidence and drift
+  anisotropy, reporting `Delta R2`, session-bootstrap CI, and sign count.
+- [ ] Audit global/screen-axis nuisance predictors and all-zero/all-90-degree
+  predicted-axis artifacts.
+- [ ] Audit shared-source overlap and candidate hardness before interpreting
+  any objective-axis advantage.
+- [ ] Check population/readout sensitivity before mixing sampled 64/256-unit
+  diagnostics with canonical 756-unit claims.
 
 ## Priority 1A: Feature-Posterior Joint-Decoding Bridge
 
@@ -666,11 +718,13 @@ Interpretation:
 
 ### Local BackImage `I_z` pairing revisit
 
-Newest completed output:
+Current adjudication caches:
 
 ```text
 outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
-  backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_gabor_pyramid_rel025_1_seed7_v1/
+  backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_gabor_pyramid_rel025_0p5_1_seed7_v1/
+  backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_gabor_pyramid_rel2_seed7_v1/
+  backimage_feature_decomposition_adjudication_v3_local_rel05_rel2_filled/
 ```
 
 Configuration:
@@ -681,13 +735,23 @@ unpaired samples per image = 32
 latents = gabor_local_field, pyramid_local_field
 families = actual_paired_empirical, matched_unpaired_empirical,
            rotated_actual_90, ou_matched_actual, brownian_matched_actual
-scales = 0.25x, 1.0x
+scales = 0.25x, 0.5x, 1.0x plus 2.0x sentinel
 trace pool = full strict filtered pool, 3013 rows
 matched controls = sampled K=32, zero same-trial matches
 feature geometry = gabor (128, 4608), pyramid (128, 3072)
 ```
 
-Most relevant incremental contrasts:
+Current adjudication interpretation:
+
+- [x] `pyramid_local_field k16 temporal_pca` is the top aggregate/ensemble
+  candidate after cache-filled adjudication.
+- [x] `pyramid_local_field k16 delta_mean` remains the local/mechanistic
+  sensitivity readout because it better captures paired-trace
+  feature-response changes.
+- [ ] This is a two-readout candidate, not a final lock, until joint
+  `rel_0p25x` completion and final adjudication review are closed.
+
+Representative earlier clean-run incremental contrasts:
 
 ```text
 delta_mean, gabor k=4, 0.25x:
@@ -841,6 +905,28 @@ outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
     endpoint_zone_enrichment_summary.csv
 ```
 
+Atlas provenance:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_E/
+  E3_parallel_zone_enrichment.png
+  E6_full_distribution_session_diagnostic.png
+  E7_confidence_signed_delta_diagnostic.png
+  E8_endpoint_null_diagnostic.png
+declan/figure4_active_sensing_atlas/figures/composites/
+  module_E_contour_following_diagnostics.png
+```
+
+Interpretation for figure routing:
+
+- [x] E3 is the compact endpoint-zone summary.
+- [x] E6/E7/E8 are the provenance panels that should travel with E3 when the
+  behavior metric is explained: full distribution/session scatter,
+  confidence/signed-delta structure, and the endpoint/null diagnostic.
+- [x] E8 is especially important because it shows that `cos(2 * delta)` endpoint
+  bins are endpoint-heavy even under a uniform axial-angle null; the real claim
+  is the edge-parallel excess after that null is considered.
+
 Endpoint enrichment versus a uniform axial-angle null:
 
 ```text
@@ -903,6 +989,9 @@ Current conclusion:
 
 Next investigation:
 
+- [ ] Use
+  `declan/figure4_active_sensing_atlas/claim_critical_diagnostics_queue.md` as
+  the claim-critical gate list for this branch.
 - [ ] Regress `drift_edge_cos2` or signed residual alignment on raw edge
   confidence variables first: `image_orientation_coherence`, drift anisotropy,
   edge/pixel stability advantage.

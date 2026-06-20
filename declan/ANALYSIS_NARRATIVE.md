@@ -1,6 +1,6 @@
 # declan Analysis Narrative
 
-Last curated: 2026-06-19.
+Last curated: 2026-06-20.
 
 Companion to `MANIFEST.md`. The manifest answers "where is it?" This file
 answers "why did we do it, what happened, and how did later work change the
@@ -103,6 +103,47 @@ The story has moved through four broad phases:
    orthogonal advantage is now diagnostic-only because it predates the
    unmatched-catalog fix, and the active `n=128`, `0.5x/1x/2x` shared-source run
    is the next replication gate.
+
+Consolidation update, 2026-06-20:
+
+- The active-sensing/geometry work now has two guarded production surfaces:
+  `declan/canonical_active_sensing/` for aggregate, local-pairing,
+  joint-posterior, adjudication, and active-sensing figure-pack runs; and
+  `declan/canonical_geometry/` for raw-edge residual adjudication plus the
+  geometry figure pack. These wrappers should be the entry points for long
+  production jobs because they validate configs, print commands, and refuse
+  accidental writes into existing non-empty output folders.
+- The current feature target is a two-readout candidate, not a final lock:
+  `pyramid_local_field k16 temporal_pca` is the aggregate/ensemble readout
+  candidate, while `pyramid_local_field k16 delta_mean` is the local
+  mechanistic-sensitivity readout. The target remains provisional until the
+  joint `rel_0p25x` feature-posterior completion and final adjudication review
+  are closed.
+- The Figure 4 active-sensing atlas now has a consolidated
+  `claim_critical_diagnostics_queue.md`. This is the gatekeeping document for
+  anticipated failure modes before main claims or long canonical runs are
+  trusted. It centralizes the diagnostics that had been scattered across the
+  raw-edge handoff, priority checklist, atlas flags, and canonical provenance:
+  same-window model-objective versus raw-edge tables, within-session residual
+  tests, global-axis nuisance audits, shared-source/candidate-hardness audits,
+  population/readout sensitivity, and preservation-versus-modulation
+  decompositions.
+- Panel E provenance is now explicit. E3 remains the compact endpoint-zone
+  enrichment redraw from `endpoint_zone_enrichment_summary.csv`; E6/E7/E8 copy
+  the original behavior inspection panels for the full distribution/session
+  diagnostic, confidence/signed-delta diagnostic, and endpoint/null diagnostic.
+  E8 should travel with E3 whenever the contour-following behavior metric is
+  explained, because it shows why the `cos(2 delta)` endpoint bins must be read
+  against the transformed uniform-angle null.
+- The model-objective branch is best treated as the most likely methods-style
+  deep-dive trigger. The current negative is scientifically useful: raw edge
+  geometry remains the behavior baseline to beat, and apparent objective wins
+  must first survive residual explanation beyond raw edge confidence, global
+  screen-axis nuisance checks, candidate/source-overlap checks, and canonical
+  population/readout sensitivity. If those gates fail, the honest main-paper
+  split is behavior follows local image geometry while the V1 twin explains
+  possible utility, preservation, and trajectory-aware inference consequences;
+  it is not proof that the animal optimizes the tested objective.
 
 Numerical audit update, 2026-06-12:
 
@@ -663,6 +704,12 @@ unconstrained whitening is incomplete as a scale-setting objective.
 
 Practical next gates:
 
+- Use `declan/figure4_active_sensing_atlas/claim_critical_diagnostics_queue.md`
+  as the current gatekeeping index for core or claim-critical active-sensing
+  analyses. In particular, model-objective claims require same-window residual
+  explanation beyond raw edge geometry, global-axis nuisance checks,
+  source-overlap/candidate-hardness audits, and population/readout sensitivity
+  before they can move from diagnostic to mechanism.
 - Keep corrected coordinate order and the `270 px` full-image patch margin fixed.
 - Promote raw edge geometry to the baseline that any local active-sensing model
   must beat.
@@ -705,22 +752,25 @@ Practical next gates:
   the same 128 analysis windows, and the local runner used reduced feature
   geometry (`patch_size_px=160`, `latent_crop_px=96`, `local_field_grid=4`)
   rather than the corrected aggregate convention (`540`, `151`, `8`).
-- Clean local-pairing outputs now exist:
-  `backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_pyramid_rel025_1_v1`
-  and
-  `backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_gabor_pyramid_rel025_1_seed7_v1`.
+- Clean local-pairing/adjudication outputs now include
+  `backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_gabor_pyramid_rel025_0p5_1_seed7_v1`,
+  the `rel2` sentinel cache, and
+  `backimage_feature_decomposition_adjudication_v3_local_rel05_rel2_filled`.
   They use a fixed 128-image manifest, full 3013-row trace pool, sampled
   matched-unpaired controls, corrected Gabor `(128, 4608)` and pyramid
   `(128, 3072)` feature geometry, zero same-trial matches, and zero clipping.
   The claim-relevant file is `incremental_gain_contrasts.csv`, not
-  `decode_contrasts.csv`. Main result: actual paired traces beat matched
-  empirical trace swaps for `delta_mean` in both feature families, e.g. Gabor
-  `k=4` `0.25x` `+9.95` CI `[+0.73, +20.62]`, Gabor `k=4` `1x` `+8.27` CI
-  `[+2.70, +14.79]`, pyramid `k=8` `0.25x` `+6.09` CI `[+1.51, +10.53]`, and
-  pyramid `k=8` `1x` `+3.79` CI `[+1.46, +6.28]`. Temporal PCA/DCT summaries
-  do not show a clean actual-pairing advantage, and actual does not yet clearly
-  beat rotated actual traces, so the local result is a motion-delta/local
-  pairing result rather than a general temporal-code or optimal-axis result.
+  `decode_contrasts.csv`. Earlier clean-run examples showed actual paired
+  traces beating matched empirical trace swaps for `delta_mean` in both feature
+  families, e.g. Gabor `k=4` `0.25x` `+9.95` CI `[+0.73, +20.62]`, Gabor
+  `k=4` `1x` `+8.27` CI `[+2.70, +14.79]`, pyramid `k=8` `0.25x` `+6.09` CI
+  `[+1.51, +10.53]`, and pyramid `k=8` `1x` `+3.79` CI `[+1.46, +6.28]`.
+  The current cache-filled adjudication separates readouts rather than forcing
+  one winner: `pyramid_local_field k16 temporal_pca` is the top
+  aggregate/ensemble candidate, while `pyramid_local_field k16 delta_mean`
+  remains the local/mechanistic sensitivity readout. Rotated and matched
+  controls remain caveats, so the local result is a motion-delta/local-pairing
+  result rather than a general temporal-code or optimal-axis result.
 - When rerunning revised free-viewing objectives, prefer a full canonical
   population or at least a larger sampled population. Keep 16-channel or
   smaller sampled variants as transfer checks, not discovery space.

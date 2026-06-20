@@ -1,0 +1,4 @@
+frame,trace_index,retinal_shift_x_px,retinal_shift_y_px,source
+t1,8,6.2515892222756895,3.13607287438529,schematic_from_synthetic_patch_and_trace
+t2,38,1.2907878941666722,-8.2644516845115,schematic_from_synthetic_patch_and_trace
+t3,68,-10.15385806857994,2.0439018828791697,schematic_from_synthetic_patch_and_trace

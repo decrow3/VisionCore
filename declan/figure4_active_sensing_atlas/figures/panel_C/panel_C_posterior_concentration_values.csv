@@ -1,0 +1,9 @@
+candidate_set_mode,prior_family,observation_scale,likelihood_scale,median_N_eff_fraction,median_nearest_tau_rank
+hard_negative_structure,empirical,0.5,1.0,0.5765987054984817,2.0
+hard_negative_structure,ou,0.5,1.0,0.5466232269869747,2.0
+hard_negative_structure,empirical,1.0,1.0,0.4181202219959103,2.0
+hard_negative_structure,ou,1.0,1.0,0.4508775088385378,3.0
+matched_static_response,empirical,0.5,1.0,0.5066352708892143,2.0
+matched_static_response,ou,0.5,1.0,0.5820037982726292,2.5
+matched_static_response,empirical,1.0,1.0,0.3637296235477462,2.0
+matched_static_response,ou,1.0,1.0,0.3996957317993423,3.0
