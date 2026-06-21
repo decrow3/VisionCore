@@ -382,7 +382,8 @@ New aggregate plan:
   whether empirical FEM motion distributions improve ensemble natural-image
   representation compared with static, OU-matched, Brownian-matched, and
   shuffled controls.
-- The backup note is preserved as `Global Iz FEMs.md`.
+- The backup note is preserved as
+  `archive/backimage_latent/Global Iz FEMs.md`.
 - `summarize_backimage_aggregate_cache_proxy.py` is a cache-first bridge: it
   reuses the completed n=256 latent and response arrays to compute aggregate
   decoding/covariance proxy summaries without new twin inference. The script
@@ -1090,8 +1091,9 @@ Important files:
 - `shared_transformation_geometry/run_stg_aggregate_stage5.py`: cross-session
   aggregation.
 - `shared_transformation_geometry/utils.py`: shared helpers.
-- `shared_transformation_geometry_handoff.md` and
-  `shared_transformation_geometry_handoff_v2.md`: top-level handoffs.
+- `shared_transformation_geometry_handoff_v2.md`: current top-level handoff.
+- `archive/superseded_handoffs/shared_transformation_geometry_handoff.md`:
+  historical first handoff.
 
 ### 2026-06-03: Twin Covariance Structure
 
@@ -1131,11 +1133,13 @@ active-sensing efficiency, and fixRSVP neural trajectory readiness.
 
 Important files:
 
-- `Keystone_Geometry_Crossover_handoff_v2.md` and
-  `Keystone_Geometry_Crossover_handoff_v3.md`: crossover handoffs.
-- `bigpicture_fem_v1_high_impact_analysis_plan_v2.md`: high-impact analysis
-  plan.
-- `bigpicture_phase1_fem_v1_coding_agent_plan_v2.md`: coding-agent plan.
+- `Keystone_Geometry_Crossover_handoff_v3.md`: current crossover handoff.
+- `archive/superseded_handoffs/Keystone_Geometry_Crossover_handoff_v2.md`:
+  historical crossover handoff.
+- `archive/early_bigpicture/bigpicture_fem_v1_high_impact_analysis_plan_v2.md`:
+  historical high-impact analysis plan.
+- `archive/early_bigpicture/bigpicture_phase1_fem_v1_coding_agent_plan_v2.md`:
+  historical coding-agent plan.
 - `e1_active_sensing_efficiency_revised_handoff.md`: active-sensing efficiency
   handoff.
 - `fixrsvp_neural_trajectory_analysis_plan_revised.md`: revised neural
@@ -1160,7 +1164,8 @@ Important files:
   handoff.
 - `figure4_geometry_bridge_audit_plan_v2.md`: Figure 4 geometry bridge audit.
 - `fixrsvp_cross_session_check.md`: cross-session check.
-- `jacobian_predictive_framework_progress_summary.md`: progress summary.
+- `archive/jacobian_early/jacobian_predictive_framework_progress_summary.md`:
+  historical progress summary.
 
 ### 2026-05-26: Jacobian Identity Geometry / Figures
 
@@ -1184,12 +1189,17 @@ Important files:
 - `make_priority2_causal_alignment_figure.py`: render priority-2 causal
   alignment figure from intervention outputs.
 - `FEM_population_coding_writeup.md`: population-coding writeup.
-- `fem_eoptotype_hyperacuity_results.md`: e-optotype hyperacuity results.
+- `archive/eoptotype/fem_eoptotype_hyperacuity_results.md`: e-optotype
+  hyperacuity results.
 - `fem_next_steps_plan.md`: next-steps plan.
-- `jacobian_figure_handoff_nature_style.md`: figure style handoff.
-- `jacobian_identity_geometry_results.md`: results note.
-- `jacobian_identity_transformation_analysis_plan.md`: analysis plan.
-- `jacobian_predictive_framework_handoff_revised.md`: revised handoff.
+- `archive/jacobian_early/jacobian_figure_handoff_nature_style.md`:
+  historical figure style handoff.
+- `archive/jacobian_early/jacobian_identity_geometry_results.md`: historical
+  results note.
+- `archive/jacobian_early/jacobian_identity_transformation_analysis_plan.md`:
+  historical analysis plan.
+- `archive/jacobian_early/jacobian_predictive_framework_handoff_revised.md`:
+  historical revised handoff.
 
 Result folders:
 
@@ -1208,15 +1218,20 @@ decoding, and covariance/intervention experiments.
 
 Important files:
 
-- `analysis_plan_jacobian_v3.md`: early Jacobian analysis plan.
-- `revised_analysis_plan.md`: revised plan.
-- `results_summary.md`: summary of early results.
-- `FEMs_Eoptotype_checks.md`: e-optotype checks.
-- `temporal_decoding_analysis_plan_consolidated_v2.md`: consolidated temporal
-  decoding plan.
-- `temporal_decoding_analysis_implementation_plan.md`: implementation plan.
-- `temporal_decoding_diagnostic_plan.md`: diagnostic plan.
-- `temporal_analysis_issues_and_alternatives.md`: issues and alternatives.
+- `archive/jacobian_early/analysis_plan_jacobian_v3.md`: early Jacobian
+  analysis plan.
+- `archive/early_bigpicture/revised_analysis_plan.md`: historical revised
+  plan.
+- `archive/early_bigpicture/results_summary.md`: summary of early results.
+- `archive/eoptotype/FEMs_Eoptotype_checks.md`: e-optotype checks.
+- `archive/temporal_decoding/temporal_decoding_analysis_plan_consolidated_v2.md`:
+  consolidated temporal decoding plan.
+- `archive/temporal_decoding/temporal_decoding_analysis_implementation_plan.md`:
+  implementation plan.
+- `archive/temporal_decoding/temporal_decoding_diagnostic_plan.md`: diagnostic
+  plan.
+- `archive/temporal_decoding/temporal_analysis_issues_and_alternatives.md`:
+  issues and alternatives.
 - `rowley_luke_2026_03_16_dpi_pupil_intercept_findings.md`: Rowley/Luke pupil
   intercept findings.
 - `rowley_session_config_generation.md`: session config generation notes.

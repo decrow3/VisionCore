@@ -10,7 +10,7 @@ made explicit.
 
 Companion notes:
 
-- `declan/A General Info Framework for FEM Functio.md`
+- `declan/archive/general_info_framework/A General Info Framework for FEM Functio.md`
 - `declan/active_sensing_roadmap_after_vernier_fixation_image_structure.md`
 - `declan/active_sensing_unit_space_provenance.md`
 - `declan/vernier_active_sensing_analysis_plan.md`

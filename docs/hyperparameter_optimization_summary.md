@@ -319,7 +319,7 @@ if hasattr(model.recurrent, 'summarizer'):
 - `experiments/run_all_models_backimage_hyper.sh` - ResNet+ConvGRU optimized
 - `experiments/run_all_models_polar_hyper.sh` - Polar optimized
 - `experiments/model_configs/polar_v1_relaxed.yaml` - Learnable temporal constants
-- `docs/polar_temporal_constants.md` - Detailed guide
+- `docs/archive/model_experiments/polar_temporal_constants.md` - Historical detailed guide
 - `docs/hyperparameter_optimization_summary.md` - This file
 
 ### Next Steps
@@ -330,4 +330,3 @@ if hasattr(model.recurrent, 'summarizer'):
 4. Adjust if needed based on results
 
 Good luck with training! 🚀
-

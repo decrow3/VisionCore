@@ -1929,7 +1929,7 @@ Status: `Historical / partially superseded`.
 
 Primary docs and outputs:
 
-- `shared_transformation_geometry_handoff.md`
+- `archive/superseded_handoffs/shared_transformation_geometry_handoff.md`
 - `shared_transformation_geometry_handoff_v2.md`
 - `shared_transformation_geometry/README.md`
 - `outputs/twin_covariance_structure/shared_transformation_geometry/`
@@ -2011,10 +2011,10 @@ Status: `Open / adjudication plan`.
 
 Primary docs:
 
-- `Keystone_Geometry_Crossover_handoff_v2.md`
+- `archive/superseded_handoffs/Keystone_Geometry_Crossover_handoff_v2.md`
 - `Keystone_Geometry_Crossover_handoff_v3.md`
-- `bigpicture_fem_v1_high_impact_analysis_plan_v2.md`
-- `bigpicture_phase1_fem_v1_coding_agent_plan_v2.md`
+- `archive/early_bigpicture/bigpicture_fem_v1_high_impact_analysis_plan_v2.md`
+- `archive/early_bigpicture/bigpicture_phase1_fem_v1_coding_agent_plan_v2.md`
 
 Motivation:
 
@@ -2053,8 +2053,8 @@ Status: `Historical -> partially rescued as structure`.
 Primary docs and outputs:
 
 - `jacobian_results/results_and_interpretation.md`
-- `jacobian_predictive_framework_progress_summary.md`
-- `jacobian_predictive_framework_handoff_revised.md`
+- `archive/jacobian_early/jacobian_predictive_framework_progress_summary.md`
+- `archive/jacobian_early/jacobian_predictive_framework_handoff_revised.md`
 - `eoptotype_jacobian_field_smoothness_handoff.md`
 - `fem_path_integrated_separability_handoff.md`
 - `outputs/stats/eoptotype_jacobian_field_*`
@@ -2104,9 +2104,9 @@ Status: `Closed`, with a narrowed mechanism.
 
 Primary docs and outputs:
 
-- `revised_analysis_plan.md`
+- `archive/early_bigpicture/revised_analysis_plan.md`
 - `FEM_population_coding_writeup.md`
-- `fem_eoptotype_hyperacuity_results.md`
+- `archive/eoptotype/fem_eoptotype_hyperacuity_results.md`
 - `fem_covariance_geometry.py`
 - `fem_global_intervention.py`
 - `fem_differential_intervention.py`
@@ -2177,10 +2177,10 @@ Status: `Historical`, with some durable findings.
 
 Primary docs and outputs:
 
-- `results_summary.md`
-- `temporal_decoding_analysis_plan_consolidated_v2.md`
-- `temporal_decoding_analysis_implementation_plan.md`
-- `temporal_decoding_diagnostic_plan.md`
+- `archive/early_bigpicture/results_summary.md`
+- `archive/temporal_decoding/temporal_decoding_analysis_plan_consolidated_v2.md`
+- `archive/temporal_decoding/temporal_decoding_analysis_implementation_plan.md`
+- `archive/temporal_decoding/temporal_decoding_diagnostic_plan.md`
 - `com_dynamics.py`
 - `transformation_dynamics.py`
 - `displacement_decoding.py`
@@ -2350,6 +2350,7 @@ If resuming recorded derivative alignment:
 
 If resuming the old E-optotype crossover:
 
-- Read `fem_eoptotype_hyperacuity_results.md` before `revised_analysis_plan.md`.
+- Read `archive/eoptotype/fem_eoptotype_hyperacuity_results.md` before
+  `archive/early_bigpicture/revised_analysis_plan.md`.
 - Assume the final mechanism is mean-rate spatial sampling unless you are
   explicitly testing a new control.

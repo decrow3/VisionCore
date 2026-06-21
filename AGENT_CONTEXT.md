@@ -109,3 +109,6 @@ Status words matter:
 - `CLEANUP_CANDIDATES.md`: generated artifacts, archive/cold-storage targets,
   and safe purge candidates.
 - `MARKDOWN_CLEANUP_CANDIDATES.md`: stale-plan and context-window cleanup audit.
+- `docs/cache_inventory.md`: large cache/output path-compatibility registry.
+- `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/README.cleanup.md`:
+  BackImage/Figure 4 output-root cleanup audit.

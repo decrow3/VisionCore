@@ -141,7 +141,13 @@ Define throughout: `C_FEM(I)` = twin reafferent covariance for image `I` (above)
 **Relationship to prior work.**
 - *Similar in name only:* "random dither controls" were specified in Phase 6 (E1) — but there they served the **efficiency / bits-per-spike** question ("is real FEM special vs matched dither for *performance*?"), which needs a noise model.
 - *Different:* this is the **structural** version, asking whether the *covariance geometry* depends on dynamics or occupancy. It is well-posed for a noiseless model precisely because it is about the covariance, not performance. We are explicitly **not** running the Phase-6 efficiency dither here.
-- *Connects to a prior puzzle:* the old intervention (results_summary §1.2b) found that removing the FEM subspace helped *real and stabilized equally*, because stabilized traces are each held at their own mean position and so still carry a low-rank positional nuisance. That is the occupancy story showing through — even "stabilized" has occupancy spread. This analysis formalizes and explains that observation.
+- *Connects to a prior puzzle:* the old intervention
+  (`declan/archive/early_bigpicture/results_summary.md` §1.2b) found that
+  removing the FEM subspace helped *real and stabilized equally*, because
+  stabilized traces are each held at their own mean position and so still carry
+  a low-rank positional nuisance. That is the occupancy story showing through
+  — even "stabilized" has occupancy spread. This analysis formalizes and
+  explains that observation.
 
 **Issues & risks.**
 - The prediction is close to analytic (`Σ_FEM` depends on the position distribution by construction), so present this honestly as a **confirmatory demonstration with a conceptual payoff**, not a discovery.

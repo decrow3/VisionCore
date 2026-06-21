@@ -44,7 +44,7 @@ def summarize_one(npz_path: Path, key_windows: list[int]) -> str:
     d = np.load(npz_path, allow_pickle=True)
     windows = d["windows"].astype(int)
 
-    # Match the style used in declan/results_summary.md:
+    # Match the style used in declan/archive/early_bigpicture/results_summary.md:
     # show D1 real, D1 stabilized, D2a real, and D3 real (if present).
     preferred_order = ["D1_real", "D1_stabilized", "D2a_real", "D3_real"]
     present = [

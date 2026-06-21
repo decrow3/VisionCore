@@ -1,6 +1,7 @@
 # Predictive Jacobian Framework: Big-Picture Progress
 
-Companion note to `jacobian_predictive_framework_handoff_revised.md`.
+Companion note to
+`declan/archive/jacobian_early/jacobian_predictive_framework_handoff_revised.md`.
 
 Date: 2026-05-27
 

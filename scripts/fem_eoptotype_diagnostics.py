@@ -8,7 +8,7 @@ Generates retinal movies for a Tumbling-E across a set of sizes, under:
 Then computes simple retinal stats and (optionally) model spatial activations.
 
 This script is intentionally self-contained and borrows conventions from:
-  - declan/FEMs_Eoptotype_checks.md
+  - declan/archive/eoptotype/FEMs_Eoptotype_checks.md
   - scripts/fixrsvp_digitaltwin_spatialinfo_declan.py
 
 Notes

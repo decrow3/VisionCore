@@ -36,11 +36,11 @@ turning it into commands.
 
 | Status | Path / Pattern | Why | Suggested action |
 | --- | --- | --- | --- |
-| Purge | `__pycache__/` outside `.venv` | Ignored bytecode, about a few MB total. | Delete with `find . -path ./.venv -prune -o -type d -name __pycache__ -print` after review. |
-| Purge | `.pytest_cache/` | Ignored local test cache, small. | Delete when cleaning local state. |
-| Purge | `Vision_core_repo_bundle_*.txt`, `repo_bundle.txt` | Ignored repo snapshots; multiple stale copies at root. | Delete or move one latest bundle to cold storage if still useful. |
-| Purge | root `*.log`: `allhires_*.log`, `trow10*.log` | Ignored run logs at repo root. | Delete after confirming no current note cites exact contents. |
-| Review | `trow10_no` | Tracked root log-like text file with no extension. It is the main tracked cleanup oddity found. | Rename into a documented archive or `git rm` after confirming no citation/import. |
+| Purged | `__pycache__/` outside `.venv` | Ignored bytecode, about a few MB total. | Completed 2026-06-20. |
+| Purged | `.pytest_cache/` | Ignored local test cache, small. | Completed 2026-06-20. |
+| Purged | `Vision_core_repo_bundle_*.txt`, `repo_bundle.txt` | Ignored repo snapshots; multiple stale copies at root. | Completed 2026-06-20. |
+| Purged | root `*.log`: `allhires_*.log`, `trow10*.log` | Ignored run logs at repo root. | Completed 2026-06-20. |
+| Archived | `archive/root_run_logs/trow10_no` | Tracked root log-like text file with no extension. It was the main tracked cleanup oddity found. | Completed 2026-06-20. |
 
 ## High-Impact Local Bulk
 
@@ -80,14 +80,25 @@ Before relocating any of these, create a small cache registry such as
 `current_location`, `cold_storage_location`, `regenerate_command`,
 `path_compatibility`, and `last_verified` fields.
 
+Status update 2026-06-20: `docs/cache_inventory.md` now records the current
+large path-dependent caches, compatibility blockers, and cold-storage template.
+
 ## Archive Candidates: Code And Markdown Threads
 
 These should be archived with provenance notes, not deleted outright.
 
+Markdown archive passes completed 2026-06-20: superseded handoffs, early
+big-picture plans, temporal-decoding plans, early Jacobian plans, e-optotype
+notes, BackImage latent backup notes, and general FEM information-framework
+notes now live under `declan/archive/` with archive READMEs, and live references
+in the manifest/narrative were updated. Older script-adjacent notes now live
+under `scripts/archive/notes/`, and older Polar/VIVIT model docs now live under
+`docs/archive/model_experiments/`.
+
 | Status | Path / Thread | Evidence | Suggested action |
 | --- | --- | --- | --- |
 | Archive | `declan/active_sensing_movie_information/run_active_sensing_movie_information.py` | README calls it a temporary exploratory runner; Jake `jake/twininfo/` is canonical for production movie-information pipeline. | Move to `declan/active_sensing_movie_information/archive/` or mark historical in-place. |
-| Archive | Historical e-optotype Figure 5 scaffolds under `declan/active_sensing_movie_information/` and `scripts/temporal_decoding/` | README and manifest say old e-optotype cached-rate checks are historical/debugging, not Figure 5 evidence. | Archive docs/scripts together after identifying current natural-image replacements. |
+| Partly archived | Historical e-optotype Figure 5 scaffolds under `declan/active_sensing_movie_information/` and `scripts/temporal_decoding/` | README and manifest say old e-optotype cached-rate checks are historical/debugging, not Figure 5 evidence. | Temporal-decoding planning docs moved to `declan/archive/temporal_decoding/`; code/data scaffolds still need path-compatibility review. |
 | Archive | Pre-fix axis-conditioned BackImage runs and notes | `declan/axis_conditioned_backimage_trajectory_observer/README.md` names early pilots as pre-fix diagnostics only. | Keep clean shared-source code active; archive pre-fix result folders and any launch notes that imply old claims. |
 | Archive | Local BackImage pairing pathfinders | `backimage_local_pairing_Iz_revisit_plan.md` marks early pathfinders diagnostic only. | Archive pre-patch/pathfinder outputs; retain cleaned fixed-manifest seed runs as reviewed evidence. |
 | Archive | Structured decoder / forward denoising branch | `declan/MANIFEST.md` status is mixed/not promoted; forward denoising did not pass shuffled-eye specificity gate. | Add an archive README summarizing why the branch is diagnostic. |
@@ -104,7 +115,7 @@ with columns: `folder`, `status`, `source_script`, `superseded_by`,
 
 | Priority | Folder | Reason |
 | --- | --- | --- |
-| High | `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/` | Mixes current Figure 4 evidence with obsolete pathfinders and pre-fix diagnostics. |
+| High | `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/` | Mixes current Figure 4 evidence with obsolete pathfinders and pre-fix diagnostics. First audit note added at `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/README.cleanup.md`. |
 | High | `outputs/active_sensing_movie_information/` | Contains current covariance/whitening summaries plus superseded input-whitening and old Figure 5 scaffolds. |
 | High | `outputs/stats/eoptotype_jacobian_field_smoothness_armB_core7_20260601/` | Very large CSV outputs; likely raw pair tables can be cold-stored. |
 | Medium | `outputs/twin_covariance_structure/` | Large, older, partly historical covariance structure branch. |
@@ -142,7 +153,8 @@ scientific provenance:
    these, not compete with them.
 3. Add an output audit index for the active large roots, especially
    `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/`. A CSV
-   or `README.cleanup.md` per large output root is enough.
+   or `README.cleanup.md` per large output root is enough. First BackImage
+   root audit was added 2026-06-20.
 4. Move generated caches out of source folders only after preserving path
    compatibility. The source tree should eventually hold code and small
    manifests, not multi-GB pickle/NPZ artifacts.
@@ -155,7 +167,7 @@ scientific provenance:
 ## Candidate Process
 
 1. Commit or otherwise checkpoint this audit.
-2. Do a safe local purge branch for ignored clutter only:
+2. Completed a safe local purge for ignored clutter:
    - bytecode caches,
    - `.pytest_cache`,
    - root repo bundles,
@@ -169,8 +181,8 @@ scientific provenance:
 5. Audit `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/`
    folder-by-folder before deleting any output there.
 6. Cold-store large ignored raw arrays before deleting local copies.
-7. Only then consider tracked cleanup such as `trow10_no` and old tracked
-   `declan/results` arrays.
+7. Tracked root log `trow10_no` has been archived. Only then consider old
+   tracked `declan/results` arrays.
 
 ## Useful Dry-Run Commands
 
