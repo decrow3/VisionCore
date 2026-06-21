@@ -48,3 +48,59 @@ Production configs live in `configs/`. The current v4 closure run must land
 before the canonical aggregate run is treated as final.
 
 Current output provenance lives in `provenance/current_outputs.md`.
+
+## Figure 4 Power Rerun
+
+`configs/figure4_power_rerun_v1.json` is the higher-power rerun surface for the
+current Figure 4 model analyses. It intentionally does not reopen feature
+selection: it locks `pyramid_local_field k16` and carries the two reviewed
+readouts, `temporal_pca` for aggregate/ensemble utility and `delta_mean` for
+local mechanistic sensitivity.
+
+Recommended launch order:
+
+1. `aggregate_power_primary`: n384, K8 aggregate rerun; this is the main
+   candidate for Figure 4 panel B.
+2. `aggregate_incremental_power_primary`: cache-only posthoc for the aggregate
+   run.
+3. `local_pairing_power_seed7` and `local_pairing_power_seed11`: n128 local
+   pairing reruns with K64 matched-unpaired controls.
+4. `local_incremental_power_seed7` and `local_incremental_power_seed11`.
+5. `aggregate_power_replicate_seed11` and its incremental posthoc only if we
+   need a second aggregate seed after the primary run.
+6. `joint_observer_rel0p25_power_prior32` and
+   `joint_posterior_rel0p25_power_prior32` only if the existing rel0.25
+   completion still leaves the joint-axis result underpowered.
+
+Examples:
+
+```bash
+.venv/bin/python -m declan.canonical_active_sensing.run_aggregate_fem --config declan/canonical_active_sensing/configs/figure4_power_rerun_v1.json --section aggregate_power_primary --print-command
+.venv/bin/python -m declan.canonical_active_sensing.run_incremental_posthoc --config declan/canonical_active_sensing/configs/figure4_power_rerun_v1.json --section aggregate_incremental_power_primary --print-command
+.venv/bin/python -m declan.canonical_active_sensing.run_local_pairing --config declan/canonical_active_sensing/configs/figure4_power_rerun_v1.json --section local_pairing_power_seed7 --print-command
+.venv/bin/python -m declan.canonical_active_sensing.run_joint_observer --config declan/canonical_active_sensing/configs/figure4_power_rerun_v1.json --section joint_observer_rel0p25_power_prior32 --print-command
+```
+
+## Cache-Bank Optimization Notes
+
+The lower-level cache-bank path is:
+
+```bash
+.venv/bin/python -m declan.fixation_statistics_by_stimulus.run_backimage_aggregate_trace_catalog ...
+.venv/bin/python -m declan.fixation_statistics_by_stimulus.run_backimage_response_cache_bank ...
+.venv/bin/python -m declan.fixation_statistics_by_stimulus.assemble_backimage_response_cache_bank ...
+```
+
+`run_backimage_response_cache_bank` now reuses identical trace contents within
+each image and can validate trace batching with
+`--check-trace-batch-equivalence`. For production, do a one-shard smoke with
+that flag before raising `--twin-trace-batch-size` above the conservative value
+in older handoffs. Larger trace batches should be scientifically identical when
+the equivalence check passes, but may need to be backed down if GPU memory is
+tight.
+
+Important boundary: the cache-bank generator can write `delta_mean`, `mean`, and
+DCT summaries directly. `temporal_pca` needs a prefit temporal basis supplied via
+`--temporal-basis-npz`, so the cache-bank route is not yet a drop-in replacement
+for the monolithic aggregate temporal-PCA run until the basis-generation step is
+made canonical.

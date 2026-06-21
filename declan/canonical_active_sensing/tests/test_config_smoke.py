@@ -28,6 +28,22 @@ def test_feature_adjudication_config_has_two_joint_dirs() -> None:
     assert "backimage_axis_conditioned_hard_negative_n128_scale_sweep" in args["joint_feature_dirs"]
 
 
+def test_figure4_power_config_locks_primary_model_and_seed_replicates() -> None:
+    config = load_config(Path("declan/canonical_active_sensing/configs/figure4_power_rerun_v1.json"))
+    aggregate = section_args(config, "aggregate_power_primary")
+    local_seed7 = section_args(config, "local_pairing_power_seed7")
+    local_seed11 = section_args(config, "local_pairing_power_seed11")
+
+    assert aggregate["latent_names"] == "pyramid_local_field"
+    assert aggregate["pca_k_list"] == "16"
+    assert aggregate["max_images"] == 384
+    assert aggregate["trace_samples_per_condition"] == 8
+    assert aggregate["twin_trace_batch_size"] == 8
+    assert local_seed7["unpaired_samples_per_image"] == 64
+    assert local_seed11["unpaired_samples_per_image"] == 64
+    assert local_seed7["seed"] != local_seed11["seed"]
+
+
 def test_figure_pack_incremental_dir_is_not_nested_under_run_dir() -> None:
     config = load_config(Path("declan/canonical_active_sensing/configs/figure_active_sensing_v1.json"))
     args = section_args(config, "aggregate_figure_pack")

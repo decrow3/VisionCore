@@ -74,6 +74,39 @@ outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_loca
 outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_local_pairing_Iz_canonical_pyramid_k16_rel2_seed7_v1
 ```
 
+## Figure 4 Power Rerun Targets
+
+The higher-power rerun surface lives in:
+
+```text
+declan/canonical_active_sensing/configs/figure4_power_rerun_v1.json
+```
+
+Primary aggregate power target:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1
+```
+
+Aggregate seed replicate:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_pyramid_k16_tworeadout_rel025-2_power_seed11_k8_v1
+```
+
+Local pairing power targets:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_local_pairing_Iz_power_pyramid_k16_rel025_0p5_1_seed7_k64_v1
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_local_pairing_Iz_power_pyramid_k16_rel025_0p5_1_seed11_k64_v1
+```
+
+Optional joint prior-depth target:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_axis_conditioned_hard_negative_n128_c4_k16_rel0p25_prior32_power_v1
+```
+
 ## Validation Commands
 
 ```bash

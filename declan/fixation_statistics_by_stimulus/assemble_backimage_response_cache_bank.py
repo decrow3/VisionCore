@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,29 @@ def _summary_path_for_rows(row_path: Path) -> Path:
     return row_path.with_name(name[: -len("_rows.csv")] + "_summaries.npz")
 
 
+def _marker_path_for_rows(row_path: Path) -> Path:
+    name = row_path.name
+    if not name.endswith("_rows.csv"):
+        raise ValueError(f"Unexpected row filename: {row_path}")
+    return row_path.with_name(name[: -len("_rows.csv")] + ".done.json")
+
+
+def _load_complete_marker_for_rows(row_path: Path) -> dict[str, Any]:
+    marker_path = _marker_path_for_rows(row_path)
+    if not marker_path.exists():
+        raise FileNotFoundError(f"Missing completion marker for {row_path}: {marker_path}")
+    try:
+        payload = json.loads(marker_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Completion marker is not valid JSON: {marker_path}") from exc
+    if not isinstance(payload, dict) or payload.get("status") != "complete":
+        raise ValueError(f"Completion marker is not complete for {row_path}: {marker_path}")
+    request_hash = payload.get("request_hash")
+    if not request_hash:
+        raise ValueError(f"Completion marker lacks request_hash for {row_path}: {marker_path}")
+    return payload
+
+
 def _read_csv_or_empty(path: Path) -> pd.DataFrame:
     try:
         return pd.read_csv(path)
@@ -50,11 +74,21 @@ def _load_shards(cache_dir: Path, row_glob: str) -> tuple[pd.DataFrame, dict[str
     frames: list[pd.DataFrame] = []
     summary_parts: dict[str, list[np.ndarray]] = {}
     expected_summary_keys: set[str] | None = None
+    expected_request_hash: str | None = None
     offset = 0
     for row_file in row_files:
         rows = _read_csv_or_empty(row_file)
         if rows.empty:
             continue
+        marker_payload = _load_complete_marker_for_rows(row_file)
+        request_hash = str(marker_payload["request_hash"])
+        if expected_request_hash is None:
+            expected_request_hash = request_hash
+        elif request_hash != expected_request_hash:
+            raise ValueError(
+                f"{row_file} request_hash={request_hash} does not match earlier shards "
+                f"request_hash={expected_request_hash}"
+            )
         summary_path = _summary_path_for_rows(row_file)
         if not summary_path.exists():
             raise FileNotFoundError(f"Missing summary NPZ for {row_file}: {summary_path}")

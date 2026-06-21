@@ -30,6 +30,18 @@ CONFIG_MODULES = {
     "figure_active_sensing_v1.json": {
         "aggregate_figure_pack": "declan.fixation_statistics_by_stimulus.make_backimage_aggregate_fem_figure_pack",
     },
+    "figure4_power_rerun_v1.json": {
+        "aggregate_power_primary": "declan.fixation_statistics_by_stimulus.run_backimage_aggregate_fem_information",
+        "aggregate_power_replicate_seed11": "declan.fixation_statistics_by_stimulus.run_backimage_aggregate_fem_information",
+        "aggregate_incremental_power_primary": "declan.fixation_statistics_by_stimulus.summarize_backimage_aggregate_incremental_motion",
+        "aggregate_incremental_power_replicate_seed11": "declan.fixation_statistics_by_stimulus.summarize_backimage_aggregate_incremental_motion",
+        "local_pairing_power_seed7": "declan.fixation_statistics_by_stimulus.run_backimage_local_pairing_Iz_revisit",
+        "local_pairing_power_seed11": "declan.fixation_statistics_by_stimulus.run_backimage_local_pairing_Iz_revisit",
+        "local_incremental_power_seed7": "declan.fixation_statistics_by_stimulus.summarize_backimage_aggregate_incremental_motion",
+        "local_incremental_power_seed11": "declan.fixation_statistics_by_stimulus.summarize_backimage_aggregate_incremental_motion",
+        "joint_observer_rel0p25_power_prior32": "declan.fixation_statistics_by_stimulus.run_backimage_trajectory_table_observer",
+        "joint_posterior_rel0p25_power_prior32": "declan.backimage_trajectory_observer.analyze_feature_posterior",
+    },
 }
 INPUT_PATH_KEYS = (
     "input",

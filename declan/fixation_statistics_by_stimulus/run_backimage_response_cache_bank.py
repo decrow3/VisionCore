@@ -165,6 +165,69 @@ def _ordered_unique(values: list[str]) -> list[str]:
     return out
 
 
+def _trace_cache_key(trace: np.ndarray) -> tuple[tuple[int, ...], bytes]:
+    arr = np.ascontiguousarray(np.asarray(trace, dtype=np.float32))
+    return tuple(int(v) for v in arr.shape), arr.tobytes()
+
+
+def _check_trace_batch_equivalence(
+    scorer: Any,
+    patch: np.ndarray,
+    traces: list[np.ndarray],
+    *,
+    trace_batch_size: int,
+    n_timepoints: int,
+    atol: float,
+) -> None:
+    if int(trace_batch_size) <= 1 or not traces:
+        return
+    sample = traces[: min(4, len(traces))]
+    single = [
+        _align_response_to_trace(resp, int(n_timepoints))
+        for resp in scorer.responses(patch, sample, trace_batch_size=1)
+    ]
+    batched = [
+        _align_response_to_trace(resp, int(n_timepoints))
+        for resp in scorer.responses(patch, sample, trace_batch_size=int(trace_batch_size))
+    ]
+    max_abs = 0.0
+    for one, many in zip(single, batched, strict=True):
+        if one.shape != many.shape:
+            raise ValueError(f"Trace-batch equivalence failed: response shape {one.shape} != {many.shape}")
+        max_abs = max(max_abs, float(np.nanmax(np.abs(one - many))))
+    if max_abs > float(atol):
+        raise ValueError(f"Trace-batch equivalence failed: max_abs_diff={max_abs:.6g} > {float(atol):.6g}")
+    _progress(f"trace-batch equivalence passed for {len(sample)} traces; max_abs_diff={max_abs:.3g}")
+
+
+def _score_trace_response_map(
+    scorer: Any,
+    patch: np.ndarray,
+    trace_by_key: dict[tuple[tuple[int, ...], bytes], np.ndarray],
+    *,
+    trace_batch_size: int,
+    n_timepoints: int,
+    check_equivalence: bool,
+    equivalence_atol: float,
+) -> dict[tuple[tuple[int, ...], bytes], np.ndarray]:
+    keys = list(trace_by_key)
+    traces = [trace_by_key[key] for key in keys]
+    if bool(check_equivalence):
+        _check_trace_batch_equivalence(
+            scorer,
+            patch,
+            traces,
+            trace_batch_size=int(trace_batch_size),
+            n_timepoints=int(n_timepoints),
+            atol=float(equivalence_atol),
+        )
+    responses = [
+        _align_response_to_trace(resp, int(n_timepoints))
+        for resp in scorer.responses(patch, traces, trace_batch_size=int(trace_batch_size))
+    ]
+    return dict(zip(keys, responses, strict=True))
+
+
 def _response_row_fieldnames(catalog: pd.DataFrame) -> list[str]:
     return _ordered_unique(
         [
@@ -234,7 +297,7 @@ def _request_signature(
     if {"source_row", "trace_id"}.issubset(catalog_block.columns):
         catalog_block = catalog_block.sort_values(["source_row", "trace_id"]).reset_index(drop=True)
     payload = {
-        "version": "response_cache_bank_request_v2",
+        "version": "response_cache_bank_request_v3",
         "trace_catalog": _path_signature(trace_catalog_path),
         "trace_npz": _path_signature(trace_npz_path),
         "temporal_basis_npz": _path_signature(args.temporal_basis_npz),
@@ -251,6 +314,8 @@ def _request_signature(
         "local_field_grid": int(args.local_field_grid),
         "n_timepoints": int(args.n_timepoints),
         "temporal_components": int(args.temporal_components),
+        "twin_batch_size": int(args.twin_batch_size),
+        "twin_trace_batch_size": int(args.twin_trace_batch_size),
     }
     return stable_hash(payload, n_hex=24), payload
 
@@ -321,6 +386,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--twin-batch-size", type=int, default=128)
     parser.add_argument("--twin-trace-batch-size", type=int, default=4)
+    parser.add_argument(
+        "--check-trace-batch-equivalence",
+        action="store_true",
+        help="On the first non-empty image, verify responses match for trace_batch_size=1 and --twin-trace-batch-size.",
+    )
+    parser.add_argument("--trace-batch-equivalence-atol", type=float, default=1e-5)
     parser.add_argument("--progress-every", type=int, default=8)
 
     parser.add_argument("--max-images", type=int, default=0)
@@ -407,6 +478,13 @@ def run(args: argparse.Namespace) -> Path:
                 "analysis_windows": str(analysis_path),
                 "request_hash": request_hash,
                 "request": request_payload,
+                "execution": {
+                    "device": str(args.device),
+                    "twin_batch_size": int(args.twin_batch_size),
+                    "twin_trace_batch_size": int(args.twin_trace_batch_size),
+                    "check_trace_batch_equivalence": bool(args.check_trace_batch_equivalence),
+                    "trace_batch_equivalence_atol": float(args.trace_batch_equivalence_atol),
+                },
             },
         )
         return out_dir
@@ -427,6 +505,13 @@ def run(args: argparse.Namespace) -> Path:
                 "analysis_windows": str(analysis_path),
                 "request_hash": request_hash,
                 "request": request_payload,
+                "execution": {
+                    "device": str(args.device),
+                    "twin_batch_size": int(args.twin_batch_size),
+                    "twin_trace_batch_size": int(args.twin_trace_batch_size),
+                    "check_trace_batch_equivalence": bool(args.check_trace_batch_equivalence),
+                    "trace_batch_equivalence_atol": float(args.trace_batch_equivalence_atol),
+                },
             },
         )
         return out_dir
@@ -446,6 +531,10 @@ def run(args: argparse.Namespace) -> Path:
     by_source = {int(source_row): block.copy() for source_row, block in catalog.groupby("source_row", sort=False)}
     response_row = 0
     progress_every = max(1, int(args.progress_every))
+    trace_batch_checked = False
+    duplicate_trace_rows_skipped = 0
+    requested_trace_response_count = 0
+    unique_trace_response_count = 0
     for image_i, (_, row) in enumerate(tqdm(list(shard_work.iterrows()), desc="response cache shard"), start=1):
         source_row = int(row["source_row"])
         patch = _extract_patch(row, canvas_cache, int(args.patch_size_px))
@@ -462,17 +551,15 @@ def run(args: argparse.Namespace) -> Path:
             for name, value in latents.items():
                 latent_values.setdefault(name, []).append(np.asarray(value, dtype=np.float32))
 
-        static = _align_response_to_trace(
-            scorer.responses(patch, [_static_trace(int(args.n_timepoints))], trace_batch_size=1)[0],
-            int(args.n_timepoints),
-        )
         trace_block = by_source.get(source_row)
         if trace_block is None or trace_block.empty:
             continue
 
         static_rows = []
-        trace_rows = []
-        trace_list: list[np.ndarray] = []
+        trace_rows: list[tuple[pd.Series, tuple[tuple[int, ...], bytes]]] = []
+        static_trace = _static_trace(int(args.n_timepoints))
+        static_key = _trace_cache_key(static_trace)
+        trace_by_key: dict[tuple[tuple[int, ...], bytes], np.ndarray] = {static_key: static_trace}
         for _, trace_row in trace_block.iterrows():
             family = str(trace_row["family"])
             if family == "static":
@@ -484,12 +571,26 @@ def run(args: argparse.Namespace) -> Path:
                 raise ValueError(
                     f"Trace {trace_key!r} has shape {trace.shape}; expected {(int(args.n_timepoints), 2)}"
                 )
-            trace_rows.append(trace_row)
-            trace_list.append(trace)
-        responses = [
-            _align_response_to_trace(resp, int(args.n_timepoints))
-            for resp in scorer.responses(patch, trace_list, trace_batch_size=int(args.twin_trace_batch_size))
-        ]
+            key = _trace_cache_key(trace)
+            if key in trace_by_key:
+                duplicate_trace_rows_skipped += 1
+            else:
+                trace_by_key[key] = trace
+            trace_rows.append((trace_row, key))
+        responses_by_key = _score_trace_response_map(
+            scorer,
+            patch,
+            trace_by_key,
+            trace_batch_size=int(args.twin_trace_batch_size),
+            n_timepoints=int(args.n_timepoints),
+            check_equivalence=bool(args.check_trace_batch_equivalence) and not trace_batch_checked,
+            equivalence_atol=float(args.trace_batch_equivalence_atol),
+        )
+        if bool(args.check_trace_batch_equivalence) and not trace_batch_checked:
+            trace_batch_checked = True
+        static = responses_by_key[static_key]
+        requested_trace_response_count += 1 + len(trace_rows)
+        unique_trace_response_count += len(trace_by_key)
         output_pairs: list[tuple[pd.Series, np.ndarray]] = []
         if bool(args.write_static_output):
             if static_rows:
@@ -509,7 +610,7 @@ def run(args: argparse.Namespace) -> Path:
                     }
                 )
                 output_pairs.append((static_meta, static))
-        output_pairs.extend(zip(trace_rows, responses, strict=True))
+        output_pairs.extend((trace_row, responses_by_key[key]) for trace_row, key in trace_rows)
 
         for trace_row, response in output_pairs:
             summary = _summarize(
@@ -557,6 +658,9 @@ def run(args: argparse.Namespace) -> Path:
             "n_shards": shard.n_shards,
             "n_windows": int(shard_work.shape[0]),
             "n_response_rows": int(len(rows)),
+            "n_requested_trace_responses": int(requested_trace_response_count),
+            "n_unique_trace_responses_scored": int(unique_trace_response_count),
+            "n_duplicate_trace_rows_reused": int(duplicate_trace_rows_skipped),
             "summary_arrays": {name: list(arr.shape) for name, arr in arrays.items()},
             "summary_names": sorted(summaries),
             "trace_catalog": str(trace_catalog_path),
@@ -567,6 +671,14 @@ def run(args: argparse.Namespace) -> Path:
             "latents": str(latent_path) if bool(args.write_latents) and latent_values else "",
             "request_hash": request_hash,
             "request": request_payload,
+            "execution": {
+                "device": str(args.device),
+                "twin_batch_size": int(args.twin_batch_size),
+                "twin_trace_batch_size": int(args.twin_trace_batch_size),
+                "check_trace_batch_equivalence": bool(args.check_trace_batch_equivalence),
+                "trace_batch_equivalence_atol": float(args.trace_batch_equivalence_atol),
+                "trace_batch_equivalence_checked": bool(trace_batch_checked),
+            },
         },
     )
     return out_dir

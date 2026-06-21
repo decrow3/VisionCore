@@ -20,9 +20,33 @@ from declan.fixation_statistics_by_stimulus.backimage_cache import (
     write_trace_catalog,
 )
 from declan.fixation_statistics_by_stimulus.run_backimage_response_cache_bank import (
+    _check_trace_batch_equivalence,
     _completion_marker_outputs_exist,
+    _score_trace_response_map,
     _summarize,
+    _trace_cache_key,
 )
+
+
+class _FakeScorer:
+    def __init__(self, *, batch_offset: float = 0.0):
+        self.calls: list[tuple[int, int]] = []
+        self.batch_offset = float(batch_offset)
+
+    def responses(self, patch, traces, *, trace_batch_size: int = 1):
+        self.calls.append((len(traces), int(trace_batch_size)))
+        out = []
+        for trace in traces:
+            value = float(np.sum(trace)) + (self.batch_offset if int(trace_batch_size) > 1 else 0.0)
+            out.append(np.full((trace.shape[0], 2), value, dtype=np.float32))
+        return out
+
+
+def _write_shard_marker(tmp_path, shard_token: str, *, request_hash: str = "request-a") -> None:
+    atomic_write_json(
+        tmp_path / f"response_cache_bank_{shard_token}.done.json",
+        {"status": "complete", "request_hash": request_hash},
+    )
 
 
 def test_stable_hash_and_array_hash_are_content_based() -> None:
@@ -115,6 +139,53 @@ def test_summarize_writes_mean_delta_and_dct_features() -> None:
     assert np.allclose(out["delta_mean"], [3.0, 8.0])
     assert out["temporal_dct"].shape == (4,)
     assert out["temporal_dct_delta"].shape == (4,)
+
+
+def test_trace_response_map_scores_unique_trace_contents_once() -> None:
+    trace_a = np.asarray([[0.0, 0.0], [1.0, 0.0]], dtype=np.float32)
+    trace_b = np.asarray([[0.0, 0.0], [0.0, 2.0]], dtype=np.float32)
+    duplicate_a = trace_a.copy()
+    trace_by_key = {
+        _trace_cache_key(trace_a): trace_a,
+        _trace_cache_key(trace_b): trace_b,
+    }
+
+    assert _trace_cache_key(trace_a) == _trace_cache_key(duplicate_a)
+
+    scorer = _FakeScorer()
+    out = _score_trace_response_map(
+        scorer,
+        np.zeros((4, 4), dtype=np.float32),
+        trace_by_key,
+        trace_batch_size=8,
+        n_timepoints=2,
+        check_equivalence=False,
+        equivalence_atol=1e-5,
+    )
+
+    assert scorer.calls == [(2, 8)]
+    assert set(out) == set(trace_by_key)
+    assert np.allclose(out[_trace_cache_key(trace_a)], 1.0)
+    assert np.allclose(out[_trace_cache_key(trace_b)], 2.0)
+
+
+def test_trace_batch_equivalence_rejects_batch_dependent_responses() -> None:
+    traces = [np.zeros((2, 2), dtype=np.float32), np.ones((2, 2), dtype=np.float32)]
+    scorer = _FakeScorer(batch_offset=1.0)
+
+    try:
+        _check_trace_batch_equivalence(
+            scorer,
+            np.zeros((4, 4), dtype=np.float32),
+            traces,
+            trace_batch_size=2,
+            n_timepoints=2,
+            atol=1e-5,
+        )
+    except ValueError as exc:
+        assert "Trace-batch equivalence failed" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("_check_trace_batch_equivalence should reject batch-dependent responses")
 
 
 def test_validate_trace_catalog_rejects_missing_trace_arrays() -> None:
@@ -245,6 +316,8 @@ def test_completion_marker_requires_real_outputs(tmp_path) -> None:
 def test_load_shards_rejects_mixed_summary_keys(tmp_path) -> None:
     atomic_write_csv(tmp_path / "response_cache_bank_shard00000of00002_rows.csv", [{"response_row": 0, "source_row": 1}])
     atomic_write_csv(tmp_path / "response_cache_bank_shard00001of00002_rows.csv", [{"response_row": 0, "source_row": 2}])
+    _write_shard_marker(tmp_path, "shard00000of00002")
+    _write_shard_marker(tmp_path, "shard00001of00002")
     atomic_savez(tmp_path / "response_cache_bank_shard00000of00002_summaries.npz", {"mean": np.zeros((1, 2), dtype=np.float32)})
     atomic_savez(
         tmp_path / "response_cache_bank_shard00001of00002_summaries.npz",
@@ -257,6 +330,34 @@ def test_load_shards_rejects_mixed_summary_keys(tmp_path) -> None:
         assert "summary keys do not match" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("_load_shards should reject mixed summary keys")
+
+
+def test_load_shards_rejects_missing_completion_marker(tmp_path) -> None:
+    atomic_write_csv(tmp_path / "response_cache_bank_shard00000of00001_rows.csv", [{"response_row": 0, "source_row": 1}])
+    atomic_savez(tmp_path / "response_cache_bank_shard00000of00001_summaries.npz", {"mean": np.zeros((1, 2), dtype=np.float32)})
+
+    try:
+        _load_shards(tmp_path, "response_cache_bank_shard*_rows.csv")
+    except FileNotFoundError as exc:
+        assert "Missing completion marker" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("_load_shards should reject row shards without completion markers")
+
+
+def test_load_shards_rejects_mixed_request_hashes(tmp_path) -> None:
+    atomic_write_csv(tmp_path / "response_cache_bank_shard00000of00002_rows.csv", [{"response_row": 0, "source_row": 1}])
+    atomic_write_csv(tmp_path / "response_cache_bank_shard00001of00002_rows.csv", [{"response_row": 0, "source_row": 2}])
+    _write_shard_marker(tmp_path, "shard00000of00002", request_hash="request-a")
+    _write_shard_marker(tmp_path, "shard00001of00002", request_hash="request-b")
+    atomic_savez(tmp_path / "response_cache_bank_shard00000of00002_summaries.npz", {"mean": np.zeros((1, 2), dtype=np.float32)})
+    atomic_savez(tmp_path / "response_cache_bank_shard00001of00002_summaries.npz", {"mean": np.zeros((1, 2), dtype=np.float32)})
+
+    try:
+        _load_shards(tmp_path, "response_cache_bank_shard*_rows.csv")
+    except ValueError as exc:
+        assert "does not match earlier shards" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("_load_shards should reject mixed request hashes")
 
 
 def test_load_latent_shards_rejects_duplicate_sources(tmp_path) -> None:
