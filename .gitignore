@@ -4,6 +4,7 @@
 *.pkl
 *.mp4
 *.ckpt
+*.deb
 *.log
 *.wandb
 *.json
@@ -11,7 +12,6 @@
 !declan/canonical_geometry/configs/*.json
 *.txt
 *.npz
-jake/multidataset_ddp/*
 *.pyc
 *.egg-info/
 __pycache__/
@@ -22,6 +22,7 @@ plans/
 docs/plans/
 ray_results/
 figures/*
+scripts/temporal_decoding/data/rates
 scripts/temporal_decoding/data/rates/*
 scripts/temporal_decoding/data/results/*
 declan/transformation_dynamics_cache/*
@@ -36,4 +37,7 @@ declan/fem_global_intervention_results/*
 declan/transformation_dynamics_figures/*.npy
 scripts/temporal_decoding/data/results/neurometric*.npz
 declan/jacobian_results/test*.npz
-tejas/model/
+tejas/model/ray_results/
+tejas/model/_debug*/
+tejas/model/final_pngs*/
+tejas/model/all_cell_training_png/

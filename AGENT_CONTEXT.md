@@ -12,7 +12,8 @@ For ordinary code work, read in this order:
 2. `CLAUDE.md`
 3. `pyproject.toml`
 4. The package README closest to the files you will edit
-5. Only then, targeted sections of `declan/MANIFEST.md` or
+5. For `declan/` work, `declan/README.md`
+6. Only then, targeted sections of `declan/MANIFEST.md` or
    `declan/ANALYSIS_NARRATIVE.md`
 
 Do not bulk-read every Markdown file in `declan/`. Many are older plans,
@@ -32,28 +33,37 @@ handoffs, prescriptions, or posthoc narratives that have been superseded.
   without checking ownership/provenance.
 - `outputs/`, `results/`, `figures/`, `logs/`: generated artifacts. Most are
   ignored; do not assume source-of-truth status from size or recency alone.
+- `outputs/artifacts/temporal_decoding/data/rates/`: local bulky cached
+  temporal-decoding rate arrays. The legacy path
+  `scripts/temporal_decoding/data/rates` may be a symlink for compatibility;
+  treat it as generated data, not script source.
+- `outputs/artifacts/mcfarland/`: local bulky McFarland model/readout pickle
+  exports. Legacy `scripts/mcfarland_*.pkl` paths may be symlinks for older
+  analyses; treat them as generated data.
 
 ## Current Declan Reading Path
 
 Use this path for the current FEM / active-sensing manuscript thread:
 
-1. `declan/MANIFEST.md`: navigation map and chronology. Start with the current
-   top section, then jump to the thread you need.
+1. `declan/README.md`: compact workspace router. Use it to select the relevant
+   package README and avoid old root-level plans.
 2. `declan/ANALYSIS_NARRATIVE.md`: interpretation ledger. Search for the thread
    or status rather than reading the whole file.
-3. `declan/canonical_active_sensing/README.md`: guarded production surface for
+3. `declan/MANIFEST.md`: navigation map and chronology. Search targeted
+   sections rather than reading end to end.
+4. `declan/canonical_active_sensing/README.md`: guarded production surface for
    BackImage aggregate, local-pairing, joint-posterior, adjudication, and figure
    pack runs.
-4. `declan/canonical_geometry/README.md`: guarded production surface for raw-edge
+5. `declan/canonical_geometry/README.md`: guarded production surface for raw-edge
    residual adjudication and geometry figure-pack runs.
-5. `declan/figure4_active_sensing_atlas/claim_critical_diagnostics_queue.md`:
+6. `declan/figure4_active_sensing_atlas/claim_critical_diagnostics_queue.md`:
    claim-critical failure-mode checklist for long canonical runs and promoted
    panels.
-6. `declan/fem_v1_current_status_and_way_forward.md`: high-level manuscript
+7. `declan/fem_v1_current_status_and_way_forward.md`: high-level manuscript
    route framing.
-7. `declan/active_sensing_roadmap_after_vernier_fixation_image_structure.md`:
+8. `declan/active_sensing_roadmap_after_vernier_fixation_image_structure.md`:
    current active-sensing synthesis.
-8. Package READMEs for implementation details:
+9. Package READMEs for implementation details:
    - `declan/figure4_active_sensing_atlas/README.md`
    - `declan/fig4_active_sensing/README.md`
    - `declan/fixation_statistics_by_stimulus/` source plus local summaries
@@ -109,6 +119,8 @@ Status words matter:
 - `CLEANUP_CANDIDATES.md`: generated artifacts, archive/cold-storage targets,
   and safe purge candidates.
 - `MARKDOWN_CLEANUP_CANDIDATES.md`: stale-plan and context-window cleanup audit.
+- `docs/documentation_routing_plan.md`: current documentation-routing review
+  and staged cleanup plan.
 - `docs/cache_inventory.md`: large cache/output path-compatibility registry.
 - `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/README.cleanup.md`:
   BackImage/Figure 4 output-root cleanup audit.
