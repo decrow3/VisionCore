@@ -45,17 +45,21 @@ retinal motion is treated as part of the inference problem rather than as noise.
 - `provisional_figure4_v0.md`
   - Provisional Figure 4 package with selected panel roles, values, claim
     boundaries, and a draft legend.
-- `companion_aggregate_fem_model.md`
+- `4a_companion_retinal_movie_premise.md`
+  - Reasoning document for the retinal-movie premise and rendering QC panel.
+- `4b_companion_aggregate_fem_model.md`
   - Reasoning document for the aggregate FEM feature-decodability model.
-- `companion_local_Iz_pairing_model.md`
+- `4b_companion_local_Iz_pairing_model.md`
   - Reasoning document for the local `I_z` image-trace pairing sensitivity
     model.
-- `companion_joint_posterior_observer_model.md`
+- `4c_companion_joint_posterior_observer_model.md`
   - Reasoning document for the joint image/trajectory observer model.
+- `4d_companion_along_edge_model_feature_encoding.md`
+  - Reasoning document for the along-edge model feature-encoding panel.
 - `panel_C_feature_space_compact_removed_handoff.md`
   - Coding-agent handoff for the missing Panel C feature-space compact-only /
     compact-removed / addback control.
-- `companion_behavior_geometry_bridge.md`
+- `4e_companion_behavior_geometry_bridge.md`
   - Reasoning document for the behavior contour-following bridge and raw-edge
     boundary.
 - `panel_text_atlas.md`

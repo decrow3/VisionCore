@@ -186,7 +186,7 @@ temporal_pca: score_with_joint_axis_term = 0.608, aggregate_score = 0.593,
   local_Iz_score = 0.575
 ```
 
-## 4C. Compact-Subspace Recovery
+## 4C. Compact subspace supports joint eye/image decoding
 
 Purpose:
 
@@ -262,7 +262,7 @@ compact-source priors are retained in the result table/report; the main panel
 plots their mean for the compact-only and compact-removed curves.
 ```
 
-## 4D. Along-Edge Priors Improve Feature Recovery
+## 4D. Along-edge motion benefits model feature encoding
 
 Purpose:
 
@@ -326,7 +326,7 @@ absolute along/across gains over zero-eye plus the paired along-minus-across
 contrast. The older preservation audit should move to caption or supplement.
 ```
 
-## 4E. Real Drift Follows Coherent Edges
+## 4E. Real drift follows clear edges
 
 Purpose:
 
@@ -415,10 +415,12 @@ tested model objective.
 The methods/logic companion set lives beside this file:
 
 ```text
-companion_aggregate_fem_model.md
-companion_local_Iz_pairing_model.md
-companion_joint_posterior_observer_model.md
-companion_behavior_geometry_bridge.md
+4a_companion_retinal_movie_premise.md
+4b_companion_aggregate_fem_model.md
+4b_companion_local_Iz_pairing_model.md
+4c_companion_joint_posterior_observer_model.md
+4d_companion_along_edge_model_feature_encoding.md
+4e_companion_behavior_geometry_bridge.md
 ```
 
 These are written as explanatory argument documents in the style of the

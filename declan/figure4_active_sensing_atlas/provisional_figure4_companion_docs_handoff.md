@@ -257,12 +257,17 @@ This can also be a compact supplement-facing panel instead of a main panel.
 
 Create these files:
 
-- `declan/figure4_active_sensing_atlas/companion_aggregate_fem_model.md`
-- `declan/figure4_active_sensing_atlas/companion_local_Iz_pairing_model.md`
-- `declan/figure4_active_sensing_atlas/companion_joint_posterior_observer_model.md`
-- Optional but recommended: `declan/figure4_active_sensing_atlas/companion_behavior_geometry_bridge.md`
+- `declan/figure4_active_sensing_atlas/4a_companion_retinal_movie_premise.md`
+- `declan/figure4_active_sensing_atlas/4b_companion_aggregate_fem_model.md`
+- `declan/figure4_active_sensing_atlas/4b_companion_local_Iz_pairing_model.md`
+- `declan/figure4_active_sensing_atlas/4c_companion_joint_posterior_observer_model.md`
+- `declan/figure4_active_sensing_atlas/4d_companion_along_edge_model_feature_encoding.md`
+- `declan/figure4_active_sensing_atlas/4e_companion_behavior_geometry_bridge.md`
 
-Each companion should be self-contained and written as a reasoning document. Do not make them into flat inventories of runs.
+Each companion should be self-contained and written as a reasoning document. Do
+not make them into flat inventories of runs. Each current companion now also
+has a plain-English methods section that describes the implementation without
+requiring the reader to jump directly into the code.
 
 ## Shared Notation
 

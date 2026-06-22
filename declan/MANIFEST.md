@@ -9,7 +9,9 @@ repo has several live threads moving in parallel, so dates should be read as
 scientific dependency graph.
 
 For the companion narrative of motivations, outcomes, and revised
-interpretations, see `ANALYSIS_NARRATIVE.md`.
+interpretations, see `ANALYSIS_NARRATIVE.md`. The pre-compression detailed
+version is preserved as `ANALYSIS_NARRATIVE_DETAILED_2026-06-22.md` for
+historical output paths and exact values.
 
 ## How To Update
 

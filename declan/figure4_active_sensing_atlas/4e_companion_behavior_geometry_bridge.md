@@ -3,6 +3,20 @@
 Date: 2026-06-21
 Status: provisional methods/logic companion for Figure 4E
 
+## Panel Claim Under Test
+
+```text
+Real drift follows clear edges.
+```
+
+This is the result Panel 4E is there to show if the evidence supports it. The
+claim is behavioral and geometric: measured drift/fixation-cloud axes should be
+more edge-following when the local image supplies a clear orientation. The
+motivation, assumptions, metrics, controls, diagnostics, and caveats below are
+all there to decide how strongly this sentence can be stated, and to keep it
+separate from the stronger claim that behavior optimizes a specific V1-twin
+objective.
+
 ## Summary
 
 The behavior geometry bridge asks whether measured FEM/fixation-cloud axes are
@@ -72,6 +86,53 @@ Uncertainty is reported by session bootstrap or session-level summaries. The
 endpoint-zone enrichment panels use angle-bin fractions and must be read
 against the transformed uniform-angle null, not against visually equal endpoint
 bar heights.
+
+## Plain-English Methods
+
+The 4E analysis asks whether measured fixation motion tends to run along local
+image edges. Each data point is an image window paired with the eye movement
+measured during that window.
+
+For each image window, the image side of the analysis estimates a local edge
+axis. An axis has no arrow: 0 degrees and 180 degrees mean the same edge
+orientation. The analysis also assigns a confidence or reliability value when
+the local image has a clearer orientation.
+
+For the behavior side, the eye trace is summarized as a drift or fixation-cloud
+axis. This is the main direction of the small eye movements during the analyzed
+window. Like the image edge, it is treated as an axis rather than an arrow, so
+movement in opposite directions along the same line counts as the same
+orientation.
+
+The alignment between the two axes is measured by the angle between them. The
+score is `cos(2 * angle)`. This transformation is used because axes repeat
+every 180 degrees. A score near +1 means the drift axis is parallel to the edge.
+A score near 0 means it is about 45 degrees away. A score near -1 means it is
+orthogonal to the edge.
+
+The analysis reports both window-level summaries and session-level summaries,
+but inference is kept at the session level. This matters because thousands of
+windows from the same animal/session are not thousands of independent animals.
+The unweighted session mean gives each analyzed window equal weight within a
+session. The weighted version gives more influence to windows with clearer
+edge or movement-axis estimates.
+
+Three subsets are reported. The all-window subset asks whether the effect is
+present broadly. The reliable-axis subset keeps windows with more trustworthy
+axis estimates. The high-confidence subset is stricter and asks whether the
+effect grows when both the image and movement axes are especially clear.
+
+The endpoint-zone panels count how often the alignment angle falls near
+parallel or near orthogonal. These panels are intuitive, but they need a null
+because equal-looking angle bins do not always imply equal expected fractions
+after transforming an axis angle. The companion therefore keeps the endpoint
+null diagnostic next to the endpoint enrichment result.
+
+The raw-edge baseline is the main behavior benchmark. Model-derived objective
+axes are only meaningful as behavioral mechanisms if they explain behavior
+beyond this simple image-edge axis, on the same windows and with session-level
+uncertainty. Current V1-twin objective axes have not yet passed that residual
+gate.
 
 ## Assumptions
 
@@ -202,6 +263,22 @@ edge-parallel pixel preservation advantage:
 edge-parallel twin preservation advantage:
   mean = 0.000454497, CI [0.000371047, 0.000536519],
   positive sessions 29/29
+```
+
+Historical tests routed to this claim:
+
+```text
+BackImage scalar local-image features did not robustly predict RMS radius,
+diffusion, speed, path length, anisotropy, return-to-center strength, or
+high-frequency FEM fraction. The surviving behavior result is directional:
+drift/fixation-cloud orientation aligns modestly with local edge and spectral
+axes, especially in reliable-axis subsets.
+
+The scaled BackImage twin drift-geometry adjudication found raw_edge_axis was
+the strongest biological baseline: session mean cos2 +0.182, weighted +0.218,
+23/29 positive sessions, random-axis p_ge = 0.0004. Optimized V1-twin PA/PB
+and Pareto axes did not beat raw edge. This is why 4E should claim real drift
+follows clear edges, not that behavior optimizes the tested model objective.
 ```
 
 ## Diagnostics And Failure Modes

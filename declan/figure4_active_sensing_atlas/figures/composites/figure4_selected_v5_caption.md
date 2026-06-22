@@ -4,8 +4,9 @@ Status: compact-layout provisional draft, 2026-06-21.
 
 This version keeps the current analysis choices but moves Panel B into the top
 row with Panel A. Panels C-E are compressed into one lower row so the composite
-reads as retinal movie -> corrected feature-response change, then compact-subspace
-recovery -> along-edge feature recovery -> behavior.
+reads as retinal movie -> corrected feature-response change, then compact
+subspace-supported joint eye/image decoding -> along-edge model feature encoding ->
+behavior.
 
 Draft legend:
 

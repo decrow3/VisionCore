@@ -31,9 +31,9 @@ OUT_DIR = v4.OUT_DIR
 COMPACT_HEADERS = {
     "A": ("One image becomes a retinal movie", "recorded eye drift samples different views of the same scene"),
     "B": ("Motion enhances feature encoding", "but only when eye position is known"),
-    "C": ("Compact-subspace recovery", "compact removal collapses hidden-eye recovery"),
-    "D": ("Along-edge priors recover features", "matched-static hidden-eye decoder"),
-    "E": ("Drift follows clear edges", "alignment strengthens with edge coherence"),
+    "C": ("Compact subspace supports\njoint eye/image decoding", "compact removal collapses hidden-eye recovery"),
+    "D": ("Along-edge motion benefits\nmodel feature encoding", "matched-static hidden-eye decoder"),
+    "E": ("Real drift follows clear edges", "alignment strengthens with edge coherence"),
 }
 
 
@@ -54,21 +54,29 @@ def _compact_panel_header(ax, label: str, title: str, subtitle: str) -> None:
         fontweight="bold",
         clip_on=False,
     )
+    title_y = 1.118
+    subtitle_y = 1.045
+    title_fontsize = 9.5
+    if "\n" in title:
+        title_y = 1.108
+        subtitle_y = 1.000
+        title_fontsize = 8.8
     ax.text(
         title_x,
-        1.118,
+        title_y,
         title,
         transform=ax.transAxes,
         ha="left",
         va="bottom",
         color=v4.INK,
-        fontsize=9.5,
+        fontsize=title_fontsize,
         fontweight="bold",
+        linespacing=0.94,
         clip_on=False,
     )
     ax.text(
         title_x,
-        1.045,
+        subtitle_y,
         subtitle,
         transform=ax.transAxes,
         ha="left",
@@ -88,14 +96,18 @@ def _write_manifest(path: Path) -> None:
             f"{v4.B_GAIN_CSV.relative_to(v4.REPO_ROOT).as_posix()}; "
             f"{v4.B_POSE_UNAWARE_CSV.relative_to(v4.REPO_ROOT).as_posix()}",
         ),
-        ("C", "Features survive hidden eye position", v4.C_POSTERIOR_CSV.relative_to(v4.REPO_ROOT).as_posix()),
+        (
+            "C",
+            "Compact subspace supports joint eye/image decoding",
+            v4.C_POSTERIOR_CSV.relative_to(v4.REPO_ROOT).as_posix(),
+        ),
         (
             "D",
-            "Example edge axes plus along-edge feature recovery",
+            "Along-edge motion benefits model feature encoding",
             f"{v4.D_FEATURE_SUMMARY_CSV.relative_to(v4.REPO_ROOT).as_posix()}; "
             f"{v4.D_THUMBNAIL_VALUES_CSV.relative_to(v4.REPO_ROOT).as_posix()}",
         ),
-        ("E", "Real drift follows coherent edges", v4.E_WINDOWS_CSV.relative_to(v4.REPO_ROOT).as_posix()),
+        ("E", "Real drift follows clear edges", v4.E_WINDOWS_CSV.relative_to(v4.REPO_ROOT).as_posix()),
     ]
     with path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f, lineterminator="\n")
@@ -110,8 +122,9 @@ Status: compact-layout provisional draft, 2026-06-21.
 
 This version keeps the current analysis choices but moves Panel B into the top
 row with Panel A. Panels C-E are compressed into one lower row so the composite
-reads as retinal movie -> corrected feature-response change, then compact-subspace
-recovery -> along-edge feature recovery -> behavior.
+reads as retinal movie -> corrected feature-response change, then compact
+subspace-supported joint eye/image decoding -> along-edge model feature encoding ->
+behavior.
 
 Draft legend:
 
@@ -190,7 +203,7 @@ def _plot_e_compact(ax):
     _compact_panel_header(
         ax,
         "E",
-        "Real drift follows coherent edges",
+        "Real drift follows clear edges",
         "behavioral alignment strengthens when the local edge is clear",
     )
     return values

@@ -3,6 +3,21 @@
 Date: 2026-06-21
 Status: provisional methods/logic companion for Figure 4B
 
+## Panel Claim Under Test
+
+```text
+Motion enhances feature encoding.
+```
+
+This is the result Panel 4B is there to show if the evidence supports it. In
+the current figure the claim is explicitly conditional: motion enhances the
+feature-encoding readout when the model is given the exact retinal trajectory,
+while a pose-unaware proxy shows that the same motion can become costly when
+eye position is hidden. Everything below is organized to decide how strongly
+that panel claim can be made: the motivation, estimator choice, assumptions,
+methods, results, controls, and caveats are all evidence for or against this
+sentence.
+
 ## Top-Line Logic
 
 Figure 4B is there to show one result:
@@ -188,6 +203,59 @@ C(F1, F2, a; phi, s) = G(F1, a; phi, s) - G(F2, a; phi, s)
 The estimator contract is therefore not "mutual information" in a literal
 noise-model sense. It is a deterministic feature-decodability proxy with a fixed
 split convention and explicit motion-family controls.
+
+## Plain-English Methods
+
+The aggregate 4B analysis asks whether response movies contain more recoverable
+image-feature information than a static response, when the model is told the
+true retinal trajectory.
+
+The analysis starts with a reviewed set of BackImage image windows and recorded
+fixation traces. For each image window, the static condition renders the image
+at one reference eye position. The motion condition renders a short retinal
+movie by shifting the same image according to a sampled eye trace. The V1 twin
+is then run on each rendered movie to produce a response movie.
+
+The current production run is drift-scoped. Traces with detected microsaccade
+events are filtered out before sampling source traces. Additional filters keep
+the source traces within the configured RMS, radius, path-length, and speed
+limits. Under these filters, 241 of 384 source traces are eligible. The rendered
+movies were checked for effective/requested RMS and clipping; the inspected
+production rows have median RMS ratio 1.0 and clipped fraction 0.0.
+
+Each response movie is turned into a simpler response summary before decoding.
+The important summaries are `mean`, which averages the response over the movie,
+and `delta_mean`, which measures the motion-induced change relative to the
+static response. Temporal PCA and temporal DCT summaries are also computed, but
+they are now treated as order-sensitive diagnostics rather than the main
+absolute-gain result.
+
+The target to be decoded is a coarse local feature map of the image. For the
+main panel, this is the `pyramid_local_field` target with `k = 16`. It is built
+from local oriented pyramid coefficients and includes signed real/imaginary
+components plus magnitude. It is not a full image reconstruction target.
+
+The decoder is trained with grouped-by-image cross-validation. In plain terms,
+all examples from a held-out image stay out of the training set when that image
+is tested. This is the main protection against the decoder simply memorizing
+image identity. The score is the improvement in negative mean-squared error
+when the motion response summary is added to the static response summary. A
+positive value means the motion response summary helped recover the image
+feature target.
+
+The main known-eye comparison uses the exact trajectory used to render each
+response movie. This is why the result is called known-eye or exact-trajectory.
+The pose-unaware proxy is a separate check: it trains on image-mean motion
+summaries but tests on individual hidden trajectory samples without telling the
+decoder which trajectory generated them. This proxy is not a full Bayesian
+observer, but it shows the cost of hiding eye position in the same score units.
+
+The motion controls are rendered and scored the same way. Empirical traces are
+compared with Brownian, rotated, and OU-like trace families. Brownian asks
+whether generic motion of the same scale is enough. Rotated asks whether the
+image-relative direction matters. OU-like confined motion remains audit-only
+because its below-static behavior may reflect a trace-generation or readout
+mismatch.
 
 ## Feature Target Interpretation
 
