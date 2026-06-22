@@ -614,17 +614,20 @@ def build_branch_metrics(
     if not rows:
         return pd.DataFrame()
     out = pd.DataFrame(rows)
-    return out.drop_duplicates(
-        subset=[
-            "branch",
-            "latent",
-            "k",
-            "response_summary",
-            "scale",
-            "metric",
-            "control_contrast",
-        ]
-    ).reset_index(drop=True)
+    dedup_keys = [
+        "branch",
+        "latent",
+        "k",
+        "response_summary",
+        "scale",
+        "metric",
+        "control_contrast",
+    ]
+    decode_like = out[out["branch"].isin(["aggregate", "local_Iz"])].drop_duplicates(
+        subset=dedup_keys + ["source_file"]
+    )
+    joint = out[out["branch"] == "joint_posterior"].drop_duplicates(subset=dedup_keys)
+    return pd.concat([decode_like, joint], ignore_index=True, sort=False).reset_index(drop=True)
 
 
 def _mean_or_zero(values: pd.Series) -> float:

@@ -1,10 +1,10 @@
 """Incremental static-plus-motion decoding for BackImage aggregate FEM runs.
 
 This cache-only posthoc asks whether motion summaries add image-feature
-decoding signal beyond the full static response summary:
+decoding signal beyond the static mean response summary:
 
-    z ~ R_static
-    z ~ R_static + R_motion
+    z ~ R_static_mean
+    z ~ R_static_mean + R_motion
 
 It also compares the incremental gain from empirical motion against matched
 OU/Brownian/rotated controls.
@@ -41,10 +41,13 @@ DEFAULT_RUN_DIR = (
 
 
 STATIC_SUMMARY_FOR_MOTION = {
-    "temporal_pca": "temporal_pca",
-    "temporal_delta_pca": "temporal_pca",
-    "temporal_dct": "temporal_dct",
-    "temporal_dct_delta": "temporal_dct",
+    # Static temporal summaries are near zero for a static trace; use the
+    # static mean response as the real static image baseline for every motion
+    # summary.
+    "temporal_pca": "mean",
+    "temporal_delta_pca": "mean",
+    "temporal_dct": "mean",
+    "temporal_dct_delta": "mean",
     "mean": "mean",
     "delta_mean": "mean",
 }
@@ -189,7 +192,8 @@ def _decode(
     *,
     k: int,
     alphas: list[float],
-    fixed_alpha: float,
+    alpha_mode: str,
+    fixed_alpha: float | None,
     outer_folds: int,
     inner_folds: int,
     seed: int,
@@ -200,8 +204,8 @@ def _decode(
         groups,
         k=int(k),
         alphas=alphas,
-        alpha_mode="fixed",
-        fixed_alpha=float(fixed_alpha),
+        alpha_mode=str(alpha_mode),
+        fixed_alpha=float(fixed_alpha) if fixed_alpha is not None else None,
         outer_folds=int(outer_folds),
         inner_folds=int(inner_folds),
         seed=int(seed),
@@ -226,6 +230,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--latent-names", default="gabor_local_field,pyramid_local_field")
     parser.add_argument("--pca-k-list", default="4,8")
     parser.add_argument("--ridge-alphas", default="0.01,0.1,1,10,100,1000")
+    parser.add_argument("--ridge-alpha-mode", choices=("fixed", "nested_per_candidate"), default="fixed")
     parser.add_argument("--fixed-ridge-alpha", type=float, default=None)
     parser.add_argument("--outer-folds", type=int, default=5)
     parser.add_argument("--inner-folds", type=int, default=3)
@@ -259,10 +264,12 @@ def run(args: argparse.Namespace) -> Path:
         scale_ids = _available_scale_ids(responses, families, summaries)
     alphas = _parse_float_list(args.ridge_alphas)
     fixed_alpha = float(args.fixed_ridge_alpha) if args.fixed_ridge_alpha is not None else float(alphas[len(alphas) // 2])
+    alpha_mode = str(args.ridge_alpha_mode)
     pca_k_list = _parse_int_list(args.pca_k_list)
 
     decode_rows: list[dict[str, Any]] = []
     per_image: dict[tuple[str, str, str, str, str, int], np.ndarray] = {}
+    static_decode_cache: dict[tuple[str, str, int], dict[str, Any]] = {}
 
     for summary in summaries:
         static_summary = STATIC_SUMMARY_FOR_MOTION.get(summary)
@@ -274,17 +281,21 @@ def run(args: argparse.Namespace) -> Path:
         X_static = responses[static_key]
         for latent_name, Z in latents.items():
             for k in pca_k_list:
-                static_result = _decode(
-                    X_static,
-                    Z,
-                    decode_groups,
-                    k=k,
-                    alphas=alphas,
-                    fixed_alpha=fixed_alpha,
-                    outer_folds=int(args.outer_folds),
-                    inner_folds=int(args.inner_folds),
-                    seed=int(args.seed),
-                )
+                static_cache_key = (static_summary, latent_name, int(k))
+                if static_cache_key not in static_decode_cache:
+                    static_decode_cache[static_cache_key] = _decode(
+                        X_static,
+                        Z,
+                        decode_groups,
+                        k=k,
+                        alphas=alphas,
+                        alpha_mode=alpha_mode,
+                        fixed_alpha=fixed_alpha,
+                        outer_folds=int(args.outer_folds),
+                        inner_folds=int(args.inner_folds),
+                        seed=int(args.seed),
+                    )
+                static_result = static_decode_cache[static_cache_key]
                 static_per_key = (summary, "static_only", "static", "static", latent_name, int(k))
                 per_image[static_per_key] = np.asarray(static_result["per_window_score"], dtype=np.float64)
                 decode_rows.append(
@@ -299,6 +310,8 @@ def run(args: argparse.Namespace) -> Path:
                         "mean_neg_mse": float(static_result["mean_neg_mse"]),
                         "r2": float(static_result["r2"]),
                         "chosen_alpha_median": float(static_result["chosen_alpha_median"]),
+                        "ridge_alpha_mode": str(static_result["ridge_alpha_mode"]),
+                        "fixed_ridge_alpha": float(fixed_alpha) if alpha_mode == "fixed" else float("nan"),
                         "target_dim": int(static_result["target_dim"]),
                         "n_images": int(X_static.shape[0]),
                         "decode_group_mode": str(args.decode_group_mode),
@@ -319,6 +332,7 @@ def run(args: argparse.Namespace) -> Path:
                             decode_groups,
                             k=k,
                             alphas=alphas,
+                            alpha_mode=alpha_mode,
                             fixed_alpha=fixed_alpha,
                             outer_folds=int(args.outer_folds),
                             inner_folds=int(args.inner_folds),
@@ -338,6 +352,8 @@ def run(args: argparse.Namespace) -> Path:
                                 "mean_neg_mse": float(aug_result["mean_neg_mse"]),
                                 "r2": float(aug_result["r2"]),
                                 "chosen_alpha_median": float(aug_result["chosen_alpha_median"]),
+                                "ridge_alpha_mode": str(aug_result["ridge_alpha_mode"]),
+                                "fixed_ridge_alpha": float(fixed_alpha) if alpha_mode == "fixed" else float("nan"),
                                 "target_dim": int(aug_result["target_dim"]),
                                 "n_images": int(X_aug.shape[0]),
                                 "decode_group_mode": str(args.decode_group_mode),
@@ -417,8 +433,8 @@ def run(args: argparse.Namespace) -> Path:
             "scale_ids": scale_ids,
             "latent_names": list(latents),
             "pca_k_list": pca_k_list,
-            "ridge_alpha_mode": "fixed",
-            "fixed_ridge_alpha": fixed_alpha,
+            "ridge_alpha_mode": alpha_mode,
+            "fixed_ridge_alpha": fixed_alpha if alpha_mode == "fixed" else None,
             "decode_group_mode": str(args.decode_group_mode),
             "n_decode_groups": int(np.unique(decode_groups).size),
             "outer_folds": int(args.outer_folds),

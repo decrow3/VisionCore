@@ -182,6 +182,90 @@ covariance bridge is corroborating context, not the main Figure 4 endpoint.
 
 ## Module B: Aggregate FEM Information
 
+2026-06-21 corrected static-mean power-rerun integration:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1/
+  backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1/
+    incremental_staticmean_plus_motion_tworeadout_v2/
+
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_local_pairing_Iz_power_pyramid_k16_rel025_0p5_1_seed7_k64_v1/
+  backimage_local_pairing_Iz_power_pyramid_k16_rel025_0p5_1_seed11_k64_v1/
+
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_feature_decomposition_adjudication_v6_staticmean_corrected_power_rerun_primary_scales/
+
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1/
+    incremental_staticmean_plus_motion_allreadouts_v1/readout_atlas_figures/
+```
+
+Correction:
+
+```text
+The previous v5 aggregate temporal-PCA posthoc used static temporal PCs as the
+static baseline. For a static trace that baseline is nearly zero, so the
+temporal-PCA "gain beyond static" claim was not a valid static-response
+comparison. The v6 posthoc uses the static mean response as the baseline for
+all motion summaries.
+```
+
+Corrected power read:
+
+```text
+pyramid_local_field k16 delta_mean, n=384:
+  empirical - static_mean:
+    0.25x -0.65 CI [-2.17, +0.93]
+    0.5x  +0.16 CI [-1.35, +1.77]
+    1x    +1.76 CI [+0.58, +3.05]
+
+  empirical - OU:
+    0.25x -0.20 CI [-1.04, +0.77]
+    0.5x  -1.29 CI [-2.14, -0.47]
+    1x    -0.11 CI [-0.86, +0.67]
+
+temporal_pca secondary diagnostic:
+  empirical - static_mean is negative at 0.25x, 0.5x, and 1x.
+  empirical - OU remains strongly positive at 0.25x, 0.5x, and 1x.
+```
+
+Adjudication read:
+
+```text
+delta_mean is the corrected primary feature readout:
+  score_with_joint_axis_term = 1.912
+  score_without_joint_axis_term = 1.971
+  aggregate_score = 0.332
+  local_Iz_score = 2.139
+
+temporal_pca is demoted to secondary diagnostic:
+  score_with_joint_axis_term = 0.608
+  score_without_joint_axis_term = 0.667
+  aggregate_score = 0.593
+  local_Iz_score = 0.575
+```
+
+Use:
+
+```text
+Use the v6 values and all-readout atlas as the current production candidate
+for Panel B text. The selected v5 composite has been redrawn once from the
+corrected static-mean posthoc, but manuscript promotion should wait for the
+Panel-B-style all-readout review and OU trace-control verdict. The old v5
+temporal-PCA absolute-gain text is superseded.
+```
+
+All-readout/nested-alpha read:
+
+```text
+mean: strongest absolute aggregate candidate under nested alpha
+delta_mean: static-subtracted motion-induced/local-pairing bridge
+temporal PCA/DCT: order-sensitive empirical-vs-control diagnostics
+OU: audit-pending, not yet a headline negative control
+```
+
 Planning note:
 
 ```text
@@ -248,6 +332,16 @@ Motion QC:
 accepted drift-only trace sources = 151 / 256
 median effective/requested RMS = 1.0 for every family/scale
 clipped fraction = 0.0 for every family/scale
+```
+
+2026-06-21 supersession note:
+
+```text
+The temporal-PCA absolute-gain numbers below are historical for figure claims.
+They used the older aggregate posthoc contract and are superseded by the n384
+k16 static-mean correction plus all-readout/nested-alpha audit. Temporal
+PCA/DCT should now be read as order-sensitive empirical-vs-control diagnostics,
+not as the absolute gain-over-static headline.
 ```
 
 Primary temporal-PCA incremental result:

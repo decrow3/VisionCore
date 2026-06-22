@@ -1,0 +1,6 @@
+panel,title,selected_asset,read
+A,One image becomes a movie,figures/panel_A/promotion_candidates/4A_candidate_3_real_high_contrast_positive.png,recorded eye drift samples different retinal views
+B,Motion adds feature information,figures/panel_B/promotion_candidates/4B_candidate_3_absolute_gain_guardrail.png,recorded drift improves the model response over static input
+C,Features survive hidden eye position,figures/panel_C/promotion_candidates/4C_candidate_5_joint_feature_posterior_recovery.png,joint inference recovers local features without the eye trace
+D,Along-edge motion preserves structure,figures/panel_D/promotion_candidates/4D_candidate_1_edge_parallel_preservation.png,across-edge shifts disrupt pixels and model responses more
+E,Real drift follows coherent edges,figures/panel_E/promotion_candidates/4E_candidate_3a_image_coherence_focus.png,behavioral alignment strengthens when the local edge is clear

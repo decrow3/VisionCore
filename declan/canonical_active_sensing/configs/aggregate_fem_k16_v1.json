@@ -1,5 +1,5 @@
 {
-  "description": "Canonical aggregate BackImage FEM candidate around pyramid_local_field k16 temporal_pca with delta_mean posthoc sensitivity.",
+  "description": "Canonical aggregate BackImage FEM candidate around pyramid_local_field k16 with mean/delta_mean as corrected absolute aggregate candidates and temporal_pca as a secondary relative-control diagnostic.",
   "aggregate_fem": {
     "args": {
       "input": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_image_structure_reviewed_v2_screenfiltered_yfix/backimage_image_fem_windows.csv",
@@ -42,8 +42,8 @@
   "aggregate_incremental": {
     "args": {
       "run_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_pyramid_k16_tworeadout_rel025-2_canonical_v1",
-      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_pyramid_k16_tworeadout_rel025-2_canonical_v1/incremental_static_plus_motion_tworeadout_v1",
-      "summaries": "temporal_pca,delta_mean",
+      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_pyramid_k16_tworeadout_rel025-2_canonical_v1/incremental_staticmean_plus_motion_tworeadout_v2",
+      "summaries": "mean,delta_mean,temporal_pca",
       "families": "empirical,ou,brownian,rotated",
       "contrast_pairs": "empirical:ou,empirical:brownian,empirical:rotated,empirical:static",
       "scale_ids": "all",
@@ -58,4 +58,3 @@
     }
   }
 }
-

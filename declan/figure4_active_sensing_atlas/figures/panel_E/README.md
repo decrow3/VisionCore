@@ -27,3 +27,12 @@
 - `panel_E_scope_summary_values.csv`
 - `panel_E_contour_following_source_panels.csv`
 - `panel_E_subpanels_caption.md`
+- `promotion_candidates/`
+  - Current review surface for choosing one promoted 4E panel.
+  - Candidate 1 is the clean statistical behavior-alignment headline.
+  - Candidate 2 is the more intuitive parallel endpoint-zone enrichment view.
+  - Candidate 3A is the focused image-orientation-coherence trend from the
+    original E7 diagnostic; candidate 3B is the paired FEM-anisotropy trend;
+    candidate 3C is a polar/rose view of edge-relative drift direction.
+  - Candidate 3A is selected for `figures/composites/figure4_selected_v0.png`.
+  - Candidates 5-6 are dense confidence/null diagnostics.

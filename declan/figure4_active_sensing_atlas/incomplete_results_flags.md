@@ -157,6 +157,17 @@ translation subspace sufficiency above random/unit-shuffle/gain controls, not
 unique necessity.
 ```
 
+2026-06-21 update:
+
+```text
+The feature-space compact-removal audit has now been run for the promoted
+Panel C metric. Compact-only retains much of full joint feature recovery,
+compact-removed falls toward the zeroed-eye curve, and compact-addback
+reconstructs full joint to numerical tolerance. Keep the broader non-unique
+mechanism caveat: static-PC/non-compact controls still belong in caption or
+supplement before claiming uniqueness.
+```
+
 ### F007: Axis Preference Is Candidate-Set And Scale Dependent
 
 Module: D.
@@ -237,39 +248,67 @@ scope-summary guardrail rather than promoting a specific response objective.
 
 Modules: A-E.
 
-This workspace currently contains a document draft, provenance notes, and
-cache-only subpanel sets for A-E. It does not yet contain final atlas panel
-composites.
+This workspace now contains a first selected A-E composite:
+
+```text
+declan/figure4_active_sensing_atlas/figures/composites/figure4_selected_v0.png
+declan/figure4_active_sensing_atlas/figures/composites/figure4_selected_v0.pdf
+declan/figure4_active_sensing_atlas/figures/composites/figure4_selected_v1.png
+declan/figure4_active_sensing_atlas/figures/composites/figure4_selected_v1.pdf
+declan/figure4_active_sensing_atlas/figures/composites/figure4_selected_v2.png
+declan/figure4_active_sensing_atlas/figures/composites/figure4_selected_v2.pdf
+declan/figure4_active_sensing_atlas/figures/composites/figure4_selected_v3.png
+declan/figure4_active_sensing_atlas/figures/composites/figure4_selected_v3.pdf
+declan/figure4_active_sensing_atlas/figures/composites/figure4_selected_v4.png
+declan/figure4_active_sensing_atlas/figures/composites/figure4_selected_v4.pdf
+declan/figure4_active_sensing_atlas/figures/composites/figure4_selected_v5.png
+declan/figure4_active_sensing_atlas/figures/composites/figure4_selected_v5.pdf
+```
+
+The flag remains open only for final manuscript typography, sizing, and
+production replacement of provisional analysis values.
 
 Action:
 
 ```text
-After the draft stabilizes, compose selected subpanels into the full Figure 4
-layout.
+Use `figure4_selected_v5.*` as the current selected compact-design composite. Polish the
+selected composite after the provisional values stabilize and after
+canonical rerun/adjudication gates close.
 ```
 
 ### F011: Joint-Observer Subpanels Are Generated But Not Yet Integrated
 
 Module: C.
 
-The exact trajectory-table observer has strong matched-static results, but the
-current rendered headline figure does not include this conceptual center. A
-cache-only atlas subpanel set has now been generated locally, but it still
-needs final style integration with the full Figure 4 composite.
+The exact trajectory-table observer has strong matched-static image-identity
+results, but the selected Figure 4 composite now promotes candidate C5: the
+feature-posterior endpoint. Posterior concentration, image-identity accuracy,
+and compact-mechanism details still need final caption/supplement routing.
 
 Primary source:
 
 ```text
 outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
-  backimage_trajectory_table_observer_confirm_matched_static_n64_c8_k8_v1/
-    observer_summary.csv
+  backimage_feature_posterior_compact_removed_pyramid_k8_n128_scales_0p5_1_2_v1/
+    feature_compact_mechanism_summary.csv
 ```
 
 Action:
 
 ```text
-Choose which Panel C subpanels enter the compressed figure style and decide
-whether posterior N_eff and compact-mechanism panels stay main or supplement.
+Keep the feature-space compact-removal Panel C as the compressed main panel
+unless the contract changes; route the older image-identity observer,
+posterior N_eff, axis contrasts, and non-unique compact controls to caption,
+main inset, or supplement.
+```
+
+Completed follow-up:
+
+```text
+Feature-posterior compact-subspace decomposition was run for full joint,
+zero-eye, compact-only, compact-removed, compact addback, and known-eye
+curves in the same feature-recovery cosine used by C5. The former
+feature-space compact-removal gate is now closed for the selected k=10 panel.
 ```
 
 Generated assets:

@@ -1,6 +1,6 @@
 # declan Analysis Narrative
 
-Last curated: 2026-06-20.
+Last curated: 2026-06-21.
 
 Companion to `MANIFEST.md`. The manifest answers "where is it?" This file
 answers "why did we do it, what happened, and how did later work change the
@@ -73,13 +73,18 @@ The story has moved through four broad phases:
    local Gabor/pyramid screen now supports a regime-dependent small-scale
    real-vs-random `I_z` signal, strongest near `0.25x` observed RMS, but not a
    clean global or `1x` infomax claim. The follow-up aggregate natural-image FEM
-   information run is now the stronger BackImage result: in a cleaned `n=256`,
-   `K=4`, grouped-by-image CV run, empirical drift-like motion adds
-   feature-decoding signal beyond static V1-twin responses, robustly beats
-   OU-like confined controls, and does not simply improve with more motion. The
-   advantage over Brownian/generic motion is strongest at `0.25x-0.5x` and
-   narrows at `1x-2x`, so the claim remains scale-, readout-, and twin-scoped
-   rather than a proof of exact trajectory optimality. The reopened local
+   information branch is now useful but readout-split after a 2026-06-21
+   static-baseline correction. The earlier temporal-PCA aggregate headline used
+   a near-zero static temporal-PC baseline and is superseded. Against the real
+   static mean response, `mean` and `delta_mean` are the absolute aggregate
+   gain candidates, while temporal PCA/DCT variants are order-sensitive
+   empirical-vs-control diagnostics. OU-like confined motion remains
+   audit-pending: empirical temporal summaries beat OU strongly, but OU's
+   below-static behavior is a trace-generation or analysis red flag rather than
+   a promoted negative control. The Figure 4B claim should therefore remain
+   scale-, readout-, and twin-scoped: empirical FEM-like motion can expose
+   feature-relevant response changes, but exact trajectory optimality is not
+   established. The reopened local
    BackImage pairing branch now adds a narrower positive: after fixing the
    trace-bank, feature-geometry, and sampled matched-control logic, actual
    image-trace pairings beat matched unpaired empirical trace swaps for
@@ -102,9 +107,84 @@ The story has moved through four broad phases:
    not yet a clean along-contour mechanism split. The old stronger `target128`
    orthogonal advantage is now diagnostic-only because it predates the
    unmatched-catalog fix, and the active `n=128`, `0.5x/1x/2x` shared-source run
-   is the next replication gate.
+   is the next replication gate. A same-day compact-feature ablation clarifies
+   the mechanism boundary: compact-only and compact-removed response tables show
+   that the compact translation component is functionally important for
+   latent-eye feature recovery, but the feature endpoint has not yet compared
+   compact removal against removing other matched, high-value response
+   components. Earlier image-identity compact-mechanism runs did include
+   random, unit-shuffled, gain-only, and static-PC keep-only controls; compact
+   clearly beat random/unit-shuffle/gain controls, while static PCs remained
+   competitive. Current wording should therefore be compact sufficiency and
+   importance, not uniqueness over all low-dimensional response subspaces.
 
-Consolidation update, 2026-06-20:
+Figure 3 compact-geometry check-in, 2026-06-22:
+
+- The current lowest row of combined Figure 3 (`outputs/figures/fig3/fig3_combined_mechanism.png`)
+  remains a valid structural chain: local translation directions are
+  image-specific, pooled tangents occupy a compact subspace, image-disjoint
+  compact bases capture held-out tangent variance, and finite-difference
+  translation covariance predicts recorded FEM covariance above unit-shuffle
+  controls.
+- The original numbers support that boundary. At `delta=0.25 arcmin`,
+  cross-image same-axis tangent cosines are centered near zero (`b_x` median
+  about `0.044`, `b_y` median about `-0.001`), arguing against a universal
+  signed eye-position axis. The pooled tangent participation ratio is `9.04`
+  versus unit-shuffle null `31.03`. Image-disjoint `k=10` tangent capture is
+  about `0.524` versus null `0.122`. The recorded covariance-closure panel
+  captures about `0.534` with no projection control and `0.216` after
+  `global_rate+target_pc1`, with positive unit-shuffle excess in `24/24`
+  sessions.
+- This check-in does not settle the new static-PC challenge. A rough read from
+  the same tangent-map objects shows static response PCs from `r0` capture a
+  large fraction of translation tangent energy (`~0.49` mean at `k=10`,
+  `~0.63` at `k=20`). Therefore the Figure 3 row should be read as evidence for
+  compact, content-routed translation geometry, not as proof that compact
+  geometry is unique relative to the static image-response manifold. Static-PC
+  adjudication is the natural next control.
+- Static-PC adjudication v1 is now implemented in
+  `declan/compact_retinal_translation_geometry/run_static_pc_adjudication.py`
+  and writes to
+  `outputs/compact_retinal_translation_geometry/static_pc_adjudication_v1/`.
+  It fits compact tangent PCs and static-response PCs on training images, then
+  scores held-out tangent capture on disjoint images with paired clustered
+  bootstrap by image ID. On the current cache (`63` valid local windows, `16`
+  image IDs, one non-finite object skipped), compact remains far above
+  random/unit-shuffle/global-rate controls but is not separated from
+  fold-disjoint static-response PCs: at `k=10`, compact captures `0.488`
+  `[0.457, 0.513]`, static PCs capture `0.506` `[0.472, 0.536]`, and paired
+  compact-minus-static is `-0.018` `[-0.041, 0.004]`. Dropping static PC1
+  lowers static-PC capture to `0.299` `[0.282, 0.319]`, implying that a large
+  part of the static-PC contender is carried by the dominant static response
+  axis/manifold. This should be read as a contained, inconclusive specificity
+  test rather than a failure of compact geometry: retinal translations are
+  tangents to the image-response manifold, so static response PCs are expected
+  to capture them well. Current wording should avoid "unique/dedicated"
+  compact-subspace claims, while keeping Figure 3/4 existence claims intact.
+- Static-PC follow-up adjudications are now completed for the current
+  production scopes and summarized in
+  `declan/compact_retinal_translation_geometry/static_pc_control_adjudication_note.md`.
+  The new outputs are:
+  `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_symmetric_subspace_removal_prod_v1/`,
+  `outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_feature_symmetric_subspace_removal_prod_v1/`,
+  and
+  `outputs/matched_twin_covariance_closure_static_pc_predictor_prod_v1/`.
+  They converge on a conservative answer. In image-identity decoding, mean
+  full-minus-removed accuracy loss is `0.337` for compact removal and `0.315`
+  for static-PC removal; residualized compact/static-PC removals are much
+  smaller (`0.111` and `0.056`). In feature-posterior decoding, mean
+  full-minus-removed neg-MSE loss is `45.042` for compact and `38.900` for
+  static PCs; residualized losses are again small (`3.670` and `0.963`). In
+  the single-session full-sample covariance predictor comparison, static-PC
+  cross-fit covariance matches or slightly exceeds compact cross-fit covariance
+  at `k=10` (`0.748` versus `0.742` with no projection; `0.425` versus `0.417`
+  after `global_rate+target_pc1`). Bottom line: compact is functionally
+  important, but the useful component is mostly shared with the static
+  image-response manifold. The current evidence supports compact,
+  image-generalizing manifold-tangent geometry, not a unique compact-specific
+  mechanism over static PCs.
+
+Consolidation update, 2026-06-21:
 
 - The active-sensing/geometry work now has two guarded production surfaces:
   `declan/canonical_active_sensing/` for aggregate, local-pairing,
@@ -113,12 +193,14 @@ Consolidation update, 2026-06-20:
   geometry figure pack. These wrappers should be the entry points for long
   production jobs because they validate configs, print commands, and refuse
   accidental writes into existing non-empty output folders.
-- The current feature target is a two-readout candidate, not a final lock:
-  `pyramid_local_field k16 temporal_pca` is the aggregate/ensemble readout
-  candidate, while `pyramid_local_field k16 delta_mean` is the local
-  mechanistic-sensitivity readout. The target remains provisional until the
-  joint `rel_0p25x` feature-posterior completion and final adjudication review
-  are closed.
+- The current feature target is a role split, not a final lock. For absolute
+  aggregate gain beyond static mean, `mean` and `delta_mean` are the relevant
+  candidates; `delta_mean` also remains the local mechanistic-sensitivity
+  readout. Temporal PCA/DCT variants remain important because they preserve
+  trajectory order, but they are empirical-vs-control diagnostics rather than
+  the absolute gain headline unless they pass fair static-baseline and nested
+  regularization gates. The target remains provisional until the readout/OU
+  audit and an explicit write-lock/promotion pass are closed.
 - The Figure 4 active-sensing atlas now has a consolidated
   `claim_critical_diagnostics_queue.md`. This is the gatekeeping document for
   anticipated failure modes before main claims or long canonical runs are
@@ -597,31 +679,33 @@ Post-fix Gabor/pyramid latent-information branch:
   `incremental_static_plus_motion_relids`; the first automatic
   `incremental_static_plus_motion` folder used old-style scale IDs and has
   empty gain tables.
-- Primary aggregate result:
-  temporal-PCA empirical motion added feature-decoding signal beyond the full
-  static response. For Gabor `k=4`, static-plus-empirical gains were `+14.31`
-  `[+7.45, +21.79]` at `0.25x`, `+13.04` `[+6.81, +20.89]` at `0.5x`,
-  `+9.10` `[+3.73, +14.86]` at `1x`, `+9.98` `[+5.36, +15.87]` at `1.5x`,
-  and `+9.07` `[+3.87, +15.73]` at `2x`. Pyramid `k=8` showed smaller but
-  consistent gains: `+5.20`, `+4.89`, `+3.93`, `+4.44`, and `+4.21` across the
-  same scale sequence, all with positive CIs.
-- Control result:
-  empirical temporal-PCA incremental gain beat OU robustly across scale. For
-  Gabor `k=4`, empirical-minus-OU was `+21.24`, `+19.59`, `+17.16`, `+18.69`,
-  and `+18.03` from `0.25x` to `2x`. Empirical also beat Brownian and rotated
-  most cleanly at small scales: at `0.25x`, Gabor `k=4` empirical-minus-Brownian
-  was `+10.52` and empirical-minus-rotated was `+15.27`; at `0.5x`, they were
-  `+7.89` and `+11.21`. Brownian became competitive at `1x-2x`, so high-scale
-  real-specific claims should be guarded.
-- Scale interpretation:
-  the cleaned aggregate result argues against the worst "more motion is better"
-  artifact. Empirical temporal-PCA gain is strongest at `0.25x-0.5x` and then
-  plateaus or decreases through `2x`, while effective RMS and clipping
-  bookkeeping are clean. This makes the aggregate branch the best current
-  BackImage active-sensing candidate, but with a distributional claim:
-  empirical drift statistics are useful for the V1-twin representation of
-  natural-image feature structure; exact biological trace order/orientation is
-  not established as uniquely optimal.
+- 2026-06-21 static-baseline correction:
+  the n256 temporal-PCA absolute-gain interpretation above is superseded for
+  figure claims. Static temporal PCs are nearly zero for static traces, so the
+  valid absolute question is whether `R_static_mean + R_motion_summary` beats
+  `R_static_mean`. The corrected n384 k16 posthoc is
+  `backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1/incremental_staticmean_plus_motion_tworeadout_v2`.
+- Corrected primary-scale read:
+  for `pyramid_local_field k16 delta_mean`, empirical-minus-static-mean is
+  `-0.65` at `0.25x`, `+0.16` at `0.5x`, and `+1.76` CI `[+0.58, +3.05]` at
+  `1x`. Temporal PCA is negative versus static mean at `0.25x`, `0.5x`, and
+  `1x`, but remains strongly positive versus OU at those scales. The v6
+  adjudication therefore promotes `delta_mean` as the local/absolute candidate
+  and demotes temporal PCA to a secondary relative diagnostic.
+- All-readout/nested-alpha audit:
+  `incremental_staticmean_plus_motion_allreadouts_v1/readout_atlas_figures/`
+  now compares `mean`, `delta_mean`, temporal PCA/DCT, and static-subtracted
+  temporal variants. Under nested alpha, `mean` is the strongest absolute
+  aggregate candidate at primary scales, `delta_mean` is the more interpretable
+  motion-induced/local-pairing readout, and temporal PCA/DCT preserve trajectory
+  ordering and separate empirical from OU. This argues for a Panel-B-style
+  readout atlas before choosing a single manuscript panel.
+- OU interpretation:
+  OU is not a settled negative control yet. It can be useful if it is a fair
+  matched trajectory family, but its below-static behavior and strong
+  temporal-readout separation now trigger a dedicated trace-control audit
+  (`declan/ou_trace_control_and_readout_audit_handoff.md`) before OU is used as
+  a headline control.
 
 Edge-parallel stability and twin metric audit:
 
@@ -680,13 +764,15 @@ corrected Gabor/pyramid branch now has stable small-scale support at `0.25x`,
 especially for Gabor `k=4` and pyramid `k=8`, but it is not a clean `1x` or
 global infomax result. The aggregate branch is now stronger than the local
 screen: empirical drift-like trajectories add feature-decoding signal beyond
-static responses and robustly beat OU in the cleaned `n=256` run. The guardrail
-is that Brownian/generic motion becomes competitive at larger scales and exact
-trajectory orientation is not established as uniquely optimal. The new
-axis-conditioned observer results sharpen this boundary: clean axis priors help
-image inference, but the parallel/orthogonal sign is small and candidate-set
-dependent. Treat the aggregate result as readout- and scale-dependent support
-for empirical drift statistics, not as global infomax.
+static responses in the cleaned `n=256` run. The guardrail is that
+Brownian/generic motion becomes competitive at larger scales, rotated has only
+a suggestive local bump near `1x`, exact trajectory orientation is not
+established as uniquely optimal, and OU is withheld pending the below-static
+absolute-gain audit. The new axis-conditioned observer results sharpen this
+boundary: clean axis priors help image inference, but the parallel/orthogonal
+sign is small and candidate-set dependent. Treat the aggregate result as
+readout- and scale-dependent support for empirical drift statistics, not as
+global infomax.
 ```
 
 Claim boundary:
@@ -718,6 +804,58 @@ Practical next gates:
   images, and score feature recovery, joint-minus-zero feature gain, and
   known-minus-joint pose cost before treating image-identity accuracy as the
   endpoint for along-contour utility.
+- Add a symmetric subspace-removal ablation before turning compact removal into
+  a uniqueness claim. The current feature-space result removes compact but does
+  not yet remove matched static PCs, gain axes, random subspaces, or
+  residualized compact/static-PC components. The decisive comparison is not just
+  `compact_removed` versus `zero_static`; it is whether removing compact hurts
+  more than removing other equally predictive low-dimensional response
+  components, with matched dimension, entropy/temperature, clipping, and
+  addback/reconstruction QC.
+- Test compact-aware trajectory weighting in the same ablation suite, but keep
+  the prior claim separate from the candidate-conditioned diagnostic. The
+  implementation plan is
+  `declan/backimage_trajectory_observer/compact_aware_joint_prior_plan.md`:
+
+```text
+U = image-disjoint compact translation basis
+delta_lambda(I, tau) = lambda(I, tau) - lambda(I, zero)
+rho_noncompact(I, tau) =
+  ||(I - U U^T) delta_lambda(I, tau)||^2 /
+  (||delta_lambda(I, tau)||^2 + eps)
+
+leave-one-table-out compact catalog-statistic weight:
+  log p_compact(tau)
+    = log p_base(tau)
+      - beta * zscore_over_tau(mean_training_images rho_noncompact(I, tau))
+
+candidate-conditioned compact weight:
+  log w_compact(tau | I)
+    = log p_base(tau)
+      - beta * zscore_within_candidate(rho_noncompact(I, tau))
+```
+
+  The `(K,)` version is clean with respect to `y_obs`, but in the current
+  finite-table implementation it is a leave-one-table-out catalog statistic
+  keyed by stable trajectory IDs, not a universal biological eye-motion prior.
+  The candidate-conditioned version is a geometry-aware proposal or
+  marginalization weight, and a win by that variant alone should be treated as
+  diagnostic rather than evidence for a content-independent eye-motion prior.
+  Both should be entropy-matched to matched controls and paired with controls
+  that replace `U` by random, unit-shuffled, gain-only, and static-PC bases. A
+  compact-specific prior claim would require the compact catalog-statistic
+  weight to improve or stabilize joint feature recovery, lose its advantage
+  under compact removal, and not be matched by entropy-matched
+  random/gain/static-PC priors. The first full hard-negative run
+  (`backimage_compact_aware_prior_hardneg_n128_k10_v1`) supports the weaker
+  statement that response-space trajectory reweighting can matter:
+  `image_independent_compact_prior` improves joint feature neg-MSE over uniform
+  on average (`+0.619`), but gain (`+0.825`) and unit-shuffled compact
+  (`+0.857`) controls are stronger, static PC is similar (`+0.558`), and
+  candidate-conditioned compact is slightly negative (`-0.311`). Coverage is
+  usable but not saturated: mean fallback is `5.84/16` trajectory slots
+  (median `6`, range `1-12`), so prior-coverage QC remains part of the
+  interpretation.
 - Replicate the axis-conditioned observer with the shared-source catalog fixed:
   larger `n`, both `matched_static_response` and `hard_negative_structure`, and
   the half/natural/double scale sweep `0.5x`, `1.0x`, `2.0x`. Treat any pre-fix
@@ -734,7 +872,8 @@ Practical next gates:
   `K=4` result are now in hand. The next useful work is figure construction and
   targeted robustness, not another broad pathfinder: fixed/shared-alpha
   sensitivity, seed/source resampling, concise scale-curve plots for
-  empirical-minus-OU/Brownian/rotated, and signal-motion covariance panels.
+  empirical/Brownian/rotated curves, OU trace-generation audit, and
+  signal-motion covariance panels.
   Temporal PCs and temporal DCT should remain primary temporal-code summaries;
   mean and `delta_mean` should be reported as distinct
   integrating/motion-induced-remapping readouts. Deterministic ridge scores are

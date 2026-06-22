@@ -1192,6 +1192,9 @@ def run(args: argparse.Namespace) -> Path:
                     known_counts = _counts_from_rates(np.stack(known_rates, axis=0), float(args.bin_seconds))
                     zero_counts = _counts_from_rates(np.stack(zero_rates, axis=0), float(args.bin_seconds))
                     prior_counts = _counts_from_rates(np.stack(prior_rates, axis=0), float(args.bin_seconds))
+                    # The observation remains the true moved response. The
+                    # zero-eye baseline only changes the response table used to
+                    # explain that same moved observation.
                     y_obs_counts = known_counts[int(cand["true_candidate_index"])]
 
                     cache_rel = ""
@@ -1216,6 +1219,7 @@ def run(args: argparse.Namespace) -> Path:
                             true_trajectory_index=np.asarray([int(true_prior_index)], dtype=np.int32),
                             nearest_trajectory_index=np.asarray([int(nearest_idx)], dtype=np.int32),
                             nearest_trajectory_distance=np.asarray([float(nearest_dist)], dtype=np.float32),
+                            observation_reference_mode=np.asarray(["observed_trace_moved"]),
                             zero_reference_mode=np.asarray(["patch_center_static_tau_zero"]),
                         )
                         cache_rel = str(cache_path.relative_to(out_dir))

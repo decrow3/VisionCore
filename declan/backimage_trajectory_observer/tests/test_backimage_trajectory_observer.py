@@ -94,6 +94,43 @@ def test_image_identity_observer_keeps_known_eye_separate_from_loo_prior() -> No
     assert result["joint_vs_best_dilution_gap"] >= 0.0
 
 
+def test_zero_eye_scores_moved_observation_against_static_eye_table() -> None:
+    moved_y = np.asarray([[9.0, 1.0], [8.0, 1.0]], dtype=np.float64)
+    known = np.asarray(
+        [
+            [[9.0, 1.0], [8.0, 1.0]],
+            [[1.0, 9.0], [1.0, 8.0]],
+        ],
+        dtype=np.float64,
+    )
+    # Static-eye responses are deliberately arranged so the moved observation
+    # looks more like the wrong candidate under the zero-eye table.
+    zero = np.asarray(
+        [
+            [[1.0, 9.0], [1.0, 8.0]],
+            [[9.0, 1.0], [8.0, 1.0]],
+        ],
+        dtype=np.float64,
+    )
+    prior = known[:, None, :, :]
+
+    vectors = score_image_identity_score_vectors(
+        y_obs_counts=moved_y,
+        prior_lambda_counts=prior,
+        known_lambda_counts=known,
+        zero_lambda_counts=zero,
+        true_candidate_index=0,
+        candidate_ids=["true", "other"],
+    )
+
+    expected_zero_scores = poisson_expected_count_loglik(moved_y, zero)
+    static_input_scores = poisson_expected_count_loglik(zero[0], zero)
+    assert np.allclose(vectors["zero_scores"], expected_zero_scores)
+    assert not np.allclose(vectors["zero_scores"], static_input_scores)
+    assert vectors["known_scores"][0] > vectors["known_scores"][1]
+    assert vectors["zero_scores"][1] > vectors["zero_scores"][0]
+
+
 def test_image_identity_score_vectors_match_summary_scores() -> None:
     y = np.asarray([[8.0, 1.0], [7.0, 1.0]], dtype=np.float64)
     known = np.asarray(
@@ -149,6 +186,133 @@ def test_image_identity_score_vectors_match_summary_scores() -> None:
     assert summary["zero_true_score"] == vectors["zero_scores"][0]
     assert summary["joint_true_score"] == vectors["joint_scores"][0]
     assert summary["best_single_tau_true_score"] == vectors["best_single_tau_scores"][0]
+
+
+def test_image_identity_shared_prior_reproduces_old_uniform_behavior() -> None:
+    y = np.asarray([[6.0, 1.0]], dtype=np.float64)
+    known = np.asarray([[[6.0, 1.0]], [[1.0, 6.0]]], dtype=np.float64)
+    zero = np.asarray([[[3.0, 3.0]], [[3.0, 3.0]]], dtype=np.float64)
+    prior = np.asarray(
+        [
+            [[[6.0, 1.0]], [[4.0, 2.0]]],
+            [[[1.0, 6.0]], [[2.0, 4.0]]],
+        ],
+        dtype=np.float64,
+    )
+    uniform = score_image_identity_score_vectors(
+        y_obs_counts=y,
+        prior_lambda_counts=prior,
+        known_lambda_counts=known,
+        zero_lambda_counts=zero,
+        true_candidate_index=0,
+    )
+    shared = score_image_identity_score_vectors(
+        y_obs_counts=y,
+        prior_lambda_counts=prior,
+        known_lambda_counts=known,
+        zero_lambda_counts=zero,
+        true_candidate_index=0,
+        log_trajectory_prior=np.asarray([0.0, 0.0], dtype=np.float64),
+    )
+    assert shared["log_trajectory_prior"].shape == (2,)
+    assert np.allclose(shared["log_trajectory_prior"], uniform["log_trajectory_prior"])
+    assert np.allclose(shared["joint_scores"], uniform["joint_scores"])
+
+
+def test_image_identity_candidate_conditioned_prior_is_rowwise() -> None:
+    y = np.asarray([[6.0, 1.0]], dtype=np.float64)
+    known = np.asarray([[[6.0, 1.0]], [[1.0, 6.0]]], dtype=np.float64)
+    zero = np.asarray([[[3.0, 3.0]], [[3.0, 3.0]]], dtype=np.float64)
+    prior = np.asarray(
+        [
+            [[[6.0, 1.0]], [[4.0, 2.0]]],
+            [[[1.0, 6.0]], [[6.0, 1.0]]],
+        ],
+        dtype=np.float64,
+    )
+    uniform = score_image_identity_score_vectors(
+        y_obs_counts=y,
+        prior_lambda_counts=prior,
+        known_lambda_counts=known,
+        zero_lambda_counts=zero,
+        true_candidate_index=0,
+    )
+    rowwise = score_image_identity_score_vectors(
+        y_obs_counts=y,
+        prior_lambda_counts=prior,
+        known_lambda_counts=known,
+        zero_lambda_counts=zero,
+        true_candidate_index=0,
+        log_trajectory_prior=np.asarray([[0.0, 0.0], [0.0, -100.0]], dtype=np.float64),
+    )
+    assert rowwise["log_trajectory_prior"].shape == (2, 2)
+    assert np.allclose(rowwise["joint_scores"][0], uniform["joint_scores"][0])
+    assert rowwise["joint_scores"][1] < uniform["joint_scores"][1]
+
+    summary = score_image_identity_table(
+        y_obs_counts=y,
+        prior_lambda_counts=prior,
+        known_lambda_counts=known,
+        zero_lambda_counts=zero,
+        true_candidate_index=0,
+        log_trajectory_prior=np.asarray([[0.0, 0.0], [0.0, -100.0]], dtype=np.float64),
+    )
+    assert 1.0 <= summary["N_eff_true_image"] <= 2.0
+
+
+def test_image_identity_candidate_conditioned_prior_rejects_bad_shape() -> None:
+    y = np.asarray([[6.0, 1.0]], dtype=np.float64)
+    known = np.asarray([[[6.0, 1.0]], [[1.0, 6.0]]], dtype=np.float64)
+    zero = np.asarray([[[3.0, 3.0]], [[3.0, 3.0]]], dtype=np.float64)
+    prior = known[:, None, :, :]
+    try:
+        score_image_identity_score_vectors(
+            y_obs_counts=y,
+            prior_lambda_counts=prior,
+            known_lambda_counts=known,
+            zero_lambda_counts=zero,
+            true_candidate_index=0,
+            log_trajectory_prior=np.zeros((3, 1), dtype=np.float64),
+        )
+    except ValueError as exc:
+        assert "log_weights must have shape" in str(exc)
+    else:
+        raise AssertionError("Expected invalid candidate-conditioned prior shape to fail")
+
+
+def test_image_identity_prior_rejects_nan_and_positive_infinity() -> None:
+    y = np.asarray([[6.0, 1.0]], dtype=np.float64)
+    known = np.asarray([[[6.0, 1.0]], [[1.0, 6.0]]], dtype=np.float64)
+    zero = np.asarray([[[3.0, 3.0]], [[3.0, 3.0]]], dtype=np.float64)
+    prior = np.repeat(known[:, None, :, :], 2, axis=1)
+    for bad_prior in (
+        np.asarray([0.0, np.nan], dtype=np.float64),
+        np.asarray([0.0, np.inf], dtype=np.float64),
+        np.asarray([[0.0, -np.inf], [np.nan, 0.0]], dtype=np.float64),
+    ):
+        try:
+            score_image_identity_score_vectors(
+                y_obs_counts=y,
+                prior_lambda_counts=prior,
+                known_lambda_counts=known,
+                zero_lambda_counts=zero,
+                true_candidate_index=0,
+                log_trajectory_prior=bad_prior,
+            )
+        except ValueError as exc:
+            assert "finite values and -inf masks" in str(exc)
+        else:
+            raise AssertionError("Expected invalid trajectory prior values to fail")
+
+    masked = score_image_identity_score_vectors(
+        y_obs_counts=y,
+        prior_lambda_counts=prior,
+        known_lambda_counts=known,
+        zero_lambda_counts=zero,
+        true_candidate_index=0,
+        log_trajectory_prior=np.asarray([0.0, -np.inf], dtype=np.float64),
+    )
+    assert np.isfinite(masked["joint_scores"]).all()
 
 
 def test_posterior_weighted_feature_and_recovery_metrics() -> None:

@@ -129,3 +129,22 @@ uv run python -m declan.compact_retinal_translation_geometry.diagnose_chart_swap
 
 This writes a per-session atlas plus pair-composition tables and figures under
 `outputs/compact_retinal_translation_geometry/chart_swap_diagnostics/`.
+
+## Static-PC Adjudication
+
+To test whether the Figure 3 compact tangent basis is doing something beyond a
+low-dimensional static response manifold, run:
+
+```bash
+uv run python -m declan.compact_retinal_translation_geometry.run_static_pc_adjudication
+```
+
+This uses the same `tangent_maps/twin_tangent_maps.pkl` objects as the compact
+geometry panels.  It fits compact tangent PCs and static-response PCs on
+training images, evaluates held-out tangent capture on disjoint images, and
+writes paired clustered-bootstrap contrasts under
+`outputs/compact_retinal_translation_geometry/static_pc_adjudication_v1/`.
+
+For the interpretation relative to older global/PC1, random, unit-shuffle,
+gain, prior, chart-swap, and compact-removal controls, see
+`static_pc_control_adjudication_note.md`.

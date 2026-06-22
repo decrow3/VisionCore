@@ -182,6 +182,27 @@ def _unit_shuffle_basis(u: np.ndarray, rng: np.random.Generator) -> tuple[np.nda
     return q[:, : u.shape[1]], perm
 
 
+def _orth_residual_basis(primary: np.ndarray, nuisance: np.ndarray, *, tol: float = 1e-10) -> np.ndarray:
+    primary = np.asarray(primary, dtype=np.float64)
+    nuisance = np.asarray(nuisance, dtype=np.float64)
+    if primary.ndim != 2 or nuisance.ndim != 2:
+        raise ValueError("primary and nuisance bases must be 2D")
+    if primary.shape[0] != nuisance.shape[0]:
+        raise ValueError("primary and nuisance bases must have matching unit counts")
+    if primary.shape[1] == 0:
+        return primary[:, :0]
+    if nuisance.shape[1] > 0:
+        qn, _ = np.linalg.qr(nuisance)
+        residual = primary - qn @ (qn.T @ primary)
+    else:
+        residual = primary.copy()
+    q, r = np.linalg.qr(residual)
+    diag = np.abs(np.diag(r)) if r.ndim == 2 else np.asarray([], dtype=np.float64)
+    scale = float(np.max(diag)) if diag.size else 0.0
+    keep = diag > max(float(tol), scale * float(tol))
+    return q[:, keep]
+
+
 def _static_pc_basis(zero_tables: list[np.ndarray], n_units: int, k_max: int) -> np.ndarray:
     if not zero_tables:
         return np.eye(int(n_units), min(int(k_max), int(n_units)), dtype=np.float64)
@@ -327,9 +348,30 @@ def _variant_tables(
     known_delta = known_full.astype(np.float64) - zero.astype(np.float64)
     prior_proj = _project_delta(prior_delta, u)
     known_proj = _project_delta(known_delta, u)
-    if variant in {"compact_only", "random_k", "unit_shuffle_compact", "gain_only", "static_pc_k"}:
+    only_variants = {
+        "compact_only",
+        "random_k",
+        "random_only",
+        "unit_shuffle_compact",
+        "unit_shuffle_only",
+        "gain_only",
+        "static_pc_k",
+        "static_pc_only",
+        "compact_residualized_against_static_pc_only",
+        "static_pc_residualized_against_compact_only",
+    }
+    removed_variants = {
+        "compact_removed",
+        "random_removed",
+        "unit_shuffle_removed",
+        "gain_removed",
+        "static_pc_removed",
+        "compact_residualized_against_static_pc_removed",
+        "static_pc_residualized_against_compact_removed",
+    }
+    if variant in only_variants:
         return zero[:, None, :, :].astype(np.float64) + prior_proj, zero.astype(np.float64) + known_proj, zero.astype(np.float64)
-    if variant == "compact_removed":
+    if variant in removed_variants:
         return (
             zero[:, None, :, :].astype(np.float64) + (prior_delta - prior_proj),
             zero.astype(np.float64) + (known_delta - known_proj),
@@ -425,7 +467,16 @@ def analyze(args: argparse.Namespace) -> Path:
         raise ValueError(f"Basis has only {basis_full.shape[1]} columns, but max k={max_k}")
 
     zero_tables_for_static = []
-    if "static_pc_k" in set(_parse_list(args.variants)):
+    static_variants = {
+        "static_pc_k",
+        "static_pc_only",
+        "static_pc_removed",
+        "compact_residualized_against_static_pc_only",
+        "compact_residualized_against_static_pc_removed",
+        "static_pc_residualized_against_compact_only",
+        "static_pc_residualized_against_compact_removed",
+    }
+    if set(_parse_list(args.variants)).intersection(static_variants):
         print("[compact-mechanism] building static response PC basis", flush=True)
         for static_i, (_, row) in enumerate(manifest.iterrows(), start=1):
             tab = _load_npz_table(base / str(row["response_cache_path"]))
@@ -480,16 +531,29 @@ def analyze(args: argparse.Namespace) -> Path:
                 elif variant == "unit_shuffle_compact":
                     u_shuffle, _perm = _unit_shuffle_basis(compact_u, np.random.default_rng(int(args.seed) + 10_000 + k))
                     basis_by_variant.append((variant, "unit_shuffle_compact", -1, 0, u_shuffle))
-                elif variant == "gain_only":
+                elif variant in {"unit_shuffle_only", "unit_shuffle_removed"}:
+                    u_shuffle, _perm = _unit_shuffle_basis(compact_u, np.random.default_rng(int(args.seed) + 10_000 + k))
+                    basis_by_variant.append((variant, "unit_shuffle_compact", -1, int(u_shuffle.shape[1]), u_shuffle))
+                elif variant in {"gain_only", "gain_removed"}:
                     if k_i == 0:
                         gain = np.ones((n_units, 1), dtype=np.float64)
                         gain /= np.linalg.norm(gain)
                         basis_by_variant.append((variant, "gain_ones", -1, 1, gain))
-                elif variant == "static_pc_k":
+                elif variant in {"static_pc_k", "static_pc_only", "static_pc_removed"}:
                     if static_basis is None:
-                        raise ValueError("static_pc_k requested but static basis was not built")
+                        raise ValueError(f"{variant} requested but static basis was not built")
                     basis_by_variant.append((variant, "static_pc", -1, k, static_basis[:, :k]))
-                elif variant == "random_k":
+                elif variant in {"compact_residualized_against_static_pc_only", "compact_residualized_against_static_pc_removed"}:
+                    if static_basis is None:
+                        raise ValueError(f"{variant} requested but static basis was not built")
+                    u_resid = _orth_residual_basis(compact_u, static_basis[:, :k])
+                    basis_by_variant.append((variant, "compact_residualized_against_static_pc", -1, int(u_resid.shape[1]), u_resid))
+                elif variant in {"static_pc_residualized_against_compact_only", "static_pc_residualized_against_compact_removed"}:
+                    if static_basis is None:
+                        raise ValueError(f"{variant} requested but static basis was not built")
+                    u_resid = _orth_residual_basis(static_basis[:, :k], compact_u)
+                    basis_by_variant.append((variant, "static_pc_residualized_against_compact", -1, int(u_resid.shape[1]), u_resid))
+                elif variant in {"random_k", "random_only", "random_removed"}:
                     for null_id in range(n_random):
                         basis_by_variant.append((variant, "random", null_id, k, random_bases[(k, null_id)]))
                 else:

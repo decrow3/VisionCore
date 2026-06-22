@@ -138,9 +138,19 @@ median effective/requested RMS: 1.0 for every family/scale
 clipped fraction: 0.0 for every family/scale
 ```
 
-Panel B4: static-plus-motion gain.
+2026-06-21 correction:
 
-Verified temporal-PCA incremental gain over static:
+```text
+The temporal-PCA absolute-gain block below is superseded for current Panel B
+claims. Use the n384 k16 corrected static-mean posthoc and all-readout audit:
+mean/delta_mean for absolute aggregate gain, delta_mean for local mechanistic
+sensitivity, temporal PCA/DCT for order-sensitive empirical-vs-control
+diagnostics, and OU only after trace-control audit.
+```
+
+Panel B4: historical static-plus-motion gain.
+
+Superseded temporal-PCA incremental gain:
 
 ```text
 Gabor k=4:
@@ -170,17 +180,28 @@ Verified Gabor k=4 temporal-PCA empirical advantage:
 2x:    vs OU +18.03, vs Brownian -0.60, vs rotated +7.55
 ```
 
-Draft result text:
+Superseded draft result text:
 
 ```text
 In the cleaned aggregate BackImage analysis, empirical drift-like motion added
 feature-decodable structure to the V1-twin response beyond a static response.
 The effect was robust for temporal-PCA response summaries across Gabor and
-pyramid feature targets. Empirical trajectories also outperformed matched
-OU-like controls across the tested scales. The advantage over Brownian and
-rotated controls was strongest at small, biologically plausible scales and
-narrowed at larger scales, arguing against both a pure null and a simple
-"more motion is always better" account.
+pyramid feature targets. The advantage over Brownian and rotated controls was
+strongest at small, biologically plausible scales and narrowed at larger
+scales, arguing against both a pure null and a simple "more motion is always
+better" account. The OU-like condition is withheld from the promoted read
+because its absolute gain falls below static and now requires a trace-generation
+or analysis audit.
+```
+
+Current replacement text:
+
+```text
+In the corrected aggregate BackImage analysis, the feature-encoding result is
+readout-split. Mean/delta-mean readouts address absolute gain beyond the static
+mean response, while temporal PCA/DCT retain trajectory ordering and serve as
+empirical-vs-control diagnostics. OU-like motion remains audit-pending before
+it can be used as the headline negative control.
 ```
 
 Build status:

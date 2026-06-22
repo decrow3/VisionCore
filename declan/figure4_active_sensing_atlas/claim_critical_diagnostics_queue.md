@@ -1,6 +1,6 @@
 # Claim-Critical Failure-Mode Diagnostics Queue
 
-Status: consolidated queue, 2026-06-20.
+Status: consolidated queue, 2026-06-21.
 
 Purpose: keep anticipated failure modes visible for the analyses that can
 change the main Figure 4 claims or the decision to launch long canonical runs.
@@ -26,6 +26,8 @@ Already explicit:
 - raw-edge roadblock residual adjudication;
 - feature/readout adjudication across `k`, feature family, and readout;
 - aggregate motion-family QC and absolute-gain guardrails;
+- corrected static-mean baseline plus all-readout/nested-alpha audit;
+- OU trace-control audit before using OU as a headline negative control;
 - joint observer matched-static, scale, and posterior guardrails;
 - axis-conditioned hard-negative and edge-parallel preservation audits;
 - behavior metric-convention and endpoint-null diagnostics.
@@ -92,11 +94,12 @@ Claim-locking diagnostics:
 
 | failure mode | diagnostic already queued | current artifact | action |
 | --- | --- | --- | --- |
-| "more motion is better" rather than FEM-like motion | OU/Brownian/rotated controls and absolute-gain guardrail | `panel_B/B2`, `B4`, `B5` | Claim empirical specificity only at scales/readouts where controls remain separated. |
-| feature/readout choice is post hoc | `k=2/4/8/16/32`, Gabor-vs-pyramid, readout adjudication | canonical active-sensing provenance and adjudication outputs | Do not lock canonical run until adjudication is complete and documented. |
+| "more motion is better" rather than FEM-like motion | Brownian/rotated controls, absolute-gain guardrail, and OU audit | `panel_B/B2`, `B4`, `B5`; `declan/ou_trace_control_and_readout_audit_handoff.md` | Claim empirical specificity only at scales/readouts where controls remain separated and the control family is validated. |
+| feature/readout choice is post hoc | `k=2/4/8/16/32`, Gabor-vs-pyramid, corrected static-mean v6 adjudication, and all-readout/nested-alpha audit | canonical active-sensing provenance; `backimage_feature_decomposition_adjudication_v6_staticmean_corrected_power_rerun_primary_scales`; `incremental_staticmean_plus_motion_allreadouts_v1/readout_atlas_figures/` | Current role split is supported but not write-locked: `mean`/`delta_mean` for absolute gain, `delta_mean` for local pairing, temporal PCA/DCT for order-sensitive diagnostics. |
 | clipping/RMS/path-length mismatch explains gains | motion-family QC | `aggregate_motion_summary.csv`, `B2_motion_family_qc.*` | Fail closed to "motion can help" if motion family matching is broken. |
+| OU is pathological rather than a valid matched null | exact trace replay, RMS/path/autocorr/PSD/centering audit, response-space geometry, nested-alpha decoder behavior | pending `backimage_ou_trace_control_audit_n384_power_v1/` from `declan/ou_trace_control_and_readout_audit_handoff.md` | Do not use OU as the headline negative control until classified as valid primary, diagnostic-only, invalid, or inconclusive. |
 | train/test leakage or image identity leakage | grouped image CV / cache contracts | aggregate posthoc outputs and canonical wrappers | Canonical figure pack must report split convention. |
-| single seed/sample cohort drives result | canonical production rerun and posthoc | `canonical_active_sensing` configs | Treat pre-canonical caches as selection/adjudication, not final effect-size estimates. |
+| single seed/sample cohort drives result | aggregate n384 power rerun plus local seed7/seed11 power reruns and posthocs | `canonical_active_sensing` power config and v6 adjudication | Aggregate still has one power seed; local sensitivity now has two seeds. Treat effect sizes as production candidates, with aggregate seed11 optional if reviewers demand seed replication. |
 
 Deep-dive trigger:
 
@@ -121,7 +124,8 @@ Claim-locking diagnostics:
 | scale rescue is just zero-eye failure | scale-gap guardrail | `panel_C/C5_scale_gap_guardrail.*` | State scale/candidate dependence. |
 | posterior is not meaningful or collapses to a trivial candidate | posterior concentration / Neff | `panel_C/C4_posterior_concentration.*` | Use as interpretive guardrail, not exact trajectory identification. |
 | candidate/prior/hardness imbalance drives axis effects | hard-negative candidate controls | Panel D/C provenance and raw-edge audit inputs | Axis conclusions require shared-source or hard-negative runs. |
-| model-selection remains incomplete | joint `rel_0p25x` completion | canonical active-sensing provenance | Keep `canonical_run_allowed=false` until reviewed. |
+| compact-subspace necessity is inferred from the wrong endpoint | feature-space compact-only / compact-removed / addback decomposition | pending; current compact-removal audit is joint image-decoding accuracy | Do not use compact removal to explain feature-recovery cosine until the same decomposition is scored in feature space. |
+| model-selection remains incomplete | joint `rel_0p25x` completion plus corrected v6/all-readout adjudication | canonical active-sensing provenance | Closed for the current primary-scale role split; keep `canonical_run_allowed=false` until OU/readout audit and an explicit write-lock/promotion pass are requested. |
 
 Deep-dive trigger:
 
@@ -146,6 +150,7 @@ Claim-locking diagnostics:
 | preservation is true locally but not a policy objective | edge-parallel stability panel and scope text | `panel_D/D4_edge_parallel_stability.*` | Claim preservation, not full optimality. |
 | model objective does not beat raw edge geometry | objective-alignment guardrail | `panel_D/D5_objective_alignment_guardrail.*` | Treat as unresolved mechanism. |
 | raw edge confidence absorbs model variables | raw-edge residual adjudication | `canonical_geometry/run_raw_edge_audit.py` | Promote model bridge only if incremental residual explanation survives. |
+| patch-average orientation misses a behaviorally salient contour | paired average-orientation vs winner-take-all local-orientation axis catalogs | behavior screen script `scripts/run_panel_d_wta_behavior_diagnostic.py`; one-session output `backimage_wta_orientation_behavior_diagnostic_allen_2022_02_16/`; future 4D larger-cache decoding rerun still pending | Define WTA from image-only features before scoring; treat as estimator sensitivity unless decoding and behavior both improve. |
 
 Deep-dive trigger:
 
@@ -250,13 +255,16 @@ Before launching or interpreting long canonical runs:
 - wrappers must refuse existing non-empty output dirs unless the refresh is
   intentional and documented.
 - output provenance must be updated before figure-pack promotion.
-- feature target remains provisional until joint `rel_0p25x` completion and
-  final adjudication review.
-- the selected two-readout spec should be framed as:
+- feature target is supported by joint `rel_0p25x` completion and corrected
+  static-mean/all-readout adjudication, but remains provisional until an
+  explicit write-lock/promotion pass, all-readout Panel B review, and OU
+  trace-control verdict.
+- the current role split should be framed as:
 
 ```text
-aggregate/ensemble readout: pyramid_local_field k16 temporal_pca
+absolute aggregate candidates: pyramid_local_field k16 mean, delta_mean
 local mechanistic sensitivity: pyramid_local_field k16 delta_mean
+order-sensitive diagnostics: pyramid_local_field k16 temporal_pca / temporal_dct variants
 ```
 
 ## Promotion Rules
@@ -277,4 +285,3 @@ Demote or reroute if:
 - the sign depends on scale/candidate set in a way that changes the biological
   interpretation;
 - the analysis proves a different claim than the panel prose wants to make.
-

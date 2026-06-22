@@ -1,6 +1,6 @@
 # Compact Reafferent Geometry as a Joint Image-and-Eye Inference Framework
 
-Last updated: 2026-06-15
+Last updated: 2026-06-22
 
 ## Executive summary
 
@@ -387,6 +387,59 @@ U_{\mathrm{trans}}A(I')\Delta\tau.
 $$
 
 If the correct chart predicts recorded response differences better than the swapped chart, while gain, norm, and subspace controls are matched, that supports content-dependent routing.
+
+Figure 3 compact-geometry check-in, 2026-06-22:
+
+The current compact-geometry row in combined Figure 3 already supports the
+content-routed part of this gate. The local tangent panel shows no universal
+signed displacement axis: at `delta=0.25 arcmin`, cross-image same-axis cosine
+medians are near zero (`b_x` about `0.044`, `b_y` about `-0.001`). The compact
+subspace panel shows that pooled translation tangents are low-dimensional
+(`PR=9.04` versus unit-shuffle null `31.03`). The image-disjoint basis panel
+shows held-out tangent capture (`k=10` about `0.524` versus null `0.122`). The
+recorded covariance panel shows finite-difference translation covariance
+captures FEM-linked recorded covariance above unit-shuffle controls.
+
+What it does not yet show is compact uniqueness relative to the static
+image-response manifold. Static response PCs are a serious competing basis
+because local retinal translations are tangents to the image-response manifold:
+from the same tangent-map objects, `r0` PCs capture roughly half of tangent
+energy by `k=10` and more than half by `k=20`. Therefore the cleanest next
+chart-swap/control test is not only compact versus random/unit-shuffle/gain; it
+is compact versus fold-disjoint static-response PCs, ideally with paired
+per-window statistics and clustered bootstrap by source image/session/candidate
+set.
+
+Static-PC adjudication v1 now performs that first control in
+`declan/compact_retinal_translation_geometry/run_static_pc_adjudication.py`.
+On the current Figure 3 tangent cache, using image-disjoint folds and clustered
+bootstrap by image ID, compact tangent PCs are clearly above random,
+unit-shuffle, and global-rate controls but are not separated from
+fold-disjoint static-response PCs. At `k=10`, compact capture is `0.488`
+`[0.457, 0.513]`, static-PC capture is `0.506` `[0.472, 0.536]`, and paired
+compact-minus-static is `-0.018` `[-0.041, 0.004]`. Dropping static PC1 lowers
+the static-PC basis to `0.299` `[0.282, 0.319]`. This is not a clean negative
+against compact geometry, because retinal translations are tangents to the
+image-response manifold and static PCs should therefore capture many of them.
+It is a contained language constraint: avoid unique/dedicated compact-subspace
+wording, but keep the Figure 3/4 compactness, image-generalization, and
+recorded-covariance existence claims.
+
+The follow-up static-PC adjudications now make that constraint sharper. In the
+full hard-negative image-identity response-table endpoint, compact removal and
+static-PC removal have similar mean accuracy costs (`0.337` and `0.315`
+full-minus-removed), while residualized compact/static-PC removals are much
+smaller (`0.111` and `0.056`). In the feature-posterior endpoint, compact
+removal is somewhat worse than static-PC removal (`45.042` versus `38.900`
+mean full-minus-removed neg-MSE loss), but both are large and the residualized
+losses are small (`3.670` and `0.963`). In the full-sample Allen `2022-02-16`
+covariance predictor comparison, the static-PC cross-fit covariance surrogate
+matches or slightly exceeds the compact cross-fit surrogate at `k=10`
+(`0.748` versus `0.742` with no projection; `0.425` versus `0.417` after
+`global_rate+target_pc1`). The current best interpretation is therefore a
+shared compact/static manifold-tangent channel: compact geometry is important,
+but its useful component is mostly aligned with the static image-response
+manifold rather than uniquely separable from it.
 
 ### Gate 4: external prior wall
 

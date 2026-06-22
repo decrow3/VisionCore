@@ -132,6 +132,7 @@ class AggregateConfig:
     progress_every: int
     seed: int
     dry_run: bool
+    save_response_sample_arrays: bool
 
 
 def _progress(message: str) -> None:
@@ -736,6 +737,31 @@ def _stack_condition_features(
     return out
 
 
+def _stack_condition_sample_features(
+    records: list[dict[str, Any]],
+    summaries: dict[int, dict[str, np.ndarray]],
+    summary_name: str,
+) -> dict[tuple[str, str], np.ndarray]:
+    grouped: dict[tuple[str, str], dict[int, list[np.ndarray]]] = defaultdict(lambda: defaultdict(list))
+    for rec in records:
+        if rec["family"] == "static":
+            key = ("static", "static")
+        else:
+            key = (str(rec["family"]), str(rec["scale_id"]))
+        grouped[key][int(rec["image_index"])].append(summaries[int(rec["response_id"])][summary_name])
+    out: dict[tuple[str, str], np.ndarray] = {}
+    for key, by_image in grouped.items():
+        image_indices = sorted(by_image)
+        counts = {len(by_image[i]) for i in image_indices}
+        if len(counts) != 1:
+            raise ValueError(f"Condition {key} has unequal sample counts across images: {sorted(counts)}")
+        if key == ("static", "static"):
+            out[key] = np.vstack([by_image[i][0] for i in image_indices]).astype(np.float32)
+            continue
+        out[key] = np.stack([np.vstack(by_image[i]) for i in image_indices], axis=0).astype(np.float32)
+    return out
+
+
 def _bootstrap_condition_delta(
     per_image_a: np.ndarray,
     per_image_b: np.ndarray,
@@ -1085,6 +1111,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--progress-every", type=int, default=4)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--dry-run", action="store_true", help="Prepare images/traces/latents but skip twin evaluation.")
+    parser.add_argument(
+        "--save-response-sample-arrays",
+        action="store_true",
+        help="Also save per-image x per-trace response summary arrays for hidden-trajectory posthocs.",
+    )
     return parser
 
 
@@ -1181,6 +1212,7 @@ def run(args: argparse.Namespace) -> Path:
         progress_every=int(args.progress_every),
         seed=int(args.seed),
         dry_run=bool(args.dry_run),
+        save_response_sample_arrays=bool(args.save_response_sample_arrays),
     )
     _write_json(out_dir / "run_metadata.json", {"config": asdict(cfg), "steerable_pyramid": HAVE_STEERABLE_PYRAMID})
     _progress(
@@ -1428,6 +1460,7 @@ def run(args: argparse.Namespace) -> Path:
                     "image_index": int(image_index),
                     "family": str(spec["family"]),
                     "scale_id": str(spec["scale_id"]),
+                    "sample_index": int(spec.get("sample_index", 0)),
                 }
             )
             motion_row = {
@@ -1513,6 +1546,18 @@ def run(args: argparse.Namespace) -> Path:
         for (family, scale_id), arr in by_condition.items():
             summary_arrays[f"{summary}__{family}__{scale_id}"] = arr
     np.savez_compressed(out_dir / "response_summary_arrays.npz", temporal_basis=basis, temporal_dct_basis=dct_basis, **summary_arrays)
+    if bool(args.save_response_sample_arrays):
+        sample_arrays: dict[str, np.ndarray] = {}
+        for summary in summary_names:
+            by_condition = _stack_condition_sample_features(records, response_summaries, summary)
+            for (family, scale_id), arr in by_condition.items():
+                sample_arrays[f"{summary}__{family}__{scale_id}"] = arr
+        np.savez_compressed(
+            out_dir / "response_sample_summary_arrays.npz",
+            temporal_basis=basis,
+            temporal_dct_basis=dct_basis,
+            **sample_arrays,
+        )
 
     sessions = image_df["session"].to_numpy()
     decode_groups = (

@@ -1,0 +1,4 @@
+observation_scale,compact_addback_mean_cosine,compact_subspace_mean_cosine,compact_removed_mean_cosine,full_joint_mean_cosine,known_mean_cosine,zero_mean_cosine,scale_label,latent,requested_k,k_dim,candidate_set_mode,selected_option
+0.5,0.8720269234456437,0.8501528649747014,0.7593538449888064,0.8720269234456437,0.9273524336780122,0.7653532618366901,0.5x,pyramid_local_field,8,10,hard_negative_structure,4C_option_6_feature_space_compact_removed
+1.0,0.8720975415363592,0.8384044614161871,0.6353366434943003,0.8720975415363592,0.9358022795936284,0.6678302207837141,1x,pyramid_local_field,8,10,hard_negative_structure,4C_option_6_feature_space_compact_removed
+2.0,0.8714039717743298,0.8264574820475687,0.5369070707911479,0.8714039717743298,0.9487607040649944,0.57616182752228,2x,pyramid_local_field,8,10,hard_negative_structure,4C_option_6_feature_space_compact_removed

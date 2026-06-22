@@ -30,7 +30,7 @@ or handoff that interprets them.
 
 ## Current Active / Uncommitted Work
 
-As of 2026-06-20, active uncommitted work has moved beyond the 2026-06-09
+As of 2026-06-21, active uncommitted work has moved beyond the 2026-06-09
 Figure 4/Figure 5 split. The most important files to check first are:
 
 - `figure4_active_sensing_atlas/`: document-first Figure 4 active-sensing
@@ -45,11 +45,13 @@ Figure 4/Figure 5 split. The most important files to check first are:
   while E6/E7/E8 copy the original distribution, confidence, and endpoint-null
   diagnostics from `backimage_edge_alignment_distribution_inspection/`.
 - `canonical_active_sensing/`: guarded config-driven wrappers for the current
-  BackImage active-sensing production surface. The current two-readout
-  candidate is `pyramid_local_field k16 temporal_pca` for the
-  aggregate/ensemble readout and `pyramid_local_field k16 delta_mean` for local
-  mechanistic sensitivity. The target remains provisional until the joint
-  `rel_0p25x` completion and final feature-adjudication review land.
+  BackImage active-sensing production surface. The current target is now a
+  role split, not one universal readout: `mean`/`delta_mean` are the absolute
+  aggregate gain candidates against the corrected static-mean baseline;
+  `delta_mean` remains the local mechanistic-sensitivity readout; and
+  temporal PCA/DCT variants are order-sensitive empirical-vs-control
+  diagnostics. The target remains provisional until the readout/OU audit and
+  an explicit write-lock/promotion pass land.
 - `canonical_geometry/`: guarded config-driven wrappers for the raw-edge
   residual adjudication and cache-first geometry figure pack. This is the
   production route for checking whether model-derived observer/preservation
@@ -68,8 +70,10 @@ Figure 4/Figure 5 split. The most important files to check first are:
   response summaries, signal-motion overlap, and shared/fixed decoder
   regularization guardrails. The current substantial result is
   `backimage_aggregate_fem_information_n256_k48_rel025-2_drift_only_common_unclipped_patched`;
-  use its corrected `incremental_static_plus_motion_relids` posthoc for
-  incremental static-plus-motion claims.
+  treat its temporal-PCA absolute-gain interpretation as superseded by the
+  2026-06-21 static-mean correction and all-readout audit. Current figure
+  work should use the n384 k16 corrected posthocs listed in
+  `canonical_active_sensing/provenance/current_outputs.md`.
 - `backimage_local_pairing_Iz_revisit_plan.md`: reopened local BackImage `I_z`
   plan after the aggregate result. It shifts the local question from
   real-vs-random fixed axes to actual image-trace pairing: whether
@@ -81,9 +85,10 @@ Figure 4/Figure 5 split. The most important files to check first are:
   `backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_gabor_pyramid_rel2_seed7_v1`.
   They use a fixed 128-image manifest, full 3013-row trace pool, corrected
   aggregate feature geometry, zero same-trial matches, and zero clipping. The
-  current two-readout interpretation is that `delta_mean` is the local
-  mechanistic-sensitivity readout, while temporal PCA is the stronger
-  aggregate/ensemble readout. Matched-unpaired and rotated controls remain
+  current interpretation is that `delta_mean` is the local
+  mechanistic-sensitivity readout and one absolute aggregate candidate, while
+  temporal PCA/DCT variants are order-sensitive diagnostics rather than the
+  absolute aggregate headline. Matched-unpaired and rotated controls remain
   caveats, so this is local-pairing support rather than a broad temporal-code
   or optimal-axis claim.
 - `active_sensing_unit_space_provenance.md`: response-space ledger separating
@@ -393,10 +398,10 @@ New aggregate plan:
   positive and grows with scale, while real-vs-random specificity is narrow
   (`0.25x` Gabor `k=4` and pyramid `k=8` survive with positive CIs).
 - Guardrails: report effective RMS and clipping for every nominal scale, match
-  motion energy, include paired/unpaired image-trace modes, use shared/fixed
-  decoder regularization for figure-level claims, treat OU as the primary
-  synthetic null and Brownian as secondary, use temporal PCs as the primary
-  pilot response summary, promote signal-motion subspace overlap, call
+  motion energy, include paired/unpaired image-trace modes, use fair static
+  baselines and nested/shared decoder regularization for figure-level claims,
+  treat OU as audit-pending rather than a headline null, use temporal PCs/DCT
+  as order-sensitive diagnostics, promote signal-motion subspace overlap, call
   deterministic ridge scores linear decodability/information proxies, and do
   not interpret largest-motion wins as biological optimality.
 
@@ -415,14 +420,15 @@ Substantial aggregate result:
 - Motion bookkeeping was clean: `151/256` drift-only trace sources accepted,
   median effective/requested RMS `1.0` for every family/scale, and clipped
   fraction `0.0` throughout.
-- Primary temporal-PCA incremental result: empirical motion added decoding
-  signal beyond static responses. Gabor `k=4` gains were `+14.31`, `+13.04`,
-  `+9.10`, `+9.98`, and `+9.07` from `0.25x` through `2x`; all CIs were
-  positive. Pyramid `k=8` gains were smaller but consistently positive:
-  `+5.20`, `+4.89`, `+3.93`, `+4.44`, and `+4.21`.
-- Empirical beat OU robustly across scale. Gabor `k=4` empirical-minus-OU
-  incremental-gain advantages were `+21.24`, `+19.59`, `+17.16`, `+18.69`,
-  and `+18.03` from `0.25x` through `2x`.
+- Primary temporal-PCA absolute-gain interpretation is superseded. A later
+  code/readout audit found that static temporal PCs are nearly zero for static
+  traces, so temporal-PCA "gain beyond static" must be evaluated against the
+  static mean response. In the corrected n384 k16 posthoc, temporal readouts
+  are negative versus static mean under fair fixed/nested-alpha diagnostics,
+  while still separating empirical traces from OU strongly.
+- Empirical-minus-OU temporal advantages should therefore be read as
+  order-sensitive specificity diagnostics, not as proof that temporal PCA adds
+  absolute feature-decodable signal beyond a real static baseline.
 - Empirical beat Brownian and rotated most clearly at small scales. For Gabor
   `k=4`, `0.25x` empirical-minus-Brownian was `+10.52` and
   empirical-minus-rotated was `+15.27`; at `0.5x`, they were `+7.89` and
@@ -433,8 +439,9 @@ Substantial aggregate result:
   also not proof of exact trajectory optimality.
 
 Status: `Open / local I_z has stable small-scale support; optimized
-same-window seed replication running; aggregate n=256 result supports
-readout- and scale-dependent empirical-drift benefit over OU`.
+same-window seed replication running; aggregate n384 corrected posthoc supports
+role-split readouts, with mean/delta_mean as absolute candidates and temporal
+PCA/DCT as order-sensitive diagnostics pending OU trace-control audit`.
 
 ### 2026-06-14: BackImage Latent-Information Fixes and Edge-Parallel Stability Synthesis
 

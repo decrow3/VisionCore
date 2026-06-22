@@ -16,3 +16,8 @@
 - `panel_A_backimage_pipeline_values.csv`
 - `panel_A_covariance_bridge_values.csv`
 - `panel_A_subpanels_caption.md`
+- `promotion_candidates/`
+  - Current review surface for choosing one promoted 4A panel.
+  - Real A1 variants use `_backimage_canvas(session, trial_idx)` and recorded
+    `backimage.dset` eyepos slices from `backimage_image_fem_windows.csv`.
+  - `4A_single_panel_candidate_sheet.png` is the contact sheet.

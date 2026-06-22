@@ -2,6 +2,13 @@
 
 Status: LLM-friendly composite companion to `panel_text_atlas.md`.
 
+2026-06-21 correction note: Panel B temporal-PCA absolute-gain prose/images are
+superseded. Use the corrected static-mean aggregate posthoc and the all-readout
+audit: `mean`/`delta_mean` are absolute aggregate candidates, `delta_mean` is
+the local mechanistic bridge, and temporal PCA/DCT variants are order-sensitive
+empirical-vs-control diagnostics. Regenerate the contact sheets if every
+embedded old Panel B note must be removed.
+
 Use this file when the goal is to read the figure logic quickly. The detailed
 contact sheet remains the source for per-subpanel provenance, caveats, and
 supplement routing.
@@ -14,7 +21,7 @@ Current compressed story:
 
 ```text
 A: FEMs convert a fixed screen image into a retinal movie.
-B: Empirical drift-like movies add feature-decodable response structure.
+B: Empirical drift-like movies produce feature-relevant response changes.
 C: A joint image-and-eye observer recovers information lost by ignoring motion.
 D: Local image geometry defines useful motion axes, with guardrails.
 E: Measured free-viewing FEM axes align with local image geometry.
@@ -54,18 +61,20 @@ covariance bridge/supplement candidate because its denominators are mixed.
 Load-bearing read:
 
 ```text
-The aggregate BackImage run shows that empirical drift-like response movies add
-feature-decodable signal beyond static responses. Temporal-PCA empirical gains
-are positive across tested scales, and empirical drift beats the OU-like confined
-control robustly.
+The corrected aggregate BackImage run shows a readout split. Mean/delta-mean
+readouts test whether motion-derived response summaries add feature-decodable
+signal beyond the static mean response. Temporal PCA/DCT variants preserve
+trajectory order and test empirical-vs-control specificity. OU-like confined
+motion is audit-pending rather than a settled headline null.
 ```
 
 Boundary:
 
 ```text
 This is a distributional feature-decoding claim, not literal mutual information
-and not exact trajectory optimality. Brownian and rotated controls narrow the
-specificity at larger scales.
+and not exact trajectory optimality. Do not present temporal PCA as the
+absolute gain-over-static headline unless it survives fair static-baseline and
+nested-regularization gates.
 ```
 
 ## Module C: Joint Image-And-Eye Observer

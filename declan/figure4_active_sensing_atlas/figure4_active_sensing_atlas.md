@@ -99,11 +99,11 @@ Result notes:
 Main safe wording:
 
 ```text
-In a cleaned BackImage aggregate run, empirical drift-like motion adds
-feature-decoding signal beyond static V1-twin responses and outperforms
-OU-like confined controls across scale. The advantage over Brownian/generic
-motion is strongest at small biologically plausible scales and narrows at
-larger scales, so the claim is scale- and readout-dependent.
+The corrected BackImage aggregate result is readout-split. Mean/delta-mean
+readouts are the absolute gain candidates against the static mean response,
+while temporal PCA/DCT variants preserve trajectory order for
+empirical-vs-control diagnostics. OU-like confined controls are audit-pending,
+so the claim is scale-, readout-, and control-validity-dependent.
 ```
 
 ## Module C: Joint Image-And-Eye Observer

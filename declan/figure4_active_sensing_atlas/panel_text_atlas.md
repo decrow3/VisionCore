@@ -2,6 +2,21 @@
 
 Status: generated panel-reading document, cache-first.
 
+2026-06-21 correction note:
+
+```text
+Panel B temporal-PCA absolute-gain prose and candidate images in this generated
+contact sheet are superseded. The corrected aggregate posthoc uses static mean
+responses as the baseline and turns the feature target into a role split:
+mean/delta_mean are absolute aggregate candidates, delta_mean remains the local
+mechanistic bridge, and temporal PCA/DCT variants are order-sensitive
+empirical-vs-control diagnostics. Candidate 3 has been redrawn from
+incremental_staticmean_plus_motion_tworeadout_v2 and the all-readout atlas
+lives under incremental_staticmean_plus_motion_allreadouts_v1. Regenerate this
+contact sheet before promotion if every embedded old Panel B note must be
+removed.
+```
+
 Use this as the human-facing contact sheet before composing the final Figure 4.
 Each entry lists the current rendered subpanel, the intended read, and the
 claim boundary or active flags that should travel with it.
@@ -16,7 +31,7 @@ Current best compressed story:
 
 ```text
 A: FEMs convert a fixed screen image into a retinal movie.
-B: Empirical drift-like movies add feature-decodable response structure.
+B: Empirical drift-like movies produce feature-relevant response changes.
 C: A joint image-and-eye observer recovers information lost by ignoring motion.
 D: Local image geometry defines useful motion axes, with guardrails.
 E: Measured free-viewing FEM axes align with local image geometry.
@@ -116,10 +131,15 @@ structure that is absent or weaker in a static-only response summary.
 Control interpretation:
 
 ```text
-Empirical drift beats the OU-like confined control robustly. For Gabor k=4,
-the empirical-minus-OU contrast is +21.24 at 0.25x, +19.59 at 0.5x, and
-+17.16 at 1x. This makes the result stronger than a generic "any tiny OU-like
-jitter helps" account.
+Empirical drift beats Brownian and rotated controls most cleanly at small
+scales. OU is no longer promoted here: its absolute gain falls below static,
+which is a trace-generation or analysis audit trigger rather than a clean
+negative-control result.
+
+Current selected 4B additionally shows a pose-unaware empirical hidden-sample
+proxy. The known-eye empirical trace is positive at larger scales, while the
+pose-unaware proxy sits below static, making the pose-known assumption explicit
+rather than hiding it in the methods.
 ```
 
 Caveats and flags:
@@ -202,40 +222,66 @@ unique or necessary mechanism.
 Result:
 
 ```text
-Axis-conditioned trajectory priors rescue image identity relative to zero-eye,
-but the preferred axis is not universal. At matched-static 0.5x, edge-parallel
-beats edge-orthogonal by +0.031. At hard-negative 0.5x, the same +0.031
-parallel advantage appears. At hard-negative 1.0x, the sign is approximately
-flat/slightly orthogonal (-0.008), and at 2.0x orthogonal is ahead (-0.063).
+Axis-conditioned trajectory priors help hidden-eye readout, but the panel
+should be about readout performance, not raw response-change magnitude. In the
+matched-static 0.5x feature-posterior branch, along-edge priors recover more
+pyramid k8 feature signal than across-edge priors:
+
+along-edge joint-zero gain = +6.052 [-MSE]
+across-edge joint-zero gain = +3.684 [-MSE]
+paired along-minus-across = +2.368, CI [+0.392, +4.589], p = 0.0257
+
+The clean image-identity observer shows the same weak matched-static direction:
+edge-parallel accuracy 0.859 versus edge-orthogonal 0.828, delta +0.031.
 ```
 
 Interpretation:
 
 ```text
 This moves the story from "motion can help" to "which motion directions help
-for which images and objectives?" The clean point is image dependence: useful
-motion axes are defined relative to local image geometry. The result should
-not be compressed into a universal law that animals should always move
-parallel to edges or always move orthogonal to edges.
+for which images and objectives?" The clean positive read is that, in the
+matched-static hidden-eye feature decoder, the along-contour prior is the more
+useful local image-axis prior. The result should not be compressed into a
+universal law that animals should always move parallel to edges.
 ```
 
-Preservation interpretation:
+Caveat:
 
 ```text
-The strongest D panel is the edge-parallel preservation audit. Matched
-edge-parallel displacements disrupt pixels and V1-twin responses less than
-matched orthogonal displacements:
+The hard-negative branch remains a guardrail. In the n64 feature-posterior
+posthoc, hard negatives recover features above zero-eye for both axes, but the
+parallel-minus-orthogonal feature gain is -0.745 with CI [-3.147, +1.631].
+The hard-negative image-identity observer also weakly favors orthogonal at
+0.5x (0.891 versus 0.844), with McNemar p ~= 0.51. The safe claim is therefore
+matched-static along-contour utility plus image-axis dependence, not a settled
+biological edge-axis law.
+```
+
+Preservation audit:
+
+```text
+The edge-parallel preservation audit is supporting context, not the promoted D
+story. Matched edge-parallel displacements disrupt pixels and V1-twin responses
+less than matched orthogonal displacements:
 
 pixel advantage = 300.54, CI [172.789, 408.961], 26/29 sessions positive
 twin advantage = 0.000454, CI [0.000371, 0.000537], 29/29 sessions positive
 ```
 
+The newer twin-stability metric audit preserves this first-order message:
+signed response-normalized, per-rate, covariance-whitened, and unit-subset
+metrics are all positive at the tested endpoint displacement. This remains a
+mechanistic support result, even though it should not be used to say the main
+effect is that responses change more across than along contours.
+
 Objective interpretation:
 
 ```text
 D5 keeps the objective story honest. Current response-objective models do not
-yet beat raw local edge geometry as a behavioral alignment baseline. Pixel
-controls can be positive, but the response objectives are not yet clean
+yet beat raw local edge geometry as a behavioral alignment baseline:
+optimized response-stability and response-refresh axes are negative relative
+to the raw edge axis, while the pixel-isophote axis is approximately flat.
+Pixel controls can be positive, but the response objectives are not yet clean
 behavioral predictors.
 ```
 
@@ -246,8 +292,9 @@ F007: axis preference is candidate-set and scale dependent. Use D2/D3 as
 evidence for image-conditioned axis structure, not as a universal parallel
 policy.
 
-F008: edge-parallel preservation is a local stability/preservation result. It
-does not by itself define the full active-sensing objective.
+F008: edge-parallel preservation is a supporting local stability result. It
+does not by itself define the promoted D readout result or the full
+active-sensing objective.
 
 F009: model-objective adjudication remains open because current V1-twin
 response objectives do not cleanly outperform raw edge geometry.
@@ -324,7 +371,8 @@ The strongest current main-figure spine is therefore:
 
 ```text
 A1/A2/A4: physical premise and canonical pipeline
-B3/B4: empirical drift adds feature-decodable structure and beats OU controls
+B3/B4: known-eye empirical drift adds feature-decodable structure; the
+  pose-unaware proxy exposes hidden-eye cost while OU stays audit-only
 C2/C3: joint observer recovers information lost by zero-eye assumptions
 D1/D4: local geometry defines axes; edge-parallel motion preserves structure
 E2/E3: measured free-viewing FEM axes align with local image geometry
@@ -501,8 +549,9 @@ Flags: `F003`.
 Read:
 
 ```text
-Empirical drift robustly beats OU-like confined controls; the advantage over
-Brownian and rotated controls is clearest at smaller scales.
+Empirical drift has the clearest advantage over Brownian and rotated controls
+at smaller scales. OU should remain diagnostic-only until the below-static
+absolute-gain anomaly is audited.
 ```
 
 Use: main or main inset.
@@ -674,20 +723,29 @@ Boundary: schematic.
 
 Flags: `F007`.
 
-### D2: Axis-Conditioned Observer
+### D2: Axis-Conditioned Feature Readout
 
-![D2 axis-conditioned accuracy](figures/panel_D/D2_axis_conditioned_accuracy.png)
+![D2 axis-conditioned feature recovery](figures/panel_D/D2_axis_feature_recovery.png)
 
 Read:
 
 ```text
-Axis-conditioned trajectory priors rescue image identity above zero-eye, but
-both axes can help.
+Along-edge trajectory priors recover more matched-static feature signal than
+across-edge priors when the eye trajectory is latent.
 ```
 
-Use: supplement or main support.
+Key values:
 
-Boundary: axis preference is condition-dependent.
+```text
+matched-static, 0.5x, pyramid k8 feature posterior:
+  along-edge joint-zero gain = +6.052 [-MSE]
+  across-edge joint-zero gain = +3.684 [-MSE]
+  paired along-minus-across = +2.368, CI [+0.392, +4.589], p = 0.0257
+```
+
+Use: main.
+
+Boundary: matched-static feature-posterior readout; hard negatives remain a guardrail.
 
 Flags: `F007`.
 
@@ -725,9 +783,9 @@ pixel advantage: 300.54, CI [172.789, 408.961], 26/29 sessions positive
 twin advantage: 0.000454, CI [0.000371, 0.000537], 29/29 sessions positive
 ```
 
-Use: main.
+Use: support/supplement.
 
-Boundary: local preservation audit, not a full policy objective.
+Boundary: local preservation audit, not the promoted readout story or a full policy objective.
 
 Flags: `F008`.
 
@@ -942,8 +1000,9 @@ F003: aggregate FEM information is a deterministic decoding proxy
 
 F004: Brownian/rotated control specificity narrows at larger scales
   Meaning:
-    Empirical drift robustly beats OU, but Brownian and rotated controls become
-    competitive at larger scale. This keeps the B claim scale/readout scoped.
+    Brownian and rotated controls become competitive at larger scale. The OU
+    family is currently an audit trigger because its absolute gain falls below
+    static. This keeps the B claim scale/readout scoped.
   Handling:
     Emphasize strongest specificity at 0.25x-0.5x and avoid claiming empirical
     motion uniquely beats all generic controls at all scales.
@@ -965,18 +1024,22 @@ F006: compact mechanism is sufficient but not unique
 
 F007: D axis preference is candidate-set and scale dependent
   Meaning:
-    Axis-conditioned priors help, but the preferred axis changes with the
-    task/candidate set/scale. Parallel is not always better.
+    Axis-conditioned priors help, and the matched-static feature-posterior
+    readout favors along-edge priors. The preferred axis changes with the
+    task/candidate set/scale, and hard-negative controls do not support a clean
+    universal parallel advantage.
   Handling:
-    Use D2/D3 to argue for image-conditioned motion axes, not a universal
-    biological edge-parallel law.
+    Use D2/D3 to argue for matched-static along-contour readout utility and
+    image-conditioned motion axes, not a universal biological edge-parallel law.
 
-F008: edge-parallel preservation is not a full motion policy
+F008: edge-parallel preservation is supporting evidence, not the D headline
   Meaning:
     D4 cleanly shows local preservation for pixels and V1-twin responses, but
-    preservation is only one possible active-sensing objective.
+    the promoted D story is better feature recovery along than across contours,
+    not simply larger response change across contours.
   Handling:
-    Use D4 as a mechanistic/explanatory panel and keep policy language narrow.
+    Use D4 as a mechanistic/explanatory support panel and keep policy language
+    narrow.
 
 F009: model objectives do not yet beat raw edge geometry for behavior
   Meaning:

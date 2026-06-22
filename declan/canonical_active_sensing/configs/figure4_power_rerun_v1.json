@@ -1,5 +1,5 @@
 {
-  "description": "Higher-power Figure 4 active-sensing rerun surface. Locks pyramid_local_field k16 and carries two readouts: temporal_pca for aggregate/ensemble utility and delta_mean for local mechanistic sensitivity.",
+  "description": "Higher-power Figure 4 active-sensing rerun surface. Locks pyramid_local_field k16, uses corrected static-mean aggregate posthocs, treats mean/delta_mean as absolute aggregate candidates, and keeps temporal summaries as order-sensitive diagnostics.",
   "aggregate_power_primary": {
     "args": {
       "input": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_image_structure_reviewed_v2_screenfiltered_yfix/backimage_image_fem_windows.csv",
@@ -81,8 +81,8 @@
   "aggregate_incremental_power_primary": {
     "args": {
       "run_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1",
-      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1/incremental_static_plus_motion_tworeadout_v1",
-      "summaries": "temporal_pca,delta_mean",
+      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1/incremental_staticmean_plus_motion_tworeadout_v2",
+      "summaries": "mean,delta_mean,temporal_pca",
       "families": "empirical,ou,brownian,rotated",
       "contrast_pairs": "empirical:ou,empirical:brownian,empirical:rotated,empirical:static",
       "scale_ids": "all",
@@ -99,8 +99,8 @@
   "aggregate_incremental_power_replicate_seed11": {
     "args": {
       "run_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_pyramid_k16_tworeadout_rel025-2_power_seed11_k8_v1",
-      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_pyramid_k16_tworeadout_rel025-2_power_seed11_k8_v1/incremental_static_plus_motion_tworeadout_v1",
-      "summaries": "temporal_pca,delta_mean",
+      "out_dir": "outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_aggregate_fem_information_n256_pyramid_k16_tworeadout_rel025-2_power_seed11_k8_v1/incremental_staticmean_plus_motion_tworeadout_v2",
+      "summaries": "mean,delta_mean,temporal_pca",
       "families": "empirical,ou,brownian,rotated",
       "contrast_pairs": "empirical:ou,empirical:brownian,empirical:rotated,empirical:static",
       "scale_ids": "all",

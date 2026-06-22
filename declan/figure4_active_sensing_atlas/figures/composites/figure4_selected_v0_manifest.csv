@@ -1,0 +1,6 @@
+panel,title,selected_asset,read
+A,Retinal movie premise,figures/panel_A/promotion_candidates/4A_candidate_3_real_high_contrast_positive.png,real BackImage crop plus recorded FEM trace
+B,FEM-like motion adds decodable structure,figures/panel_B/promotion_candidates/4B_candidate_3_absolute_gain_guardrail.png,no-OU absolute gain guardrail
+C,Latent-eye inference rescues image identity,figures/panel_C/promotion_candidates/4C_candidate_2_empirical_prior_rescue_clean.png,matched-static empirical-prior rescue
+D,Edge-parallel displacement preserves structure,figures/panel_D/promotion_candidates/4D_candidate_1_edge_parallel_preservation.png,pixel and V1-twin preservation advantage
+E,Behavior aligns with coherent image axes,figures/panel_E/promotion_candidates/4E_candidate_3a_image_coherence_focus.png,image-orientation-coherence dependence

@@ -7,8 +7,9 @@ do not reimplement the science code.
 Current candidate feature spec:
 
 ```text
-Primary aggregate readout: pyramid_local_field k16 temporal_pca
+Absolute aggregate candidates: pyramid_local_field k16 mean, delta_mean
 Local mechanistic sensitivity: pyramid_local_field k16 delta_mean
+Order-sensitive diagnostics: pyramid_local_field k16 temporal_pca / temporal_dct variants
 ```
 
 Use `--print-command` before launching heavy jobs. By default, executable
@@ -53,9 +54,9 @@ Current output provenance lives in `provenance/current_outputs.md`.
 
 `configs/figure4_power_rerun_v1.json` is the higher-power rerun surface for the
 current Figure 4 model analyses. It intentionally does not reopen feature
-selection: it locks `pyramid_local_field k16` and carries the two reviewed
-readouts, `temporal_pca` for aggregate/ensemble utility and `delta_mean` for
-local mechanistic sensitivity.
+selection: it locks `pyramid_local_field k16`, uses the corrected static-mean
+incremental posthoc, treats `mean`/`delta_mean` as absolute aggregate
+candidates, and keeps temporal summaries as order-sensitive diagnostics.
 
 Recommended launch order:
 

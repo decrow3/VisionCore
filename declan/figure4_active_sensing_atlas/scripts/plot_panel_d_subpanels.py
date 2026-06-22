@@ -244,9 +244,11 @@ def plot_d4_edge_stability(stability_dir: Path, out_dir: Path) -> pd.DataFrame:
         ax.bar([0], [mean], color=COLORS[screen], width=0.55)
         ax.errorbar([0], [mean], yerr=[[mean - lo], [hi - mean]], color="#242a2f", lw=1.2, capsize=0)
         ax.axhline(0.0, color="#242a2f", lw=0.8)
-        ax.set_xticks([0], [screen])
+        x_label = "image" if screen == "pixel" else "model"
+        ax.set_xticks([0], [x_label])
         ax.grid(axis="y", color=COLORS["grid"], lw=0.8)
-        ax.set_title(f"{screen} stability")
+        title = "image pixels" if screen == "pixel" else "model responses"
+        ax.set_title(title)
         _clean_axis(ax)
         ax.text(
             0,
@@ -256,9 +258,9 @@ def plot_d4_edge_stability(stability_dir: Path, out_dir: Path) -> pd.DataFrame:
             va="bottom",
             fontsize=7.5,
         )
-    axes[0].set_ylabel("orthogonal cost minus\nparallel cost")
+    axes[0].set_ylabel("extra change across\nvs along edge")
     axes[1].ticklabel_format(axis="y", style="sci", scilimits=(-3, 3))
-    fig.suptitle("Edge-parallel displacement preserves local structure")
+    fig.suptitle("Moving along edges preserves local structure")
     _save(fig, out_dir, "D4_edge_parallel_stability")
     return summary.copy()
 

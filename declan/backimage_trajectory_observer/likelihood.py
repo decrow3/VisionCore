@@ -36,19 +36,39 @@ def logmeanexp(values: np.ndarray, axis: int | None = None, keepdims: bool = Fal
     return logsumexp(arr, axis=axis, keepdims=keepdims) - float(np.log(n))
 
 
-def normalized_log_weights(log_weights: np.ndarray | None, n: int) -> np.ndarray:
-    """Return normalized log weights of length ``n``."""
+def normalized_log_weights(log_weights: np.ndarray | None, n: int, *, n_rows: int | None = None) -> np.ndarray:
+    """Return normalized log weights over ``n`` trajectories.
+
+    ``log_weights`` may be a shared vector of shape ``(n,)`` or, when
+    ``n_rows`` is supplied, a candidate-conditioned table of shape
+    ``(n_rows, n)``. Candidate-conditioned tables are normalized row-wise.
+    """
     n = int(n)
     if n <= 0:
         raise ValueError("trajectory prior requires at least one trajectory")
     if log_weights is None:
         return np.full(n, -float(np.log(n)), dtype=np.float64)
     weights = np.asarray(log_weights, dtype=np.float64)
-    if weights.shape != (n,):
-        raise ValueError(f"log_weights must have shape {(n,)}, got {weights.shape}")
-    if not np.isfinite(weights).any():
-        raise ValueError("log_weights must contain at least one finite entry")
-    return weights - float(logsumexp(weights))
+    if weights.shape == (n,):
+        if np.isnan(weights).any() or np.isposinf(weights).any():
+            raise ValueError("log_weights may contain finite values and -inf masks only")
+        if not np.isfinite(weights).any():
+            raise ValueError("log_weights must contain at least one finite entry")
+        return weights - float(logsumexp(weights))
+    if n_rows is not None and weights.shape == (int(n_rows), n):
+        if np.isnan(weights).any() or np.isposinf(weights).any():
+            raise ValueError("log_weights may contain finite values and -inf masks only")
+        finite_by_row = np.isfinite(weights).any(axis=1)
+        if not bool(np.all(finite_by_row)):
+            bad = np.flatnonzero(~finite_by_row)
+            preview = ", ".join(str(int(v)) for v in bad[:5])
+            raise ValueError(f"log_weights rows must each contain at least one finite entry; bad rows: {preview}")
+        norm = logsumexp(weights, axis=1, keepdims=True)
+        return weights - norm
+    allowed = f"{(n,)}"
+    if n_rows is not None:
+        allowed += f" or {(int(n_rows), n)}"
+    raise ValueError(f"log_weights must have shape {allowed}, got {weights.shape}")
 
 
 def poisson_expected_count_loglik(

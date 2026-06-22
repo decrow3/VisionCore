@@ -1,6 +1,6 @@
 # FEM-V1 Maximal Story Priority Checklist
 
-Last updated: 2026-06-20
+Last updated: 2026-06-21
 
 ## Purpose
 
@@ -79,9 +79,13 @@ cleanly and compact geometry carries the functional rescue.
   `declan/canonical_active_sensing/` for aggregate/local/joint/adjudication and
   active-sensing figure-pack jobs, and `declan/canonical_geometry/` for raw-edge
   residual adjudication plus geometry figure-pack jobs.
-- [x] Current feature target is a two-readout candidate rather than a final
-  lock: aggregate/ensemble `pyramid_local_field k16 temporal_pca`, local
-  mechanistic sensitivity `pyramid_local_field k16 delta_mean`.
+- [x] Current feature target has been corrected after the OU/static red-flag
+  audit. The prior v5 temporal-PCA aggregate claim used a near-zero static
+  temporal-PC baseline and is superseded. The corrected v6 static-mean
+  adjudication and all-readout/nested-alpha audit now support a role split:
+  `mean`/`delta_mean` are absolute aggregate candidates, `delta_mean` remains
+  the local mechanistic-sensitivity readout, and temporal PCA/DCT variants are
+  order-sensitive empirical-vs-control diagnostics.
 
 ## Priority 0: Claim-Critical Diagnostics And Canonical Preflight
 
@@ -105,8 +109,11 @@ Required gates:
 - [ ] Use `--print-command` for every long canonical wrapper launch.
 - [ ] Do not overwrite non-empty production output folders unless the refresh
   is intentional and documented.
-- [ ] Keep the two-readout feature target provisional until joint `rel_0p25x`
-  completion and final adjudication review are closed.
+- [x] Joint `rel_0p25x` completion and the first power-rerun adjudication
+  review are closed.
+- [ ] Keep the corrected feature target marked provisional until the
+  Panel-B-style all-readout atlas is reviewed, the OU trace-control audit is
+  complete, and an explicit write-lock/promotion pass is requested.
 - [ ] Treat model-objective panels as diagnostic/deep-dive triggers unless they
   explain residual behavior beyond raw edge geometry on a shared window table.
 
@@ -142,7 +149,8 @@ Why this bridge matters:
   motion.
 - [x] The Gabor/pyramid local and aggregate branches show that empirical motion
   can add feature-decodable signal beyond static responses, especially for
-  `delta_mean` local-pairing and temporal-PCA aggregate readouts.
+  `mean`/`delta_mean` absolute aggregate candidates, `delta_mean`
+  local-pairing, and temporal PCA/DCT order-sensitive diagnostics.
 - [x] The exact-cache joint observer rescues image identity above zero-eye, so
   the likelihood machinery is useful.
 - [x] The current image-identity endpoint may reward across-edge, high-modulation
@@ -743,13 +751,100 @@ feature geometry = gabor (128, 4608), pyramid (128, 3072)
 
 Current adjudication interpretation:
 
-- [x] `pyramid_local_field k16 temporal_pca` is the top aggregate/ensemble
-  candidate after cache-filled adjudication.
-- [x] `pyramid_local_field k16 delta_mean` remains the local/mechanistic
-  sensitivity readout because it better captures paired-trace
-  feature-response changes.
-- [ ] This is a two-readout candidate, not a final lock, until joint
-  `rel_0p25x` completion and final adjudication review are closed.
+- [x] `pyramid_local_field k16 delta_mean` is the current corrected primary
+  feature readout after rerunning aggregate posthoc with a real static mean
+  baseline.
+- [x] `pyramid_local_field k16 temporal_pca` is demoted to a secondary
+  diagnostic. Empirical temporal PCs beat OU strongly, but temporal PCs do not
+  add absolute feature-decoding signal beyond the static mean response.
+- [x] The all-readout/nested-alpha audit adds the principled readout split:
+  `mean` is strongest for absolute aggregate gain under nested alpha,
+  `delta_mean` is the clean static-subtracted/local-pairing readout, and
+  temporal PCA/DCT variants preserve trajectory ordering for
+  empirical-vs-control specificity checks.
+- [x] Joint `rel_0p25x` completion and first power-rerun adjudication review
+  are closed.
+- [ ] This is still not a write-locked manuscript spec until the OU trace
+  control is audited, the all-readout Panel-B-style figure is reviewed, and an
+  explicit lock/promotion pass is requested.
+
+Latest corrected power-rerun adjudication:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_feature_decomposition_adjudication_v6_staticmean_corrected_power_rerun_primary_scales/
+
+pyramid_local_field k16 delta_mean:
+  score_with_joint_axis_term = 1.912
+  score_without_joint_axis_term = 1.971
+  aggregate_score = 0.332
+  local_Iz_score = 2.139
+  joint_axis_score = -0.059
+  joint_generic_score = 3.000
+
+pyramid_local_field k16 temporal_pca:
+  score_with_joint_axis_term = 0.608
+  score_without_joint_axis_term = 0.667
+  aggregate_score = 0.593
+  local_Iz_score = 0.575
+  joint_axis_score = -0.059
+  joint_generic_score = 3.000
+```
+
+Corrected aggregate static-mean interpretation:
+
+```text
+temporal_pca empirical - static_mean:
+  0.25x -3.25, CI [-5.50, -0.92]
+  0.5x  -2.89, CI [-5.44, -0.08]
+  1x    -3.68, CI [-6.22, -0.95]
+
+temporal_pca empirical - OU remains positive as a relative diagnostic:
+  0.25x +9.44, CI [+6.30, +12.75]
+  0.5x  +9.11, CI [+7.22, +11.04]
+  1x    +8.27, CI [+6.23, +10.49]
+
+delta_mean empirical - static_mean:
+  0.25x -0.65, CI [-2.17, +0.93]
+  0.5x  +0.16, CI [-1.35, +1.77]
+  1x    +1.76, CI [+0.58, +3.05]
+```
+
+All-readout/nested-alpha audit:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1/
+    incremental_staticmean_plus_motion_allreadouts_v1/readout_atlas_figures/
+```
+
+Current audit read:
+
+- [x] `mean` is the strongest absolute aggregate candidate under nested alpha.
+- [x] `delta_mean` is the clearest static-subtracted/motion-induced readout and
+  remains the local-pairing bridge.
+- [x] Temporal PCA/DCT variants preserve trajectory order and strongly separate
+  empirical from OU, but do not yet support an absolute gain-over-static
+  headline.
+- [ ] Run the OU trace-control/readout audit from
+  `declan/ou_trace_control_and_readout_audit_handoff.md` before using OU as a
+  headline negative control.
+
+Power local `delta_mean` seed-mean contrasts:
+
+```text
+actual - matched_unpaired:
+  0.25x +4.24; 0.5x +3.74; 1x +3.44
+
+actual - Brownian:
+  0.25x +9.95; 0.5x +7.56; 1x +7.15
+
+actual - OU:
+  0.25x +2.88; 0.5x +2.99; 1x +3.70
+
+actual - rotated:
+  0.25x +1.35; 0.5x +2.69; 1x +1.91
+```
 
 Representative earlier clean-run incremental contrasts:
 
@@ -1383,10 +1478,12 @@ Keep these two statements separate:
   is trajectory marginalization under natural-image structure, not empirical
   FEM optimality.
 - Aggregate BackImage feature-decoding branch:
-  empirical drift-like motion currently beats OU-like confined motion in the
-  cleaned `n=256`, `K=4` temporal-PCA result, especially at `0.25x-0.5x`. This
-  supports a distributional, readout- and scale-dependent claim, not exact
-  trajectory-order optimality.
+  the corrected n384 k16 aggregate posthoc is readout-split. `mean` and
+  `delta_mean` are the absolute static-mean candidates, while temporal PCA/DCT
+  variants show order-sensitive empirical-vs-control separation. OU-like
+  confined motion is audit-pending because its below-static behavior may reflect
+  trace-generation or analysis mismatch. This supports a distributional,
+  readout- and scale-dependent claim, not exact trajectory-order optimality.
 
 ## Main-Paper Decision Rule
 

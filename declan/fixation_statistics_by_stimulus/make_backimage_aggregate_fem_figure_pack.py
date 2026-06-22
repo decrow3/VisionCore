@@ -35,7 +35,7 @@ DEFAULT_OUT_DIRNAME = "figure_pack_v1"
 EXPECTED_SCALES = ["rel_0p25x", "rel_0p5x", "rel_1x", "rel_1p5x", "rel_2x"]
 FAMILY_ORDER = ["empirical", "ou", "brownian", "rotated"]
 CONTROL_ORDER = ["ou", "brownian", "rotated"]
-PRIMARY_SUMMARY = "temporal_pca"
+PRIMARY_SUMMARY = "delta_mean"
 PRIMARY_GAIN_ROWS = [
     ("gabor_local_field", 4),
     ("pyramid_local_field", 8),

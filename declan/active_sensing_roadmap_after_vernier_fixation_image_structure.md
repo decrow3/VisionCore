@@ -1,6 +1,6 @@
 # Active-Sensing Roadmap After Vernier, Fixation-Regime, and Image-Structure Results
 
-Last curated: 2026-06-18.
+Last curated: 2026-06-21.
 
 This note updates the active-sensing branch after the Vernier hyperacuity work,
 fixation-statistics-by-stimulus analysis, BackImage local image-structure
@@ -33,10 +33,12 @@ during BackImage viewing are robustly aligned with raw local edge geometry, but
 the current V1-twin PA/PB/Pareto axis objectives do not add explanatory power
 beyond that edge baseline. Drift also whitens natural-image input relative to
 stabilization, but unconstrained input whitening alone does not determine
-biological FEM amplitude. A cleaned aggregate BackImage run now shows that
-empirical drift-like motion adds feature-decoding signal beyond static V1-twin
-responses and robustly beats OU-like confined controls, with the advantage over
-Brownian/generic motion strongest at small scales.
+biological FEM amplitude. The aggregate BackImage branch now has a corrected
+static-mean/readout split: mean and `delta_mean` are the absolute feature-gain
+candidates, `delta_mean` is the local mechanistic bridge, and temporal PCA/DCT
+variants preserve trajectory order for empirical-vs-control diagnostics. OU-like
+confined controls are audit-pending because their below-static behavior may
+reflect trace-generation or analysis mismatch rather than a meaningful null.
 ```
 
 This reframes the digital twin. The twin should not primarily ask whether
@@ -509,21 +511,22 @@ adaptation. Instead of asking whether fixation `i` uses the best axis for patch
 - static;
 - empirical FEM traces;
 - scaled empirical traces (`0.125x`, `0.25x`, `0.5x`, `1x`, optional `1.5x`);
-- OU matched to RMS/autocorrelation/confinement as the primary synthetic null;
+- OU matched to RMS/autocorrelation/confinement as a synthetic null, pending
+  explicit trace-control audit before headline use;
 - Brownian matched to effective RMS/diffusion as a secondary generic-diffusion
   null;
 - shuffled, rotated, or phase-randomized empirical controls.
 
-Primary readouts should include ensemble image-feature decoding and a
-signal-versus-motion-nuisance covariance decomposition, with temporal PCs as
-the primary response summary and mean-over-trajectory as a diagnostic. Promote
-signal-motion subspace overlap because it connects directly to the covariance
-story. Every nominal-scale summary must report effective RMS, clipping, path
-length, and motion-energy matching. Figure-level claims should be twin-scoped.
-Real tying OU is not automatically a failure; it means broad FEM-like
-confinement/autocorrelation may be sufficient. If all motion helps and the
-largest motion always wins, the metric is generic modulation unless the
-signal/motion overlap shows a useful frontier.
+Primary readouts should separate absolute gain from temporal specificity.
+Mean and `delta_mean` ask whether motion-derived response summaries add
+feature-decodable signal beyond the static mean response. Temporal PCA/DCT
+variants ask whether trajectory ordering carries empirical-vs-control
+specificity. Promote signal-motion subspace overlap because it connects
+directly to the covariance story. Every nominal-scale summary must report
+effective RMS, clipping, path length, and motion-energy matching. Figure-level
+claims should be twin-scoped. Real tying or beating OU is not automatically a
+failure or a success; OU must first pass trace replay, spectrum/autocorrelation,
+centering, and response-geometry checks.
 
 Latest pathfinder update:
 
@@ -594,6 +597,9 @@ same raw source traces reused across scales: yes
 Primary temporal-PCA incremental result:
 
 ```text
+Historical, superseded for absolute gain claims by the 2026-06-21 static-mean
+correction. Use these numbers only as context for why the audit was needed.
+
 static + empirical temporal_pca versus static alone
 
 Gabor k=4:
@@ -626,12 +632,32 @@ empirical incremental-gain advantage
 Current interpretation:
 
 ```text
-Empirical drift-like motion adds feature-decoding signal beyond static
-responses in the V1 twin and robustly beats OU-like confined motion. The
-advantage over Brownian and rotated empirical controls is strongest at
-0.25x-0.5x and narrows at 1x-2x. The result is therefore not a simple
-more-motion-is-better artifact, but it is also not proof that exact biological
-trajectory order or image-locked direction is uniquely optimal.
+This n256 temporal-PCA result is historical for absolute gain claims. The
+current n384 k16 static-mean correction shows that temporal PCA is negative
+versus static mean at primary scales, while mean/delta_mean are the absolute
+candidate readouts and temporal PCA/DCT remain order-sensitive diagnostics.
+The OU contrast is scientifically interesting but audit-pending.
+```
+
+Current corrected aggregate sources:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1/
+    incremental_staticmean_plus_motion_tworeadout_v2/
+
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1/
+    incremental_staticmean_plus_motion_allreadouts_v1/readout_atlas_figures/
+
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_feature_decomposition_adjudication_v6_staticmean_corrected_power_rerun_primary_scales/
+```
+
+OU/readout audit handoff:
+
+```text
+declan/ou_trace_control_and_readout_audit_handoff.md
 ```
 
 This is now the strongest BackImage aggregate active-sensing result. It supports

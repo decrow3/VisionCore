@@ -417,6 +417,27 @@ def _compute_jacobians(
     return np.concatenate(all_j, axis=0)
 
 
+def _compute_static_responses(
+    *,
+    model: Any,
+    dset: Any,
+    stim_lags: np.ndarray,
+    samples: SessionSamples,
+    common_units: np.ndarray,
+    gains: np.ndarray,
+    dataset_idx: int,
+    args: argparse.Namespace,
+) -> np.ndarray:
+    preds = []
+    for start in range(0, samples.source_indices.size, int(args.batch_size)):
+        idx = samples.source_indices[start : start + int(args.batch_size)]
+        stim = _stim_batch(dset, idx, stim_lags)
+        behavior = _behavior_batch(dset, idx)
+        pred = _predict(model, stim, behavior, dataset_idx).detach().cpu().numpy()
+        preds.append(pred[:, common_units] * gains[None, :])
+    return np.concatenate(preds, axis=0).astype(np.float64)
+
+
 def _source_payloads(j: np.ndarray, eye_px: np.ndarray) -> dict[str, dict[str, Any]]:
     eye_c = eye_px - np.mean(eye_px, axis=0, keepdims=True)
     sigma_eye = np.cov(eye_c.T).astype(np.float64)
@@ -445,6 +466,10 @@ def _numerical_rank(vals: np.ndarray, eps: float = 1e-10) -> int:
 
 def _compact_source_name(compact_k: int) -> str:
     return f"fd_sample_eye_trace_xfit_compact_k{int(compact_k)}_cov"
+
+
+def _static_pc_source_name(static_pc_k: int) -> str:
+    return f"fd_sample_eye_trace_xfit_static_pc_k{int(static_pc_k)}_cov"
 
 
 def _tangent_matrix(j: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -523,6 +548,83 @@ def _compact_crossfit_payload(
             "compact_test_samples_max": int(max(test_counts)) if test_counts else 0,
             "compact_train_samples_min": int(min(train_counts)) if train_counts else 0,
             "compact_train_samples_max": int(max(train_counts)) if train_counts else 0,
+        }
+    )
+    return source_name, {"cov": cov, "mat": None, "status": status}, stats
+
+
+def _static_pc_crossfit_payload(
+    *,
+    j: np.ndarray,
+    eye_px: np.ndarray,
+    static_responses: np.ndarray,
+    group_ids: np.ndarray,
+    static_pc_k: int,
+    n_folds: int,
+    seed: int,
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    source_name = _static_pc_source_name(int(static_pc_k))
+    group_ids = np.asarray(group_ids)
+    unique_groups = np.unique(group_ids)
+    stats: dict[str, Any] = {
+        "static_pc_source": source_name,
+        "static_pc_group_mode": "trial_inds",
+        "static_pc_basis_k": int(static_pc_k),
+        "static_pc_n_groups": int(unique_groups.size),
+        "static_pc_requested_folds": int(n_folds),
+    }
+    if unique_groups.size < 2:
+        stats.update({"static_pc_status": "too_few_groups"})
+        return source_name, {"cov": None, "mat": None, "status": "too_few_groups"}, stats
+
+    rng = np.random.default_rng(int(seed))
+    shuffled_groups = unique_groups.copy()
+    rng.shuffle(shuffled_groups)
+    folds = [x for x in np.array_split(shuffled_groups, min(int(n_folds), unique_groups.size)) if x.size]
+
+    eye_c = np.asarray(eye_px, dtype=np.float64) - np.mean(eye_px, axis=0, keepdims=True)
+    eye_trace = np.einsum("nua,na->nu", np.asarray(j, dtype=np.float64), eye_c)
+    r0 = np.asarray(static_responses, dtype=np.float64)
+    projected = np.full_like(eye_trace, np.nan, dtype=np.float64)
+
+    rank_train: list[int] = []
+    rank_used: list[int] = []
+    test_counts: list[int] = []
+    train_counts: list[int] = []
+    for test_groups in folds:
+        test_mask = np.isin(group_ids, test_groups)
+        train_mask = ~test_mask
+        test_counts.append(int(np.sum(test_mask)))
+        train_counts.append(int(np.sum(train_mask)))
+        train = r0[train_mask]
+        if train.shape[0] < 2 or not np.isfinite(train).all():
+            continue
+        train = train - np.mean(train, axis=0, keepdims=True)
+        _u, s, vt = np.linalg.svd(train, full_matrices=False)
+        rank = _numerical_rank(s)
+        use_k = min(int(static_pc_k), int(rank), int(vt.shape[0]))
+        rank_train.append(int(rank))
+        rank_used.append(int(use_k))
+        if use_k <= 0:
+            continue
+        basis = vt[:use_k].T
+        projected[test_mask] = eye_trace[test_mask] @ basis @ basis.T
+
+    row_ok = np.all(np.isfinite(projected), axis=1)
+    cov = _cov_rows(projected[row_ok])
+    min_rank = int(min(rank_train)) if rank_train else 0
+    status = "ok" if row_ok.all() and min_rank >= int(static_pc_k) and np.isfinite(cov).all() else "invalid_static_pc_crossfit"
+    stats.update(
+        {
+            "static_pc_status": status,
+            "static_pc_n_folds": int(len(folds)),
+            "static_pc_min_train_rank": min_rank,
+            "static_pc_min_rank_used": int(min(rank_used)) if rank_used else 0,
+            "static_pc_projected_samples": int(np.sum(row_ok)),
+            "static_pc_test_samples_min": int(min(test_counts)) if test_counts else 0,
+            "static_pc_test_samples_max": int(max(test_counts)) if test_counts else 0,
+            "static_pc_train_samples_min": int(min(train_counts)) if train_counts else 0,
+            "static_pc_train_samples_max": int(max(train_counts)) if train_counts else 0,
         }
     )
     return source_name, {"cov": cov, "mat": None, "status": status}, stats
@@ -816,6 +918,7 @@ def run_analysis(args: argparse.Namespace) -> None:
     basis_sources = [x.strip() for x in str(args.basis_sources).split(",") if x.strip()]
     projection_controls = [x.strip() for x in str(args.projection_controls).split(",") if x.strip()]
     target_variants = [x.strip() for x in str(args.target_variants).split(",") if x.strip()]
+    static_pc_source = _static_pc_source_name(int(args.static_pc_basis_k))
     rng = np.random.default_rng(int(args.seed))
     n_rf_nulls = int(args.rf_null_n_nulls) if int(args.rf_null_n_nulls) > 0 else int(args.n_nulls)
 
@@ -863,6 +966,28 @@ def run_analysis(args: argparse.Namespace) -> None:
         )
         eye_px = samples.eyepos_deg * float(samples.pixels_per_degree)
         payloads = _source_payloads(j, eye_px)
+        static_pc_stats: dict[str, Any] = {}
+        if static_pc_source in basis_sources:
+            static_r0 = _compute_static_responses(
+                model=model,
+                dset=dset,
+                stim_lags=stim_lags,
+                samples=samples,
+                common_units=common_units,
+                gains=gains,
+                dataset_idx=dataset_idx,
+                args=args,
+            )
+            static_name, static_payload, static_pc_stats = _static_pc_crossfit_payload(
+                j=j,
+                eye_px=eye_px,
+                static_responses=static_r0,
+                group_ids=samples.trial_ids,
+                static_pc_k=int(args.static_pc_basis_k),
+                n_folds=int(args.static_pc_n_folds),
+                seed=int(args.seed) + int(dataset_idx) * 1543,
+            )
+            payloads[static_name] = static_payload
         rf_null_meta = _rf_null_metadata_for_session(
             session=session,
             subject=str(sr.get("subject", "")),
@@ -911,6 +1036,7 @@ def run_analysis(args: argparse.Namespace) -> None:
                 "rf_null_largest_bin_fraction": rf_null_meta.largest_bin_fraction,
                 "rf_null_bin_features": rf_null_meta.bin_features,
                 **compact_stats,
+                **static_pc_stats,
             }
         )
 
@@ -1059,6 +1185,9 @@ def run_analysis(args: argparse.Namespace) -> None:
             "compact_basis_k": int(args.compact_basis_k),
             "compact_n_folds": int(args.compact_n_folds),
             "compact_group_mode": "trial_inds",
+            "static_pc_basis_k": int(args.static_pc_basis_k),
+            "static_pc_n_folds": int(args.static_pc_n_folds),
+            "static_pc_source_name": static_pc_source,
         },
     )
 
@@ -1081,12 +1210,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--fixation-radius-deg", type=float, default=1.0)
     p.add_argument("--sample-dfs-mode", choices=["all", "any", "none"], default="all")
     p.add_argument("--rescale-mode", choices=["none", "globalgain", "gain", "globalaffine", "affine"], default="affine")
-    p.add_argument("--basis-sources", type=str, default="fd_mean_tangent_matrix,fd_mean_tangent_cov,fd_sample_eye_trace_cov,fd_sample_eye_trace_xfit_compact_k10_cov,fd_tangent_gram_cov")
+    p.add_argument("--basis-sources", type=str, default="fd_mean_tangent_matrix,fd_mean_tangent_cov,fd_sample_eye_trace_cov,fd_sample_eye_trace_xfit_compact_k10_cov,fd_sample_eye_trace_xfit_static_pc_k10_cov,fd_tangent_gram_cov")
     p.add_argument("--projection-controls", type=str, default="none,global_rate,target_pc1,global_rate+target_pc1")
     p.add_argument("--target-variants", type=str, default="raw,psd")
     p.add_argument("--k-list", type=str, default="1,2,3,5,10,20")
     p.add_argument("--compact-basis-k", type=int, default=10)
     p.add_argument("--compact-n-folds", type=int, default=5)
+    p.add_argument("--static-pc-basis-k", type=int, default=10)
+    p.add_argument("--static-pc-n-folds", type=int, default=5)
     p.add_argument("--n-nulls", type=int, default=100)
     p.add_argument("--enable-rf-readout-null", action="store_true")
     p.add_argument("--rf-null-n-nulls", type=int, default=0, help="Constrained null draws; 0 reuses --n-nulls.")

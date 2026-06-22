@@ -138,13 +138,15 @@ Cache-only panel generated from:
 ```
 
 At matched-static 1.0x, known-eye accuracy was {emp.known_eye_accuracy:.3f},
-zero-eye accuracy was {emp.zero_eye_accuracy:.3f}, joint-eye accuracy was
+zero-eye accuracy was {emp.zero_eye_accuracy:.3f}, latent-eye joint accuracy was
 {emp.joint_eye_accuracy:.3f} with the empirical trajectory prior and
 {ou.joint_eye_accuracy:.3f} with the OU prior. Median N_eff / K was
 {emp.median_N_eff_fraction:.3f} for empirical and {ou.median_N_eff_fraction:.3f}
 for OU. This panel supports the claim that trajectory marginalization over
-exact natural-image response tables recovers image identity lost by a zero-eye
-observer. It does not by itself identify compact geometry as the mechanism.
+exact natural-image response tables recovers image identity lost when the same
+moved observation is scored under a zero-eye assumption. Zero-eye here means
+the observer assumes zero eye motion; it does not mean the input movie was
+static. It does not by itself identify compact geometry as the mechanism.
 """
     (out_dir / "panel_C_joint_observer_accuracy_caption.md").write_text(caption)
 

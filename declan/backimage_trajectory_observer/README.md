@@ -238,7 +238,7 @@ the full exact true-score rescue, compact removal collapses the rescue, and
 clipping. At likelihood scale `1.0`, `compact_only` preserves roughly
 `46-82%` of the full-minus-zero accuracy rescue depending on axis, scale, and
 `k`, and roughly `0.84-0.90` of the median true-score rescue for the strongest
-compact settings. `compact_removed` usually falls to zero-static or worse.
+compact settings. `compact_removed` usually falls to zero-eye or worse.
 
 Static-response PCs remain a fair but subtle control. They are fair because
 they ask whether any low-dimensional unit-space basis drawn from the static

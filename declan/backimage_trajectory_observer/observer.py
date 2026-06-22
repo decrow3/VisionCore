@@ -108,8 +108,9 @@ def score_image_identity_score_vectors(
         eps=float(eps),
         likelihood_scale=float(likelihood_scale),
     )
-    log_prior = normalized_log_weights(log_trajectory_prior, n_traj)
-    joint_scores = logsumexp(prior_ll + log_prior[None, :], axis=1)
+    log_prior = normalized_log_weights(log_trajectory_prior, n_traj, n_rows=n_candidates)
+    log_prior_for_joint = log_prior[None, :] if log_prior.ndim == 1 else log_prior
+    joint_scores = logsumexp(prior_ll + log_prior_for_joint, axis=1)
     best_single_tau_scores = np.max(prior_ll, axis=1)
     return {
         "prior_log_likelihood": prior_ll,
@@ -210,10 +211,12 @@ def score_image_identity_table(
 ) -> dict[str, Any]:
     """Score one observed response against finite image and trajectory tables.
 
-    The prior table is used only by the joint-eye and best-single-trajectory
-    diagnostic.
+    The same observed counts are scored by all modes. The prior table is used
+    only by the latent-eye joint and best-single-trajectory diagnostic.
     Known-eye and zero-eye are separate candidate tables so that leave-one-out
-    trajectory priors can still report a non-leaky known-eye upper bound.
+    trajectory priors can still report a non-leaky known-eye upper bound while
+    the zero-eye baseline remains a static-eye model assumption, not a static
+    input.
     """
     vectors = score_image_identity_score_vectors(
         y_obs_counts=y_obs_counts,
@@ -239,7 +242,8 @@ def score_image_identity_table(
     n_units = int(vectors["n_units"])
     true_idx = int(vectors["true_candidate_index"])
 
-    true_log_posterior_unnorm = prior_ll[true_idx] + log_prior
+    true_log_prior = log_prior if log_prior.ndim == 1 else log_prior[true_idx]
+    true_log_posterior_unnorm = prior_ll[true_idx] + true_log_prior
     posterior = posterior_from_log_scores(true_log_posterior_unnorm)
     neff = effective_count(posterior)
     max_posterior = float(np.nanmax(posterior)) if posterior.size else float("nan")
