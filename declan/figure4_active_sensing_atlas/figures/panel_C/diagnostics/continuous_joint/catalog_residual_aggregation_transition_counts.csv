@@ -1,0 +1,4 @@
+comparison,both_correct,lost,rescued,both_wrong
+all_anchor_logmean_to_top2_logmean,593,20,53,102
+top2_logmean_to_top2_shrink0p19,644,2,9,113
+all_anchor_logmean_to_top2_shrink0p19,601,12,52,103

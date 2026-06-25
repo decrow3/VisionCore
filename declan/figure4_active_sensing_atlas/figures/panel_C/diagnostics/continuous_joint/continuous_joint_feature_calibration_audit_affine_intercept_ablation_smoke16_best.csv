@@ -1,0 +1,3 @@
+run_slug,run_label,split_key,calibration_mode,n_eval,selected_temperature_by_split,default_mean_feature_cosine,eval_mean_feature_cosine,delta_vs_default,eval_image_accuracy,eval_mean_true_mass,eval_median_N_eff_fraction
+affine_x1000_ablate_intercept_smoke16,Affine x1000 intercept ablated smoke16,trial_id,scale_specific,16,"0.5:4,1.0:1,2.0:2;0.5:0.125,1.0:2,2.0:4",0.9173967295675841,0.891635615455425,-0.025761114112158964,0.4375,0.3171570827600279,0.7476410402484637
+affine_x1000_smoke16,Affine x1000 smoke16,trial_id,scale_specific,16,"0.5:4,1.0:0.125,2.0:1;0.5:0.125,1.0:4,2.0:1",0.9331486515414806,0.8852590383906616,-0.047889613150819146,0.5625,0.29052125085723224,0.8066479474538557

@@ -1,0 +1,4 @@
+run_slug,run_label,split_key,calibration_mode,n_eval,selected_temperature_by_split,default_mean_feature_cosine,eval_mean_feature_cosine,delta_vs_default,eval_image_accuracy,eval_mean_true_mass,eval_median_N_eff_fraction
+origin_scale_conditioned,Origin scale-conditioned,trial_id,scale_specific,768,"0.5:0.125,1.0:0.125,2.0:0.25;0.5:0.125,1.0:0.125,2.0:0.5",0.9107641759832686,0.9343220346493913,0.023557858666122717,0.7083333333333334,0.5989976983018817,0.37147055549536534
+affine_x10,Affine intercept ridge x10,trial_id,scale_specific,768,"0.5:0.25,1.0:0.25,2.0:0.25;0.5:0.25,1.0:0.25,2.0:0.5",0.9171013072716773,0.9332088237490991,0.01610751647742185,0.6705729166666666,0.5695436187017778,0.4671999310153159
+affine_x1,Affine x1,trial_id,scale_specific,768,"0.5:0.25,1.0:0.25,2.0:0.25;0.5:0.25,1.0:0.25,2.0:0.5",0.9170645206149635,0.9330992597826251,0.016034739167661682,0.6692708333333334,0.5694111243607788,0.4671789456605545

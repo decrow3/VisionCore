@@ -1,0 +1,4 @@
+row_type,split_key,calibration_mode,prior_scale,prior_family,eval_split,selected_on_split,selected_run_slug,selected_run_label,train_feature_cosine,eval_feature_cosine,eval_image_accuracy,eval_delta_vs_default,selected_temperature,n_eval
+split,trial_id,scale_specific,all,all,0,1,affine_x1000_smoke64,Affine x1000 smoke64,0.9661177083146146,0.9521627440600309,0.78125,0.012883216153702401,"0.5:0.125,1.0:0.125,2.0:0.25",32
+split,trial_id,scale_specific,all,all,1,0,origin_smoke64,Origin scale-conditioned smoke64,0.9626046100395094,0.964742716998278,0.71875,0.020683187030588107,"0.5:0.125,1.0:0.25,2.0:0.5",32
+aggregate,trial_id,scale_specific,all,all,-1,-1,affine_x1000_smoke64;origin_smoke64,Affine x1000 smoke64;Origin scale-conditioned smoke64,0.964361159177062,0.9584527305291544,0.75,0.016783201592145254,"0.5:0.125,1.0:0.125,2.0:0.25;0.5:0.125,1.0:0.25,2.0:0.5",64

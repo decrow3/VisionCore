@@ -89,6 +89,15 @@ contains trajectories aligned across the edge. The two catalogs are intended to
 match in basic motion scale and construction, so the main difference is their
 direction relative to the local image structure.
 
+Implementation note: the along/across manipulation applies to the latent
+trajectory prior catalogs. In the saved response-table caches, `known-eye`
+means the candidate response under the true empirical observed trace, while
+`zero-eye` means the candidate response under the static trace. Those two
+control tables are shared across the parallel and orthogonal prior-family
+files. Thus known-eye feature cosine is expected to be identical for
+`axis_edge_parallel` and `axis_edge_orthogonal`; it is a ceiling/control, not a
+test of two rotated known trajectories.
+
 The V1 twin is run on retinal movies generated from these priors. The observer
 then performs the same kind of latent-eye feature recovery used in the joint
 posterior analyses: it does not get the true trajectory label, so it must use
@@ -107,6 +116,24 @@ candidates make the task harder by reducing easy static-response shortcuts. A
 hard-negative branch is kept as a guardrail because it does not show the same
 positive along-edge pattern. That means the panel can claim a scoped
 matched-static model result, not a universal edge-parallel policy.
+
+A newer known-axis diagnostic asks a simpler different question: if the rotated
+along- or across-axis trace is known, which response movie gives better feature
+posterior recovery? In the same matched-static 0.5x, `pyramid_local_field` k8
+cache, this direct test favors across-contour motion:
+
+```text
+across-contour known-axis feature cosine = 0.8834
+along-contour known-axis feature cosine  = 0.8758
+along-minus-across                       = -0.0076
+CI                                       = [-0.0096, -0.0057]
+p                                        = 0.0010
+```
+
+This does not invalidate the hidden-eye D2 result, but it narrows the claim.
+D2 should be read as "along-edge priors helped the latent-eye matched-static
+observer," not as "known along-edge motion is intrinsically the best feature
+alignment direction."
 
 The preservation analyses are separate support. They move image patches along
 and across local edges and measure how much the pixels and V1-twin responses
@@ -217,6 +244,23 @@ Matched-static image-identity support:
 edge-parallel joint accuracy = 0.859
 edge-orthogonal joint accuracy = 0.828
 parallel-minus-orthogonal = +0.031
+```
+
+Known-axis feature-alignment diagnostic:
+
+```text
+script:
+  declan/figure4_active_sensing_atlas/scripts/build_panel_d_known_axis_feature_alignment.py
+
+outputs:
+  declan/figure4_active_sensing_atlas/figures/panel_D/diagnostics/
+    known_axis_feature_alignment/
+
+read:
+  Uses the saved rotated axis-conditioned response tables as synthetic
+  observations with trajectory index known. Across-contour feature cosine is
+  higher than along-contour feature cosine, so this is a guardrail against
+  interpreting D2 as a direct known-trace along-motion advantage.
 ```
 
 Hard-negative guardrail:

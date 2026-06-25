@@ -88,6 +88,36 @@ def image_axis_rad_to_gaze_axis_rad(axis_rad: float | np.ndarray) -> float | np.
     return -np.asarray(axis_rad)
 
 
+def _radial_log_power_slope(
+    power: np.ndarray,
+    rr_cpd: np.ndarray,
+    *,
+    min_cpd: float = 0.5,
+    max_cpd: float = 16.0,
+    n_bins: int = 12,
+) -> float:
+    power = np.asarray(power, dtype=np.float64)
+    rr = np.asarray(rr_cpd, dtype=np.float64)
+    valid = (rr >= float(min_cpd)) & (rr <= float(max_cpd)) & np.isfinite(power) & (power > 0.0)
+    if np.count_nonzero(valid) < 8:
+        return float("nan")
+
+    edges = np.geomspace(float(min_cpd), float(max_cpd), int(n_bins) + 1)
+    centers: list[float] = []
+    means: list[float] = []
+    for lo, hi in zip(edges[:-1], edges[1:], strict=True):
+        mask = valid & (rr >= lo) & (rr < hi)
+        if np.count_nonzero(mask) < 3:
+            continue
+        centers.append(float(np.sqrt(lo * hi)))
+        means.append(float(np.mean(power[mask])))
+    if len(means) < 4:
+        return float("nan")
+    x = np.log(np.asarray(centers, dtype=np.float64))
+    y = np.log(np.asarray(means, dtype=np.float64))
+    return float(np.polyfit(x, y, 1)[0])
+
+
 def _failure_features(error: Exception | str) -> dict[str, Any]:
     return {
         "image_feature_ok": False,
@@ -178,6 +208,8 @@ def local_backimage_features(
         fx_cpd = np.fft.fftshift(np.fft.fftfreq(patch.shape[1], d=1.0 / float(ppd)))
         rr_cpd = np.hypot(*np.meshgrid(fx_cpd, fy_cpd))
         non_dc_power = float(np.sum(power[rr_cpd > 0]))
+        power_slope = _radial_log_power_slope(power, rr_cpd)
+        amplitude_slope = 0.5 * power_slope if np.isfinite(power_slope) else float("nan")
 
         def band_fraction(lo: float, hi: float | None) -> float:
             if non_dc_power <= 0:
@@ -218,6 +250,12 @@ def local_backimage_features(
             "image_power_2_4_cpd_fraction": band_fraction(2.0, 4.0),
             "image_power_4_8_cpd_fraction": band_fraction(4.0, 8.0),
             "image_power_8plus_cpd_fraction": band_fraction(8.0, None),
+            "image_power_slope_0p5_16_cpd": power_slope,
+            "image_amplitude_slope_0p5_16_cpd": amplitude_slope,
+            "image_power_slope_deviation_from_1f": power_slope + 2.0 if np.isfinite(power_slope) else float("nan"),
+            "image_amplitude_slope_deviation_from_1f": amplitude_slope + 1.0 if np.isfinite(amplitude_slope) else float("nan"),
+            "image_abs_power_slope_deviation_from_1f": abs(power_slope + 2.0) if np.isfinite(power_slope) else float("nan"),
+            "image_abs_amplitude_slope_deviation_from_1f": abs(amplitude_slope + 1.0) if np.isfinite(amplitude_slope) else float("nan"),
         }
     except Exception as exc:
         return _failure_features(exc)

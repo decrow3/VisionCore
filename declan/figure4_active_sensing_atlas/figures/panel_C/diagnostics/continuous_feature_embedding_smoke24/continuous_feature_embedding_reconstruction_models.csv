@@ -1,0 +1,21 @@
+observer_mode,observer_label,train_bank,test_input,fold,n_train_samples,n_test_rows,feature_dim,response_dim,ridge,noise_variance,response_map_fro_norm,posterior_gain_fro_norm,interpretation
+known_eye,known eye,known,observed,0,90,6,32,800,0.01,1.3668151856267756e-05,0.07586587297718218,348.5050959859393,Feature posterior from measured-motion response family.
+known_eye,known eye,known,observed,1,90,6,32,800,0.01,1.3594184675079998e-05,0.08998792157070964,342.0479352417182,Feature posterior from measured-motion response family.
+known_eye,known eye,known,observed,2,90,6,32,800,0.01,1.2718375489469425e-05,0.09027220806965325,356.8313659565833,Feature posterior from measured-motion response family.
+known_eye,known eye,known,observed,3,90,6,32,800,0.01,1.4489190966082323e-05,0.08790374688334998,338.5530492118564,Feature posterior from measured-motion response family.
+hidden_eye_tau_marginal,hidden eye,prior_all,observed,0,1440,6,32,800,0.01,2.312818263592142e-05,0.050501929588193155,270.65672503465936,Feature posterior after treating trajectory as nuisance variation.
+hidden_eye_tau_marginal,hidden eye,prior_all,observed,1,1440,6,32,800,0.01,2.2908481972416684e-05,0.0731635115468193,265.1293253248611,Feature posterior after treating trajectory as nuisance variation.
+hidden_eye_tau_marginal,hidden eye,prior_all,observed,2,1440,6,32,800,0.01,2.2198925765527632e-05,0.066974474773177,279.9232714273901,Feature posterior after treating trajectory as nuisance variation.
+hidden_eye_tau_marginal,hidden eye,prior_all,observed,3,1440,6,32,800,0.01,2.2836983313625098e-05,0.07219409440528063,266.65596593389887,Feature posterior after treating trajectory as nuisance variation.
+hidden_eye_prior_mean,prior mean,prior_mean,observed,0,90,6,32,800,0.01,7.230562498101579e-06,0.05049525484437716,488.0945629913797,A stricter hidden-eye baseline trained on trajectory-averaged responses.
+hidden_eye_prior_mean,prior mean,prior_mean,observed,1,90,6,32,800,0.01,7.282477882239823e-06,0.07313756525282544,485.7145408867743,A stricter hidden-eye baseline trained on trajectory-averaged responses.
+hidden_eye_prior_mean,prior mean,prior_mean,observed,2,90,6,32,800,0.01,6.828044879571534e-06,0.06695517389420672,505.91505515029786,A stricter hidden-eye baseline trained on trajectory-averaged responses.
+hidden_eye_prior_mean,prior mean,prior_mean,observed,3,90,6,32,800,0.01,7.0221904602405734e-06,0.07216796646240077,490.4585316538844,A stricter hidden-eye baseline trained on trajectory-averaged responses.
+zero_eye_on_motion,zero-eye model,zero,observed,0,90,6,32,800,0.01,1e-08,0.038862315448573416,2783.2603940751173,Zero-eye response model applied to moving-response observations.
+zero_eye_on_motion,zero-eye model,zero,observed,1,90,6,32,800,0.01,1e-08,0.05121531823215522,2754.795732097235,Zero-eye response model applied to moving-response observations.
+zero_eye_on_motion,zero-eye model,zero,observed,2,90,6,32,800,0.01,1e-08,0.048155025994973566,2222.268898229278,Zero-eye response model applied to moving-response observations.
+zero_eye_on_motion,zero-eye model,zero,observed,3,90,6,32,800,0.01,1e-08,0.05178729162630868,2415.9780187197057,Zero-eye response model applied to moving-response observations.
+zero_static,0x stabilized,zero,zero_static,0,90,6,32,800,0.01,1e-08,0.038862315448573416,2783.2603940751173,Stabilized 0x counterfactual response and zero-eye response model.
+zero_static,0x stabilized,zero,zero_static,1,90,6,32,800,0.01,1e-08,0.05121531823215522,2754.795732097235,Stabilized 0x counterfactual response and zero-eye response model.
+zero_static,0x stabilized,zero,zero_static,2,90,6,32,800,0.01,1e-08,0.048155025994973566,2222.268898229278,Stabilized 0x counterfactual response and zero-eye response model.
+zero_static,0x stabilized,zero,zero_static,3,90,6,32,800,0.01,1e-08,0.05178729162630868,2415.9780187197057,Stabilized 0x counterfactual response and zero-eye response model.

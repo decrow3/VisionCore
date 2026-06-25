@@ -54,6 +54,11 @@ retinal motion is treated as part of the inference problem rather than as noise.
     model.
 - `4c_companion_joint_posterior_observer_model.md`
   - Reasoning document for the joint image/trajectory observer model.
+- `4C_supplimental_true_joint_estimator_plan.md`
+  - Practical supplement plan for a true continuous joint eye/image estimator
+    and later Wu-style continuous feature/pixel reconstruction branches.
+- `archive/4c_candidate_posterior_snapshot_2026_06_24/`
+  - Saved pre-feature-embedding 4C candidate-posterior companion and builder.
 - `4d_companion_along_edge_model_feature_encoding.md`
   - Reasoning document for the along-edge model feature-encoding panel.
 - `panel_C_feature_space_compact_removed_handoff.md`
@@ -96,6 +101,13 @@ retinal motion is treated as part of the inference problem rather than as noise.
   - `scripts/build_panel_c_feature_recovery_options.py` regenerates the focused
     Panel C feature-recovery option sheet in
     `figures/panel_C/promotion_candidates/feature_recovery_options/`.
+  - `scripts/build_panel_c_continuous_feature_embedding_reconstruction.py`
+    regenerates the first candidate-free continuous feature-embedding
+    reconstruction diagnostic in
+    `figures/panel_C/diagnostics/continuous_feature_embedding/`.
+  - `scripts/build_panel_c_continuous_tau_mlp_feature_decoder.py`
+    regenerates the hybrid continuous-tau / MLP feature decoder in
+    `figures/panel_C/diagnostics/continuous_tau_mlp_feature_decoder_augmented/`.
   - `scripts/export_panel_text_atlas_pdf.py` regenerates
     `panel_text_atlas.pdf` from the Markdown and local PNGs without external
     PDF dependencies.
@@ -141,8 +153,19 @@ retinal motion is treated as part of the inference problem rather than as noise.
    before any write-lock.
 3. Module C: BackImage feature-posterior observer shows that zero-eye feature
    recovery degrades with motion scale, while latent-eye joint inference
-   remains stable without known eye position; the matching
-   feature-space compact-removal/addback decomposition is still pending.
+   remains stable without known eye position. The compact-removal/addback
+   branch is the promoted candidate-posterior mechanism result; a new
+   continuous feature-embedding branch now removes finite candidate selection at
+   test time and includes global/fold-local PCA target-space options. The
+   fold-local z-scored whitened option is the best Gaussian-prior variant so
+   far. Linear-Gaussian readouts still do not beat the 0x stabilized
+   counterfactual, but a Tejas-style nonlinear MLP upper-bound decoder does:
+   hidden/tau-nuisance moving response `0.3482` versus 0x stabilized `0.2819`.
+   The newer continuous-tau MLP hybrid keeps the candidate-free feature endpoint
+   and shows the same main lesson with fair augmented baselines: augmented
+   compact-only hidden readout `0.3695` beats augmented 0x static `0.3243`, but
+   estimated continuous `tau_hat` alone is not the winning readout yet
+   (`0.3140`).
 4. Module D: edge-parallel stability supports a local image-geometry
    preservation mechanism, while axis preference and response-objective
    optimality remain guarded.

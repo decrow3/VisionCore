@@ -1,0 +1,10 @@
+row_type,prior_scale,run_slug,run_label,n_eval,image_accuracy,mean_feature_cosine,mean_true_mass,median_N_eff_fraction,image_accuracy_ci_low,image_accuracy_ci_high,mean_feature_cosine_ci_low,mean_feature_cosine_ci_high,fraction_feature_delta_positive
+run,all,standard_basis,standard compact basis,96,0.84375,0.9375548749771818,0.5066231990375835,0.5921901000502114,,,,,
+run,0.5,standard_basis,standard compact basis,32,0.9375,0.941260664792206,0.509044515135499,0.5989232547331078,,,,,
+run,1.0,standard_basis,standard compact basis,32,0.78125,0.936906852160039,0.5033271852534572,0.5708128549186595,,,,,
+run,2.0,standard_basis,standard compact basis,32,0.8125,0.9344971079793005,0.507497896723794,0.5815953656046414,,,,,
+run,all,axis_interleaved_basis,axis-interleaved basis,96,0.8333333333333334,0.9373943298800885,0.5070866127729673,0.6083508706889882,,,,,
+run,0.5,axis_interleaved_basis,axis-interleaved basis,32,0.9375,0.9408658872407039,0.5093930068533847,0.6194116875877931,,,,,
+run,1.0,axis_interleaved_basis,axis-interleaved basis,32,0.78125,0.9371649749823308,0.5052094468804285,0.5737301747862944,,,,,
+run,2.0,axis_interleaved_basis,axis-interleaved basis,32,0.78125,0.9341521274172311,0.5066573845850886,0.6543074279169756,,,,,
+paired_delta,all,axis_interleaved_minus_standard,axis-interleaved basis - standard basis,96,-0.010416666666666666,-0.0001605450970933106,,,-0.052083333333333336,0.020833333333333332,-0.003826227077882529,0.002883191221046194,0.3854166666666667

@@ -1,0 +1,45 @@
+prior_scale,observer_mode,observer_label,metric,metric_label,mean_parallel_minus_orthogonal,ci_low,ci_high,sign_flip_p_two_sided,n_pairs,fraction_positive
+0.5,continuous_joint,joint estimator,feature_cosine,feature cosine,-0.0010496444197380392,-0.009271984072494723,0.005960477356701808,0.7901209879012099,128,0.46875
+0.5,known,known-eye,feature_cosine,feature cosine,0.0,0.0,0.0,1.0,128,0.0
+0.5,zero,zero-eye,feature_cosine,feature cosine,0.0,0.0,0.0,1.0,128,0.0
+1.0,continuous_joint,joint estimator,feature_cosine,feature cosine,0.004085058105975042,-0.009974238961783203,0.018541395068158058,0.5778422157784222,128,0.484375
+1.0,known,known-eye,feature_cosine,feature cosine,0.0,0.0,0.0,1.0,128,0.0
+1.0,zero,zero-eye,feature_cosine,feature cosine,0.0,0.0,0.0,1.0,128,0.0
+2.0,continuous_joint,joint estimator,feature_cosine,feature cosine,0.0003333955336052583,-0.01109397167851406,0.011760023899463241,0.9535046495350465,128,0.46875
+2.0,known,known-eye,feature_cosine,feature cosine,0.0,0.0,0.0,1.0,128,0.0
+2.0,zero,zero-eye,feature_cosine,feature cosine,0.0,0.0,0.0,1.0,128,0.0
+all,continuous_joint,joint estimator,feature_cosine,feature cosine,0.0011229364066140867,-0.005443851681074288,0.007609598424157948,0.7432256774322568,384,0.4739583333333333
+all,known,known-eye,feature_cosine,feature cosine,0.0,0.0,0.0,1.0,384,0.0
+all,zero,zero-eye,feature_cosine,feature cosine,0.0,0.0,0.0,1.0,384,0.0
+0.5,continuous_joint,joint estimator,feature_gain_vs_zero,feature gain vs zero-eye,-0.0010496444197380392,-0.008969071068235546,0.0059251494999245525,0.8031196880311969,128,0.46875
+0.5,known,known-eye,feature_gain_vs_zero,feature gain vs zero-eye,0.0,0.0,0.0,1.0,128,0.0
+1.0,continuous_joint,joint estimator,feature_gain_vs_zero,feature gain vs zero-eye,0.004085058105975042,-0.010126691912541824,0.01828390301221966,0.5772422757724227,128,0.484375
+1.0,known,known-eye,feature_gain_vs_zero,feature gain vs zero-eye,0.0,0.0,0.0,1.0,128,0.0
+2.0,continuous_joint,joint estimator,feature_gain_vs_zero,feature gain vs zero-eye,0.0003333955336052583,-0.011149723689079455,0.011712117860941717,0.9524047595240476,128,0.46875
+2.0,known,known-eye,feature_gain_vs_zero,feature gain vs zero-eye,0.0,0.0,0.0,1.0,128,0.0
+all,continuous_joint,joint estimator,feature_gain_vs_zero,feature gain vs zero-eye,0.0011229364066140867,-0.005542556901368907,0.007870282190340387,0.7408259174082592,384,0.4739583333333333
+all,known,known-eye,feature_gain_vs_zero,feature gain vs zero-eye,0.0,0.0,0.0,1.0,384,0.0
+0.5,continuous_joint,joint estimator,image_correct,image accuracy,0.0234375,-0.0234375,0.0703125,0.5064493550644935,128,0.046875
+0.5,known,known-eye,image_correct,image accuracy,0.0,0.0,0.0,1.0,128,0.0
+0.5,zero,zero-eye,image_correct,image accuracy,0.0,0.0,0.0,1.0,128,0.0
+1.0,continuous_joint,joint estimator,image_correct,image accuracy,0.0,-0.0546875,0.0546875,1.0,128,0.046875
+1.0,known,known-eye,image_correct,image accuracy,0.0,0.0,0.0,1.0,128,0.0
+1.0,zero,zero-eye,image_correct,image accuracy,0.0,0.0,0.0,1.0,128,0.0
+2.0,continuous_joint,joint estimator,image_correct,image accuracy,-0.0390625,-0.1171875,0.0390625,0.41435856414358563,128,0.078125
+2.0,known,known-eye,image_correct,image accuracy,0.0,0.0,0.0,1.0,128,0.0
+2.0,zero,zero-eye,image_correct,image accuracy,0.0,0.0,0.0,1.0,128,0.0
+all,continuous_joint,joint estimator,image_correct,image accuracy,-0.005208333333333333,-0.0390625,0.028645833333333332,0.8789121087891211,384,0.057291666666666664
+all,known,known-eye,image_correct,image accuracy,0.0,0.0,0.0,1.0,384,0.0
+all,zero,zero-eye,image_correct,image accuracy,0.0,0.0,0.0,1.0,384,0.0
+0.5,continuous_joint,joint estimator,candidate_posterior_true_mass,true posterior mass,-0.009520869510813615,-0.03320315412625298,0.011611090038813074,0.41015898410158985,128,0.46875
+0.5,known,known-eye,candidate_posterior_true_mass,true posterior mass,0.0,0.0,0.0,1.0,128,0.0
+0.5,zero,zero-eye,candidate_posterior_true_mass,true posterior mass,0.0,0.0,0.0,1.0,128,0.0
+1.0,continuous_joint,joint estimator,candidate_posterior_true_mass,true posterior mass,0.0075539180975566335,-0.023175172261719952,0.03837166972896239,0.64003599640036,128,0.4765625
+1.0,known,known-eye,candidate_posterior_true_mass,true posterior mass,0.0,0.0,0.0,1.0,128,0.0
+1.0,zero,zero-eye,candidate_posterior_true_mass,true posterior mass,0.0,0.0,0.0,1.0,128,0.0
+2.0,continuous_joint,joint estimator,candidate_posterior_true_mass,true posterior mass,0.002743898056786577,-0.021682367393422625,0.026360673653069502,0.825017498250175,128,0.46875
+2.0,known,known-eye,candidate_posterior_true_mass,true posterior mass,0.0,0.0,0.0,1.0,128,0.0
+2.0,zero,zero-eye,candidate_posterior_true_mass,true posterior mass,0.0,0.0,0.0,1.0,128,0.0
+all,continuous_joint,joint estimator,candidate_posterior_true_mass,true posterior mass,0.00025898221450986494,-0.014810274735048942,0.014794109132405394,0.9731026897310269,384,0.4713541666666667
+all,known,known-eye,candidate_posterior_true_mass,true posterior mass,0.0,0.0,0.0,1.0,384,0.0
+all,zero,zero-eye,candidate_posterior_true_mass,true posterior mass,0.0,0.0,0.0,1.0,384,0.0

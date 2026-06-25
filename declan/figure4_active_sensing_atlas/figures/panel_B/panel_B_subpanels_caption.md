@@ -23,8 +23,11 @@ Subpanels:
 Claim boundary:
 
 ```text
-This is deterministic V1-twin feature-decoding gain in -MSE units, not literal
-mutual information. The strongest control-specific claim is small-scale:
-empirical beats OU robustly and beats Brownian/rotated most cleanly at 0.25x
-to 0.5x.
+Legacy B3-B5 panels in this directory used deterministic V1-twin
+feature-decoding gain in -MSE units. Those files are now archive/QC context.
+The promoted 4B recompute uses the diagonal Gaussian decoder lower-bound
+increment in bits over stabilized/static:
+0.5 * sum_j log(var_static_j / var_condition_j) / log(2).
+Full-covariance Ledoit-Wolf log-det values are supplemental robustness, not the
+headline axis.
 ```

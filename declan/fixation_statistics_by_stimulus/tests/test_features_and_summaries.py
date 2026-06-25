@@ -5,7 +5,11 @@ import numpy as np
 from declan.fixation_statistics_by_stimulus.classifier import classify_stimulus_from_windows
 from declan.fixation_statistics_by_stimulus.extraction import _speed_threshold_mad_valid_pairs
 from declan.fixation_statistics_by_stimulus.features import event_feature_rows, fixation_window_features
-from declan.fixation_statistics_by_stimulus.image_features import image_axis_rad_to_gaze_axis_rad
+from declan.fixation_statistics_by_stimulus.image_features import _radial_log_power_slope, image_axis_rad_to_gaze_axis_rad
+from declan.fixation_statistics_by_stimulus.run_backimage_aggregate_fem_information import (
+    _add_ssi_incremental_summaries,
+    _summarize_ssi_features,
+)
 from declan.fixation_statistics_by_stimulus.run_backimage_twin_drift_geometry import (
     _normalize_scores,
     _pixel_isophote_cost,
@@ -137,6 +141,18 @@ def test_image_axis_angles_convert_from_array_to_gaze_coordinates() -> None:
     assert np.isclose(np.degrees(image_axis_rad_to_gaze_axis_rad(np.radians(45.0))), -45.0)
 
 
+def test_radial_log_power_slope_recovers_power_law() -> None:
+    yy, xx = np.indices((129, 129), dtype=np.float64)
+    fx = xx - 64.0
+    fy = yy - 64.0
+    rr = np.hypot(fx, fy)
+    power = np.where(rr > 0, rr ** -2.0, 0.0)
+
+    slope = _radial_log_power_slope(power, rr, min_cpd=1.0, max_cpd=32.0)
+
+    assert np.isclose(slope, -2.0, atol=0.08)
+
+
 def test_pixel_isophote_cost_uses_gaze_y_up_axis_convention() -> None:
     yy, xx = np.indices((201, 201), dtype=np.float32)
     patch = xx + yy
@@ -153,3 +169,30 @@ def test_normalize_scores_suppresses_near_constant_motor_noise() -> None:
     _normalize_scores(rows, ("motor_cost",))
 
     assert [row["motor_cost_z"] for row in rows] == [0.0, 0.0, 0.0]
+
+
+def test_ssi_summaries_and_incremental_features_are_flat_and_named() -> None:
+    ssi = {
+        "ssi_itn": np.arange(6, dtype=np.float32).reshape(2, 3),
+        "ssi_rbar_tn": np.ones((2, 3), dtype=np.float32) * 2.0,
+        "ssi_ispike_t": np.asarray([0.5, 0.75], dtype=np.float32),
+        "ssi_irate_t": np.asarray([4.0, 5.0], dtype=np.float32),
+    }
+
+    out = _summarize_ssi_features(ssi, ["ssi_itn", "ssi_unit_mean", "ssi_itn_plus_rbar", "ssi_population_time"])
+
+    assert out["ssi_itn"].shape == (6,)
+    assert out["ssi_unit_mean"].shape == (3,)
+    assert out["ssi_itn_plus_rbar"].shape == (12,)
+    assert out["ssi_population_time"].shape == (4,)
+    assert np.allclose(out["ssi_unit_mean"], [1.5, 2.5, 3.5])
+
+    summaries = {"delta_mean": np.asarray([10.0, 11.0], dtype=np.float32), **out}
+    _add_ssi_incremental_summaries(
+        summaries,
+        base_summaries=["delta_mean"],
+        ssi_summary_names=["ssi_unit_mean"],
+    )
+
+    assert "delta_mean_plus_ssi_unit_mean" in summaries
+    assert np.allclose(summaries["delta_mean_plus_ssi_unit_mean"], [10.0, 11.0, 1.5, 2.5, 3.5])

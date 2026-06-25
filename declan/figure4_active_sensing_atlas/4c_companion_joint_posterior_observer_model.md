@@ -1,6 +1,6 @@
 # Companion: Joint Posterior / Trajectory-Table Observer Model
 
-Date: 2026-06-22
+Date: 2026-06-24
 Status: provisional methods/logic companion for Figure 4C
 
 ## Panel Claim Under Test
@@ -22,6 +22,22 @@ The current evidence supports that claim, but with an important boundary. It
 does not show that the compact translation component is the unique response
 structure that makes the observer work. A matched control based on static image
 responses is nearly as strong.
+
+The endpoint should also be described carefully. The promoted score is
+posterior expected feature recovery, reported as cosine similarity in a chosen
+local feature space. That is a reconstruction-quality metric for a selected
+feature target, not a Shannon-information or bits estimate. This matches the
+spirit of Wu et al.'s reconstruction-quality analysis more than an infomax
+analysis: Wu used Bayesian MAP image reconstruction and evaluated image quality
+mainly with MS-SSIM, with LPIPS as a confirmation metric.
+
+The current candidate-posterior version has been preserved before starting the
+next branch:
+
+```text
+declan/figure4_active_sensing_atlas/archive/
+4c_candidate_posterior_snapshot_2026_06_24/
+```
 
 ## Summary
 
@@ -47,6 +63,207 @@ mostly overlaps with the main response patterns the model already uses for
 static images. This means the safe claim is not "there is a special compact
 translation-only channel." The safer and better claim is "eye movements push V1
 responses along a compact part of the normal image-response manifold."
+
+There is now a promoted continuous no-anchor observer for the 4C feature
+recovery readout; the finite trajectory-table result remains context and a hard
+image-identity guardrail. The continuous observer uses a native
+scale-conditioned compact quadratic observation model, infers a continuous
+trajectory for each candidate image, and applies scale-specific posterior
+calibration for the feature-recovery readout. The verified full-cache artifact
+is:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/continuous_joint/
+continuous_joint_promoted_observer_manifest.json
+```
+
+This continuous observer is the strongest current no-anchor feature-recovery
+readout: emitted posterior-weighted feature cosine `0.9378`, with split-heldout
+promotion gate `0.9371`, at image accuracy `0.7083`.
+That should be read as calibrated feature recovery, not as a hard image-ID
+improvement. The encoder/prior choice is conservative: keep the native
+scale-conditioned compact quadratic model, with a predeclared scale-specific
+trajectory prior; do not promote the longer iter160 optimizer or anchor-assisted
+catalog-residual variants as no-anchor encoder improvements.
+
+A new continuous feature-embedding reconstruction branch now exists as the
+next, more Wu-style step away from finite candidate choice. It uses the same
+response-table cache but replaces `sum_I p(I | y) phi(I)` with a linear-Gaussian
+posterior over a compact whitened feature embedding `z`:
+
+```text
+response_features = A z + noise
+z ~ N(0, I)
+z_hat = E[z | response]
+```
+
+The full-cache artifact is:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+continuous_feature_embedding/continuous_feature_embedding_reconstruction_manifest.json
+```
+
+This branch is not promoted over the candidate-posterior endpoint yet. It is
+important because it removes finite candidate selection at test time. The
+runner now evaluates a small target-space sweep around a 32D
+`pyramid_local_field` embedding and a 20D image-disjoint compact response
+basis. All variants are cross-fit by source image; fold-local variants fit the
+feature PCA after excluding the held-out source rows. All-scale feature cosine:
+
+```text
+feature-space mode              known   hidden  zero-model  0x stabilized
+global centered whitened PCA    0.1261  0.1036  0.0471      0.1860
+fold centered whitened PCA      0.1203  0.0994  0.0567      0.1896
+fold z-scored whitened PCA      0.1505  0.1271  0.0618      0.2330
+fold z-scored PCA               0.1372  0.1346  0.1368      0.3218
+```
+
+The fold z-scored whitened option is the most useful Gaussian-prior target
+space so far: it improves the known-eye and hidden-eye feature readout relative
+to the first global PCA baseline while retaining normalized coordinates for
+`z ~ N(0, I)`. The unwhitened z-scored option is a scale diagnostic; it raises
+the hidden score but also raises the zero-eye and stabilized curves. No option
+yet shows moving-response recovery above the 0x stabilized counterfactual in
+this compact-basis linear-Gaussian form. That makes the branch a principled
+next-step diagnostic rather than the main 4C result. The next method step is to
+replace the nuisance-trained hidden-eye decoder with a true joint
+optimization/posterior over `(z, tau)`.
+
+The nonlinear upper-bound pass changes that conclusion for the information
+question. A Tejas-style ReLU MLP decoder was added to the same runner and fit
+only on held-out-source-safe training folds. It uses the preferred
+`fold_zscore_whitened_pca` target, the same 20D compact response basis, and
+maps compact response movies directly to `z`. The full-cache artifact is:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+continuous_feature_embedding_mlp_hammer/continuous_feature_embedding_reconstruction_manifest.json
+```
+
+All-scale MLP feature cosine:
+
+```text
+known eye:              0.2329
+hidden eye tau-nuisance: 0.3482
+zero-eye model:         0.1824
+0x stabilized:          0.2819
+```
+
+Paired contrasts:
+
+```text
+hidden - zero-eye model:       +0.1657  CI [+0.1422, +0.1912]
+hidden motion - 0x stabilized: +0.0662  CI [+0.0450, +0.0887]
+known motion - 0x stabilized:  -0.0491  CI [-0.0684, -0.0302]
+```
+
+Scale breakdown for hidden-eye MLP is also above the stabilized counterfactual:
+
+```text
+0.5x: hidden 0.3481 vs 0x 0.2819
+1.0x: hidden 0.3441 vs 0x 0.2819
+2.0x: hidden 0.3523 vs 0x 0.2819
+```
+
+This should be framed as an information upper-bound result, not a downstream
+linear-decodability claim. The odd known-eye < hidden-eye ordering is likely a
+training-set-size effect: the hidden/tau-nuisance bank sees many trajectory
+draws per candidate and acts as data augmentation, while the known-eye bank has
+one measured-trajectory response per candidate. The important result is that a
+strong nonlinear decoder can extract feature information from moving compact
+responses above both the zero-eye model and the stabilized counterfactual.
+
+A hybrid continuous-tau / nonlinear feature decoder now tests the cleanest
+candidate-free version of that idea. The endpoint is still direct recovery of a
+compact `pyramid_local_field` feature embedding, but the decoder can receive a
+continuous trajectory estimate from the promoted continuous-joint model:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+continuous_tau_mlp_feature_decoder_augmented/
+continuous_tau_mlp_feature_decoder_manifest.json
+```
+
+This runner trains augmented modes on source-disjoint response-bank rows
+`(prior response, trajectory) -> phi(source image)` and tests on held-out
+observed responses. The MLP decoder is still the upper-bound readout, not a
+downstream linear decoder. All-scale feature cosine:
+
+```text
+augmented compact-only hidden readout: 0.3695
+augmented continuous tau_hat readout:  0.3140
+augmented true-tau readout:            0.3521
+augmented 0x stabilized readout:       0.3243
+augmented known-eye readout:           0.3196
+```
+
+Paired contrasts:
+
+```text
+augmented compact-only - augmented 0x: +0.0452  CI [+0.0292, +0.0618]
+continuous tau_hat - augmented 0x:     -0.0104  CI [-0.0307, +0.0084]
+true tau - augmented 0x:               +0.0278  CI [+0.0095, +0.0466]
+```
+
+So the current best candidate-free upper-bound is not "estimated tau features
+beat static." It is: with a strong nonlinear decoder, the nuisance-augmented
+moving-response representation recovers local image features above a fair
+augmented 0x static baseline. The true-tau ceiling beating static says accurate
+trajectory conditioning can help, but the recovered continuous `tau_hat` is not
+yet good enough, in this simple concatenated representation, to beat the fair
+static MLP baseline.
+
+A separate representation diagnostic now answers a cleaner oracle question:
+does the V1 twin represent local image features better with measured motion
+than with the 0x stabilized counterfactual? At the 1x scale, matched
+feature-posterior rows give `0.6678` for `zero_static`, `0.8721` for hidden-eye
+`full_exact`, and `0.9358` for `known_eye`. Thus the known-eye 1x response is
+well above the stabilized counterfactual (`+0.2680` feature cosine), while the
+hidden-eye joint observer preserves most of that gain (`+0.2043`). This
+diagnostic supports a representation claim; the promoted no-start observer
+still supports the harder latent-eye recovery claim.
+
+The clean separation is:
+
+```text
+known_eye - zero_static:
+  oracle representation gain from measured motion over the stabilized
+  counterfactual.
+
+full_exact - zero_static:
+  how much of that gain survives when eye position is hidden and inferred /
+  marginalized by the joint observer.
+
+compact_only / compact_removed:
+  whether compact/shared response geometry is sufficient for, and important to,
+  that recovery.
+```
+
+A completed along-versus-across check keeps the axis claim bounded. Re-scoring
+the promoted strict no-start joint estimator by `axis_edge_parallel` versus
+`axis_edge_orthogonal` gives an all-scale paired feature-cosine contrast of
+only `+0.0011` along-minus-across, with confidence intervals crossing zero at
+every scale. At 1x, along is `0.9407` and across is `0.9366`, with identical
+hard image accuracy (`0.7031`). Therefore the Figure 4D along-contour readout
+should remain a matched-static axis-prior result, not a property automatically
+inherited by this continuous joint estimator.
+
+Known-eye is included in that diagnostic as a ceiling/control, but it is not an
+axis-prior test. Once the true measured eye trace is supplied, the
+`axis_edge_parallel` versus `axis_edge_orthogonal` label does not change the
+observer, so the paired axis contrast is exactly zero. Zero-eye is also
+identical across axis labels for the same reason.
+
+The practical difference is the inference problem being solved. The older
+matched-static feature-posterior setup holds the candidate family to
+matched-static response alternatives, injects an axis-conditioned trajectory
+prior, and asks whether the posterior improves local pyramid feature recovery
+relative to zero-eye in `-MSE`. The promoted strict continuous estimator uses
+the hard-negative continuous-joint cache, has to infer the latent trace without
+a start anchor, and is scored by posterior-weighted feature cosine and hard
+image identity. This makes the newer analysis a stricter inheritance check,
+not a re-run of the same 4D observer.
 
 ## Motivation
 
@@ -75,6 +292,7 @@ tau: candidate eye trajectory
 y = f_theta(I, tau): V1-twin response movie
 p(tau): trajectory prior
 p(I): image prior over the candidate set
+phi(I), z: compact feature embedding of image/window I
 ```
 
 The exact table stores:
@@ -110,11 +328,36 @@ p(I, tau | y_obs) proportional to p(y_obs | I, tau) p(tau) p(I)
 p(I | y_obs) = sum_tau p(I, tau | y_obs)
 ```
 
+Note the scope of the word *joint* here. This is marginalization over a finite,
+fixed catalog of trajectories, not inference of a continuous eye position. There
+is no trajectory estimate and no recursive state: `sum_tau` runs over a discrete
+prior list, so the observer integrates over candidate trajectories rather than
+recovering one. The load-bearing assumption is therefore A1, catalog coverage —
+the rescue can be no better than the best-covering catalog entry, and a sparse
+or mismatched catalog biases joint-eye downward. A continuous trajectory decoder
+(see "Tractable Continuous Trajectory Inference" below) removes that ceiling, at
+the cost of a motion model and a local-linearity assumption.
+
 The older observer outcome is image-identification accuracy over candidate
 sets, with posterior concentration diagnostics such as `N_eff / K` used as
 guardrails. The current promoted 4C outcome is feature-posterior recovery,
 reported as cosine similarity between recovered and target local feature
 vectors.
+
+The continuous feature-embedding branch changes the endpoint contract:
+
+```text
+candidate-posterior feature estimate:
+  phi_hat = sum_I p(I | y_obs) phi(I)
+
+continuous feature embedding estimate:
+  z_hat = E[z | y_obs] under p(y_obs | z, tau) p(z) p(tau)
+```
+
+The implemented first pass uses a linear-Gaussian `p(y | z)` readout and treats
+trajectory as nuisance variation in the hidden-eye training bank. It is
+therefore continuous in `z`, but it is not yet the full joint `(z, tau)`
+optimizer described by the ideal contract.
 
 For the compact-subspace intervention, the contract is:
 
@@ -346,6 +589,77 @@ This is the analysis that directly matches the panel title: compact-only
 retains much of full joint feature recovery, while compact removal falls toward
 or below the zero-eye curve.
 
+### Diagnostic Figure Pack Added 2026-06-23
+
+A cache-only diagnostic figure pack now checks the promoted feature-posterior
+endpoint against the older image-identity joint observer and compact-intervention
+QC. This is a checking artifact, not a replacement promotion candidate.
+
+Builder:
+
+```text
+declan/figure4_active_sensing_atlas/scripts/build_panel_c_joint_decoder_checks.py
+```
+
+Outputs:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+  panel_C_joint_decoder_check_sheet.png
+  panel_C_joint_decoder_check_sheet.pdf
+  panel_C_joint_decoder_axis_detail.png
+  panel_C_joint_decoder_axis_detail.pdf
+  panel_C_joint_decoder_feature_summary.csv
+  panel_C_joint_decoder_contrasts.csv
+  panel_C_joint_decoder_observer_accuracy.csv
+  panel_C_joint_decoder_feature_rows.csv
+  panel_C_joint_decoder_checks_README.md
+```
+
+The check sheet has six panels:
+
+```text
+A. promoted feature endpoint:
+   zero-eye, compact-removed, compact-only, full-joint, and known-eye curves.
+
+B. paired feature-cosine contrasts:
+   compact-only minus compact-removed, full-joint minus compact-removed, and
+   compact-removed minus zero-eye with bootstrap intervals.
+
+C. posterior concentration:
+   median N_eff / K for the same response variants.
+
+D. addback and clipping QC:
+   compact-addback equals full-joint to numerical precision, while clipping is
+   mainly a compact-removed issue at larger scale.
+
+E. older image-identity observer:
+   matched-static known-eye / zero-eye / joint-eye accuracy, included to verify
+   that the historical observer result has the same qualitative zero-to-joint
+   rescue.
+
+F. axis-prior detail:
+   split values for the two axis-conditioned compact-source priors.
+```
+
+The diagnostic read is consistent with the promoted claim. Averaged over the
+two axis priors, feature recovery is:
+
+```text
+                 0.5x    1.0x    2.0x
+zero-eye         0.765   0.668   0.576
+compact removed 0.759   0.635   0.537
+compact only    0.850   0.838   0.826
+full joint       0.872   0.872   0.871
+known eye        0.927   0.936   0.949
+```
+
+Thus the visual audit shows the intended ordering: compact-only remains high
+and close to full-joint, compact-removed tracks the zero-eye failure mode and
+falls below zero-eye at larger scales, and known-eye remains the ceiling.
+Compact-addback reconstructs full-joint with maximum raw addback error
+`3.5e-18`, so the intervention algebra is behaving as intended.
+
 Historical observer source:
 
 ```text
@@ -531,6 +845,8 @@ joint-eye wins by static response strength rather than motion-aware inference;
 the scale effect is only zero-eye failure;
 the posterior collapses to a meaningless or trivial trajectory;
 the prior catalog leaks the observed trace;
+the trajectory catalog is too sparse to cover tau*, capping joint-eye and
+  mimicking a compact-removed collapse;
 candidate hardness or source imbalance drives the effect;
 compact-mechanism projections are overread as unique mechanisms;
 static PCs explain comparable useful structure and are not cleanly beaten.
@@ -547,6 +863,9 @@ Use compact projection as importance/sufficiency evidence, not a
 unique-mechanism proof over static PCs.
 Mention that static-PC controls are nearly matched whenever the compact
 mechanism is interpreted.
+Check catalog coverage (e.g. distance from tau* to its nearest catalog entry in
+response space); cross-check joint-eye against the continuous Kalman observer so
+a compact-removed collapse is confirmed real rather than catalog under-coverage.
 ```
 
 ## Current Claim Boundary
@@ -588,6 +907,365 @@ manifold for explaining FEM-linked covariance.
 The compact translation subspace should be presented as a dedicated
 eye-movement-only code.
 ```
+
+## Tractable Continuous Trajectory Inference (Beyond the Catalog)
+
+Status update: this section started as the design for a continuous alternative
+to catalog marginalization. A cache-only version has now been implemented and
+promoted as the no-anchor feature-recovery readout. The current promoted
+artifact uses:
+
+```text
+observer: noanchor_quadratic_strict_scale_prior_predeclared
+basis dims by scale: 0.5:10, 1.0:20, 2.0:20
+ridge by scale:      0.5:0.01, 1.0:0.1, 2.0:0.1
+posterior temp:      0.5:0.125, 1.0:0.125, 2.0:0.5
+trajectory prior:    0.5x AR(1), 1.0x AR(1), 2.0x matched-Brownian scale 8
+heldout feature cosine: 0.9371
+emitted feature cosine: 0.9378
+image accuracy:      0.7083
+```
+
+The run is reproducible via:
+
+```text
+MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python -m declan.figure4_active_sensing_atlas.scripts.run_panel_c_promoted_continuous_joint_observer
+MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python -m declan.figure4_active_sensing_atlas.scripts.verify_panel_c_promoted_continuous_joint_observer --expect-full
+MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python -m declan.figure4_active_sensing_atlas.scripts.audit_panel_c_continuous_joint_feature_calibration
+```
+
+The audit command is the reusable gate for future encoder candidates: it
+selects posterior temperatures on one trial split and evaluates
+posterior-weighted feature cosine on the heldout split. A replacement encoder
+should beat this heldout feature-recovery gate, not merely improve hard image
+accuracy.
+
+The metric policy is now explicit: use heldout posterior-weighted feature
+cosine as the primary development task, and report exact image identity as the
+harder MAP readout. This avoids over-penalizing near-miss posteriors whose
+feature estimate is already moving toward the true candidate. The current
+decision artifact is:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/continuous_joint/continuous_joint_candidate_decision_table.csv
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/continuous_joint/continuous_joint_candidate_decision_table.png
+```
+
+It promotes the strict inferred-start scale-prior observer as the no-start
+endpoint (`0.9371` heldout feature cosine, `0.7083` image accuracy), treats
+known-start as a less-strict candidate (`0.9361` for AR(1), `0.9367` for the
+scale-prior hybrid), marks the
+matched-Brownian known-start prior as a smoke-positive but full-cache-blocked
+diagnostic (`0.9360`, `0.6992`), records a scale-specific AR(1)/Brownian prior
+hybrid as the current predeclared less-strict feature lead (`0.9367`, `0.7070`), and keeps
+affine x1000 diagnostic-only despite
+its higher cosine (`0.9374`) because its gain is intercept-dependent and its
+image accuracy falls (`0.6927`).
+
+The matched-Brownian prior path is now implemented correctly for the quadratic
+profile objective: the 2x2 covariance estimated from heldout trajectory samples
+is used in the final optimized trajectory energy, not only in the linear start.
+The smoke64 covariance-scale sweep peaks at scale 8 (`0.9688` feature cosine,
+`0.8281` image accuracy), but the full-cache scale-8 gate lands just below
+known-start AR(1) (`0.9360` vs `0.9361`) and lowers image identity. Treat it as
+a useful prior diagnostic, not a promotion.
+
+The scale-specific prior hybrid keeps AR(1) at 0.5x/1.0x and uses Brownian8
+only at 2.0x, where the full-cache slice audit favors the looser matched
+Brownian prior. This raises the full-cache heldout feature cosine to `0.9367`
+with unchanged image accuracy `0.7070`. The same rule has now been rerun from
+source with predeclared analyzer options and matches the posthoc posterior-row
+hybrid exactly. Treat it as the leading less-strict feature-primary candidate;
+the strict inferred-start observer remains the no-start endpoint.
+
+The stronger result is that the same predeclared scale-specific prior also
+improves the strict inferred-start endpoint itself: heldout feature cosine rises
+from `0.9343` to `0.9371` with image accuracy unchanged at `0.7083`. That strict
+source rerun is now the promoted no-start result.
+
+A new diagnostic lead now exists for the identified `2.0x` parallel bottleneck:
+`quadratic_affine_poisson_profile` improves the full-slice heldout feature
+cosine from `0.9066` to `0.9220` against a matched origin-constrained k20
+quadratic control. Treat it as an observation-model lead, not a promotion,
+because the all-scale/axis and offset guardrails below are the fair promotion
+tests.
+
+The first all-scale/axis affine gate blocked promotion: the unguarded affine
+scale-conditioned model improved default feature cosine (`0.9171` vs `0.9108`)
+but fell below the promoted heldout calibrated feature gate (`0.9331` vs
+`0.9343`) and lowered image accuracy (`0.6693` vs `0.7083`). The intercept
+fraction was tiny at 0.5x but grew to roughly one third of the coefficient norm
+in the 2.0x slices, so the follow-up added an explicit intercept-ridge guard.
+
+The guarded affine result is now a principled feature-primary lead, not yet a
+clean replacement. With intercept ridge multiplier `1000`, split-swapped model
+selection chooses `affine_x1000` on both heldout halves and yields heldout
+feature cosine `0.9374`, above the origin-constrained promoted gate `0.9343`.
+The same model lowers hard image accuracy (`0.6927` vs `0.7083`), so the
+interpretation is: the affine offset helps posterior feature recovery, but the
+MAP image-ID endpoint still favors the origin-constrained model. Treat
+`affine_x1000` as the next candidate to stress-test with a causal static-offset
+ablation and a write-lock/promotion pass, not as an automatic promotion.
+
+The first offset guardrail is positive but incomplete. The new
+`continuous_joint_affine_offset_guardrail` diagnostic shows that the x1000
+penalty cuts the largest 2.0x median intercept fractions from roughly
+`0.33-0.39` to `0.14-0.15` while retaining the split-swapped feature lead. This
+argues against the simplest "affine wins only by a huge static offset" failure
+mode, but it is still an intercept-burden check rather than a direct ablation of
+static/candidate offsets.
+
+The direct ablation gate is now complete. The analyzer accepts
+`--quadratic-affine-intercept-scale 0`, which fits the same affine maps but
+zeros the intercept contribution during trajectory profiling and Poisson
+scoring. On the full cache, normal x1000 beats the intercept-ablated x1000
+control in heldout feature cosine (`0.9374` vs `0.9184`), posterior true mass
+(`0.5772` vs `0.5412`), and image accuracy (`0.6927` vs `0.6380`). The ablated
+control also falls below the origin-constrained promoted observer
+(`0.9343` feature cosine, `0.7083` image accuracy). Interpretation: the affine
+feature lead is intercept-dependent. This is useful as a diagnostic, but it
+blocks promotion unless the intercept can be justified as legitimate
+motion-conditioned structure rather than static/candidate offset leakage.
+
+I also tested a more constrained version of that idea:
+`quadratic_prior_mean_poisson_profile`. It fits deviations around the
+heldout-safe trajectory-prior mean and uses the implied prior-mean offset rather
+than a freely fit intercept. On a matched 64-table smoke, it improves over
+intercept removal (`0.9551` vs `0.9402` heldout feature cosine) but remains
+below both origin (`0.9637`) and free affine x1000 (`0.9591`). That makes
+prior-mean centering a useful negative control, not the next full-cache
+candidate.
+
+The strongest clean candidate is instead known-start quadratic inference. This
+keeps the origin-constrained scale-conditioned quadratic observation model but
+adds a soft prior on the first measured eye-position sample. Full-cache
+heldout feature cosine improves from `0.9343` to `0.9361`, posterior true mass
+from `0.5990` to `0.6029`, and image accuracy is essentially unchanged
+(`0.7083` to `0.7070`). A split-swapped selector restricted to inferred-start
+vs known-start chooses known-start on both halves. Because this uses the first
+eye sample, it should be framed as a less strict no-anchor endpoint, but it is
+a principled trajectory-prior improvement rather than a response-offset
+shortcut.
+
+The calibrated known-start production artifact is:
+
+```text
+continuous_joint_quadratic_poisson_scale_conditioned_knownstart_calibrated_full
+```
+
+Using the promoted fixed scale-temperature schedule, that artifact reaches
+emitted feature cosine `0.9374`. The stricter model-selection number remains
+`0.9361`, because it is selected and evaluated split-swapped.
+
+Candidate verifier and manifest:
+
+```text
+declan.figure4_active_sensing_atlas.scripts.verify_panel_c_knownstart_continuous_joint_observer --expect-full
+continuous_joint_knownstart_observer_manifest.json
+```
+
+The rest of this section explains why that observer class was the tractable
+move, and which assumptions still bound it.
+
+The catalog observer marginalizes over a fixed list of trajectories; it never
+infers a continuous eye path, and it is ceilinged by catalog coverage (A1). A
+continuous joint observer removes that ceiling, and there is a tractable way to
+do it that reuses machinery we already have rather than reaching for a full
+particle filter.
+
+The Figure 4 geometry gives a first-order model of the reafferent response: to
+first order the motion-induced response is linear in displacement,
+
+```text
+y(t) ≈ lambda_zero(I, t) + J(I) tau(t),      J(I) ≈ U_trans A(I)
+```
+
+Projecting the observed response into the compact (or static-PC) coordinates
+removes the static part and linearizes the problem in displacement:
+
+```text
+z(t) = U^T [ y_obs(t) - lambda_zero(I, t) ] ≈ A(I) tau(t) + eps(t)
+```
+
+with `eps(t)` the whitened residual/readout noise in those coordinates. Put a
+confined-motion state model on the trajectory (OU / AR(1)):
+
+```text
+tau(t) = alpha tau(t-1) + eta(t),   eta ~ N(0, Q)
+```
+
+Then `(tau(t), z(t))` is a linear-Gaussian state-space model, and for each
+candidate image the trajectory is marginalized analytically and continuously by
+a Kalman filter/smoother — no catalog. The per-image evidence is the Kalman
+innovation likelihood,
+
+```text
+log p(y_obs | I) = sum_t log N( z_t ; A(I) tau_hat_{t|t-1}, S_t )
+```
+
+and identity/feature recovery uses `argmax_I p(y_obs | I) p(I)` exactly as now.
+The known/zero/joint triple maps without a catalog: known-eye clamps
+`tau = tau*`, zero-eye clamps `tau = 0` on the moving input, joint-eye runs the
+Kalman marginalization.
+
+Why this is the right tractable choice:
+
+```text
+- continuous: marginalizes the OU trajectory prior in closed form; no coverage
+  ceiling.
+- cheap: closed-form per timestep; no particle population, no dense catalog.
+- reuses existing machinery: A(I) is the finite-difference twin Jacobian J(I)
+  already built and provenance-audited for Figure 4.
+- yields tau_hat: the smoother returns a continuous trajectory estimate, so you
+  can finally report trajectory-recovery error vs drift (the Wu Fig 3b/d
+  attribution: is the rescue from better eye inference or a better signal?),
+  which the catalog observer could not give cleanly.
+```
+
+Validity domain and the honest caveats:
+
+```text
+- linearization regime: z ≈ A(I) tau holds for small (subpixel / sub-RF)
+  displacements. Beyond that A(I) is displacement-dependent and the linear-
+  Gaussian model breaks. Report the linearization residual vs displacement and
+  restrict claims to where it is small (the same subpixel boundary as the
+  rendering / LogMAR ceiling).
+- larger excursions: relinearize J(I, tau_t) along the trajectory each step
+  (iterated EKF / UKF). Still essentially closed-form, still no catalog.
+- non-linear fallback: if the regime is genuinely non-linear (foveal sweeps
+  across many RFs), use a small particle filter (Wu used N=10) conditioned per
+  candidate image. Still cheaper than a catalog dense enough to cover trajectory
+  space, because it samples where the posterior mass is.
+- basis: run U as compact AND as static-PC (symmetric), since compact is not
+  unique over the static manifold; the basis swap is the mechanism test, not a
+  fixed choice.
+- noise: use the full or low-rank residual covariance for eps, not diagonal, for
+  commensurability with the covariance-aware analyses.
+```
+
+How it sits next to the catalog. Catalog and Kalman are complementary, and
+reporting both is the rigorous move: the catalog is assumption-light on the
+motion model (no OU / linearity assumption) and auditable but coverage-ceilinged;
+the Kalman observer is assumption-heavier (OU prior plus local linearity) but
+continuous and ceiling-free. If they agree, the catalog was not coverage-limited;
+if the Kalman observer exceeds the catalog, the catalog was under-covering. That
+directly tests A1 rather than asserting it.
+
+This is still an image-candidate-discrete, trajectory-continuous observer — the
+feature/identity endpoint is unchanged. Full continuous image recovery is the
+separate Wu-style reconstruction below.
+
+## Optional Extension: Wu-style Pixel Reconstruction with a Natural-Image Prior
+
+This is a forward-looking alternative observer, not a current 4C result. It is
+recorded here because, if pursued, it belongs in the 4C set rather than 4B: it
+is a latent-eye joint image-and-eye observer scored by recovery quality, which
+is what 4C already is. It should not replace the current feature-posterior
+compact-removal endpoint.
+
+### Why it lands in 4C and not 4B
+
+4B's defining property is a held-out information lower bound: a bits axis. A
+learned image prior injects information about natural images that did not come
+from the response, so the moment a prior enters the loop the score stops being
+"information recoverable from the twin response" and becomes "reconstruction
+quality under a prior." That contaminates 4B's quantity. 4C is already a
+recovery-quality panel (feature cosine / neg-MSE), and its observer is already
+latent-eye and joint, so a prior-regularized reconstruction is a richer member
+of the same family, not a different claim. The phase motivation that prompts
+this — the pyramid target discards within-block phase, and cross-band phase
+alignment under a linear decoder — is a reconstruction question, and
+reconstruction is 4C territory.
+
+### What it is
+
+Following Wu et al., the target is the image in pixel space, and the prior
+`p(I)` is a denoiser-implicit natural-image prior: the same prior object that
+underlies diffusion / score-based models, but run as a MAP denoiser inside a
+Plug-and-Play / half-quadratic-splitting loop, not necessarily as a full
+stochastic sampling chain. The joint observer (Wu's joint-LNBRC-dCNN) alternates
+an image-update step against an eye-trajectory update — EM with a particle
+filter over the trajectory — recovering image and eye path together when pose is
+latent.
+
+The property that matters for us: the prior, not the data, regularizes the
+high-dimensional pixel estimate. This is the direct answer to the dimensionality
+blowup that made finer pooling or plain pixel reconstruction unworkable as a 4B
+target (a roughly 100,000-dimensional target on 384 images). With the prior
+carrying the image-statistics burden, the pixel estimate is tractable on limited
+data, and phase is preserved because nothing is pooled away.
+
+### What transfers from the existing 4C contracts
+
+The observer triple maps one-to-one onto Wu's conditions:
+
+```text
+Wu known-LNBRC-dCNN  <->  known-eye observer (true trajectory supplied)
+Wu zero-LNBRC-dCNN   <->  zero-eye observer (assume no motion)
+Wu joint-LNBRC-dCNN  <->  joint-eye observer (marginalize / infer trajectory)
+```
+
+One caveat on this mapping: Wu's joint-LNBRC-dCNN *infers* a continuous
+trajectory (EM plus a particle filter), whereas the current 4C joint-eye
+observer *marginalizes a fixed catalog*. So moving to Wu-style reconstruction is
+a change of observer class — catalog-marginalization to continuous trajectory
+inference — not merely adding a prior to the same observer. The Tractable
+Continuous Trajectory Inference section above is the lighter way to make that
+same change of class without the pixel prior; the Wu route adds the pixel target
+and the natural-image prior on top of it.
+
+The compact-subspace intervention composes with reconstruction: run it with
+`compact_only`, `compact_removed`, and `compact_addback` response components and
+ask whether reconstruction quality follows the same pattern as the feature
+endpoint (compact-only near full, compact-removed toward zero-eye). So the
+mechanism test survives in reconstruction form. Given the static-PC results, it
+inherits the same control: any compact reconstruction benefit must be matched
+against a static-PC version of the same intervention, because compact is largely
+shared with the static image-response manifold and is not unique over it.
+
+### What does not transfer (the boundaries)
+
+```text
+metric:        reconstruction quality (MS-SSIM / LPIPS / feature distance),
+               NOT bits. This is a legibility/recovery claim, not an
+               information-content claim about the twin response.
+forward model: Wu inverts an explicit spike likelihood p(s|y); the twin emits
+               deterministic rate maps, so the observation model p(y_obs|I,tau)
+               must be defined on the twin's rates (Gaussian readout), and
+               inversion runs through the twin rather than a fitted GLM.
+prior leak:    a prior trained on natural images partly supplies the image
+               information the active-sensing question is about. Acceptable for
+               a reconstruction-quality framing; not acceptable if the result
+               is then read back as an encoding/information claim.
+compact:       a compact-aware reconstruction prior inherits the static-PC
+               specificity caveat and must be controlled against a
+               static-PC-aware prior, not just random/shuffle nulls.
+```
+
+The single load-bearing boundary: with a prior in the loop you are measuring how
+well the scene can be reconstructed, not how much the response carries. Keep the
+bits-axis claim in 4B and report Wu-style reconstruction on its own quality
+axis.
+
+### Decision rule
+
+```text
+If the question stays "how many bits about the image does motion / compact
+structure add to the response":
+  -> keep the feature decoder (4B bits axis; 4C feature-recovery endpoint).
+  -> do NOT add an image prior; it contaminates the bits quantity.
+
+If the question becomes "can the latent-eye scene be reconstructed, phase and
+all, and does motion / compact structure help that reconstruction":
+  -> Wu-style pixel + natural-image prior is the right tool.
+  -> report reconstruction quality, not bits.
+  -> this is the natural bridge to the compact-aware joint-prior arc
+     (candidate second paper), and carries the same static-PC control.
+```
+
+Treat this as a separate-axis companion to 4C, or as the entry point to the
+joint-prior paper, not as a replacement for the current feature-posterior
+endpoint.
 
 ## Production Rerun Implications
 

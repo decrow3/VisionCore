@@ -90,6 +90,30 @@ def _svd_basis(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return vt.T, singular_values
 
 
+def _axis_interleaved_basis(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Build a basis that allocates paired components to bx and by tangents."""
+    rows = np.asarray(matrix, dtype=np.float64)
+    if rows.ndim != 2 or rows.shape[0] % 2 != 0:
+        raise ValueError(f"axis-interleaved basis expects paired bx/by rows, got {rows.shape}")
+    bx = rows[0::2]
+    by = rows[1::2]
+    _ux, sx, vtx = np.linalg.svd(bx, full_matrices=False)
+    _uy, sy, vty = np.linalg.svd(by, full_matrices=False)
+    n_pairs = min(vtx.shape[0], vty.shape[0])
+    cols: list[np.ndarray] = []
+    singular_values: list[float] = []
+    for idx in range(n_pairs):
+        cols.append(vtx[idx])
+        singular_values.append(float(sx[idx]))
+        cols.append(vty[idx])
+        singular_values.append(float(sy[idx]))
+    if not cols:
+        raise ValueError("axis-interleaved basis found no singular vectors")
+    raw = np.stack(cols, axis=1)
+    basis, _r = np.linalg.qr(raw)
+    return basis, np.asarray(singular_values, dtype=np.float64)
+
+
 def _variance_fraction(singular_values: np.ndarray, k: int) -> float:
     s2 = np.asarray(singular_values, dtype=np.float64) ** 2
     total = float(np.sum(s2))
@@ -121,15 +145,22 @@ def build(args: argparse.Namespace) -> Path:
         seed=int(args.seed),
         split_by=str(args.split_by),
     )
+    construction = str(args.basis_construction)
+    if construction not in {"pooled_svd", "axis_interleaved_svd"}:
+        raise ValueError("basis_construction must be 'pooled_svd' or 'axis_interleaved_svd'")
     if str(args.centering) == "centered_across_tangents_per_unit":
         basis_matrix = matrix - matrix.mean(axis=0, keepdims=True)
     elif str(args.centering) == "uncentered":
         basis_matrix = matrix
     else:
         raise ValueError("centering must be 'centered_across_tangents_per_unit' or 'uncentered'")
-    basis, singular_values = _svd_basis(basis_matrix)
+    if construction == "axis_interleaved_svd":
+        basis, singular_values = _axis_interleaved_basis(basis_matrix)
+    else:
+        basis, singular_values = _svd_basis(basis_matrix)
     key = _delta_key(delta)
-    basis_path = out_dir / f"image_disjoint_compact_basis_delta{key}_fold{heldout_fold}of{n_folds}.npz"
+    suffix = "" if construction == "pooled_svd" else f"_{construction}"
+    basis_path = out_dir / f"image_disjoint_compact_basis_delta{key}_fold{heldout_fold}of{n_folds}{suffix}.npz"
     np.savez(
         basis_path,
         basis=basis,
@@ -139,7 +170,7 @@ def build(args: argparse.Namespace) -> Path:
         basis_provenance=np.asarray(
             [
                 f"image_disjoint {args.split_by} heldout_fold={heldout_fold} n_folds={n_folds} "
-                f"seed={int(args.seed)} centering={args.centering}"
+                f"seed={int(args.seed)} centering={args.centering} basis_construction={construction}"
             ]
         ),
         source_tangent_maps=np.asarray([str(tfts_root / "tangent_maps" / "twin_tangent_maps.pkl")]),
@@ -147,7 +178,10 @@ def build(args: argparse.Namespace) -> Path:
         heldout_fold=np.asarray([heldout_fold], dtype=np.int32),
         n_folds=np.asarray([n_folds], dtype=np.int32),
     )
-    pd.DataFrame(kept).to_csv(out_dir / f"image_disjoint_compact_basis_delta{key}_fold{heldout_fold}of{n_folds}_objects.csv", index=False)
+    pd.DataFrame(kept).to_csv(
+        out_dir / f"image_disjoint_compact_basis_delta{key}_fold{heldout_fold}of{n_folds}{suffix}_objects.csv",
+        index=False,
+    )
     manifest = {
         "basis_path": str(basis_path),
         "source_tfts_root": str(tfts_root),
@@ -159,6 +193,7 @@ def build(args: argparse.Namespace) -> Path:
         "heldout_fold": heldout_fold,
         "seed": int(args.seed),
         "centering": str(args.centering),
+        "basis_construction": construction,
         "matrix_shape": [int(v) for v in matrix.shape],
         "basis_shape": [int(v) for v in basis.shape],
         "n_train_objects": int(len(kept)),
@@ -168,7 +203,7 @@ def build(args: argparse.Namespace) -> Path:
             for k in [2, 5, 10, 20, 50, 100, min(126, singular_values.size)]
         },
     }
-    (out_dir / f"image_disjoint_compact_basis_delta{key}_fold{heldout_fold}of{n_folds}_manifest.json").write_text(
+    (out_dir / f"image_disjoint_compact_basis_delta{key}_fold{heldout_fold}of{n_folds}{suffix}_manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
@@ -187,6 +222,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--split-by", choices=["image_id", "object_id"], default="image_id")
     parser.add_argument("--centering", choices=["centered_across_tangents_per_unit", "uncentered"], default="centered_across_tangents_per_unit")
+    parser.add_argument(
+        "--basis-construction",
+        choices=["pooled_svd", "axis_interleaved_svd"],
+        default="pooled_svd",
+        help="pooled_svd preserves the historical pooled-energy basis; axis_interleaved_svd allocates paired bx/by modes.",
+    )
     parser.add_argument("--quiet", action="store_true")
     return parser
 

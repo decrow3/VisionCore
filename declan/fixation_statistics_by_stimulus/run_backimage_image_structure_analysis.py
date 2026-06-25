@@ -41,6 +41,12 @@ IMAGE_FEATURES = (
     "image_power_2_4_cpd_fraction",
     "image_power_4_8_cpd_fraction",
     "image_power_8plus_cpd_fraction",
+    "image_power_slope_0p5_16_cpd",
+    "image_amplitude_slope_0p5_16_cpd",
+    "image_power_slope_deviation_from_1f",
+    "image_amplitude_slope_deviation_from_1f",
+    "image_abs_power_slope_deviation_from_1f",
+    "image_abs_amplitude_slope_deviation_from_1f",
 )
 TARGETS = (
     "rms_radius_deg",

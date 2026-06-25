@@ -32,7 +32,8 @@ Current best compressed story:
 ```text
 A: FEMs convert a fixed screen image into a retinal movie.
 B: Empirical drift-like movies produce feature-relevant response changes.
-C: A joint image-and-eye observer recovers information lost by ignoring motion.
+C: A joint image-and-eye observer preserves image-feature information when
+   eye position is latent.
 D: Local image geometry defines useful motion axes, with guardrails.
 E: Measured free-viewing FEM axes align with local image geometry.
 ```
@@ -136,18 +137,18 @@ scales. OU is no longer promoted here: its absolute gain falls below static,
 which is a trace-generation or analysis audit trigger rather than a clean
 negative-control result.
 
-Current selected 4B additionally shows a pose-unaware empirical hidden-sample
-proxy. The known-eye empirical trace is positive at larger scales, while the
-pose-unaware proxy sits below static, making the pose-known assumption explicit
-rather than hiding it in the methods.
+Current 4B implementation promotes a recomputed information axis: diagonal
+Gaussian decoder lower-bound gain in bits over stabilized/static. The
+pose-unaware hidden-sample proxy remains archive/QC context until it has the
+same residual-covariance recompute.
 ```
 
 Caveats and flags:
 
 ```text
-F003: the plotted endpoint is a deterministic feature-decoding proxy in -MSE
-units. Do not call it literal mutual information unless a noise/logdet model is
-added.
+F003: the promoted plotted endpoint is a decoder-information increment in bits,
+not an absolute mutual-information estimate. The old -MSE endpoint is archived
+as QC/provenance.
 
 F004: empirical specificity is not uniform across all generic-motion controls.
 The empirical-minus-Brownian contrast is strong at 0.25x (+10.52) and 0.5x
@@ -163,10 +164,19 @@ headline. The main B claim is distributional over image/trace families.
 Result:
 
 ```text
-The exact finite trajectory-table observer shows the expected ordering:
-known-eye is highest, zero-eye drops when motion matters, and joint-eye
-inference recovers much of the lost image identity by marginalizing over
-plausible trajectories. In the matched-static-response condition at 1.0x:
+The promoted continuous no-anchor joint observer should be read first through
+posterior feature recovery rather than exact image identity. In the full
+scale-prior run, the posterior expected feature vector reaches mean cosine
+0.9378 to the true image feature, while exact image accuracy is 0.7083. The
+split-heldout promotion gate is 0.9371. The scale-conditioned analyzer
+temperatures are 0.125 at 0.5x, 0.125 at 1.0x, and 0.5 at 2.0x; the trajectory
+prior is AR(1) at 0.5x/1.0x and matched-Brownian scale 8 at 2.0x.
+
+The older exact finite trajectory-table observer remains useful as a context
+and stress-test result: known-eye is highest, zero-eye drops when motion
+matters, and joint-eye inference recovers much of the lost image identity by
+marginalizing over plausible trajectories. In the matched-static-response
+condition at 1.0x:
 
 known-eye = 1.000
 zero-eye = 0.328
@@ -180,10 +190,11 @@ Interpretation:
 This is the conceptual center of the atlas. Module B says the response movie
 contains feature structure. Module C asks whether that structure can still be
 used when the observer is not handed the true eye trace. The answer is yes in
-the finite-cache observer: marginalizing over possible trajectories recovers a
-large fraction of the known-eye minus zero-eye gap. The matched-static
-distractor condition is especially important because it reduces the chance
-that the observer is winning from trivial static-response differences.
+the promoted continuous observer under the feature-recovery readout: the joint
+posterior can preserve much of the true image-feature direction even when exact
+catalog identity remains a stricter and more brittle endpoint. The finite-cache
+matched-static distractor condition is still important because it reduces the
+chance that the observer is winning from trivial static-response differences.
 ```
 
 Posterior interpretation:
@@ -211,7 +222,9 @@ Caveats and flags:
 
 ```text
 F011: C subpanels are generated but not integrated into the final Figure 4
-style. The observer is exact-cache and finite-candidate scoped.
+style. The promoted continuous observer has a verified full-cache artifact and
+manifest, but the rendered C contact-sheet panels still mostly reflect the
+older exact finite-cache image-identity observer.
 
 F006: compact geometry should be framed as sufficient evidence, not as a
 unique or necessary mechanism.
@@ -373,7 +386,7 @@ The strongest current main-figure spine is therefore:
 A1/A2/A4: physical premise and canonical pipeline
 B3/B4: known-eye empirical drift adds feature-decodable structure; the
   pose-unaware proxy exposes hidden-eye cost while OU stays audit-only
-C2/C3: joint observer recovers information lost by zero-eye assumptions
+C2/C3: joint observer preserves feature information lost by zero-eye assumptions
 D1/D4: local geometry defines axes; edge-parallel motion preserves structure
 E2/E3: measured free-viewing FEM axes align with local image geometry
 ```
@@ -537,8 +550,9 @@ above static V1-twin responses for both Gabor and pyramid feature targets.
 
 Use: main.
 
-Boundary: deterministic feature-decoding proxy in `-MSE` units, not literal
-mutual information.
+Boundary: promoted 4B should use the residual-variance decoder information
+increment in bits. Legacy `-MSE` panels are archive/QC context, not the current
+axis.
 
 Flags: `F003`.
 
@@ -594,6 +608,36 @@ Flags: `F005`.
 
 ## Module C: Joint Image-And-Eye Observer
 
+Current promoted readout note:
+
+```text
+For the current continuous no-anchor observer, treat posterior expected
+feature recovery as the primary diagnostic and exact image identity as a hard
+secondary endpoint. This is a feature reconstruction-quality readout, not an
+absolute mutual-information or bits estimate. The verified full strict
+scale-prior artifact gives emitted mean feature cosine 0.9378,
+split-heldout feature gate 0.9371, and exact image accuracy 0.7083.
+Provenance lives in
+figures/panel_C/diagnostics/continuous_joint/continuous_joint_promoted_observer_manifest.json.
+The newest representation diagnostic separates the oracle representation claim
+from the latent-eye recovery claim: at 1x, 0x stabilized feature cosine is
+0.6678, hidden-eye joint motion is 0.8721, and known-eye motion is 0.9358.
+Thus measured motion gives an oracle gain of +0.2680 over the stabilized
+counterfactual, and the hidden-eye joint observer preserves +0.2043 of that
+gain.
+The guarded affine-quadratic lead improves the split-swapped feature gate to
+0.9374, but lowers hard image accuracy to 0.6927, so it remains a
+diagnostic rather than the promoted endpoint. A full-cache
+direct intercept ablation lowers heldout feature cosine to 0.9184, below the
+origin-constrained observer, so the affine feature lead is intercept-dependent
+and not a clean encoder promotion.
+The cleaner known-start candidate is known-start quadratic inference: it improves
+the full-cache heldout feature gate from 0.9343 to 0.9361 with essentially flat
+image accuracy, and improves trajectory correlation, but uses the first
+measured eye-position sample. The calibrated production artifact with the fixed
+scale-temperature schedule reaches emitted feature cosine 0.9374.
+```
+
 ### C1/C2: Observer Schematic And Equations
 
 ![C1 observer schematic](figures/panel_C/C1_observer_schematic.png)
@@ -601,13 +645,16 @@ Flags: `F005`.
 Read:
 
 ```text
-The observer compares known-eye, zero-eye, and joint-eye inference, where the
-joint observer marginalizes over a finite trajectory catalog.
+The observer compares known-eye, zero-eye, and joint-eye inference. In the
+promoted continuous readout, the joint posterior is scored by recovered image
+feature direction first, with exact image identity retained as a stricter
+stress test.
 ```
 
 Use: main setup.
 
-Boundary: schematic/methods bridge.
+Boundary: schematic/methods bridge; rendered schematic still reflects the
+finite-cache lineage.
 
 Flags: `F011`.
 
@@ -619,13 +666,15 @@ Read:
 
 ```text
 Known-eye is the ceiling, zero-eye fails when motion matters, and joint-eye
-recovers substantial image identity across candidate sets.
+recovers substantial signal across candidate sets. For the promoted continuous
+observer, read this as feature recovery first and image identity second.
 ```
 
 Use: main.
 
-Boundary: exact finite cache observer; not a biological decoder claim by
-itself.
+Boundary: exact finite-cache image identity is historical/contextual here; the
+promoted continuous result is the verified feature-posterior artifact, not a
+biological decoder claim by itself.
 
 Flags: `F011`.
 
@@ -637,7 +686,8 @@ Read:
 
 ```text
 In matched-static distractors at 1.0x, joint-eye inference recovers much of
-the known-zero gap even when static responses are matched.
+the known-zero gap even when static responses are matched. This remains the
+best exact-cache stress test supporting the continuous feature-recovery story.
 ```
 
 Key values:
@@ -649,9 +699,10 @@ joint empirical = 0.766
 joint OU = 0.797
 ```
 
-Use: main.
+Use: main context or supplement, depending on whether the continuous
+feature-recovery panel is rendered for the final composite.
 
-Boundary: strongest C result; still exact-cache scoped.
+Boundary: strongest older C image-identity result; still exact-cache scoped.
 
 Flags: `F011`.
 
@@ -663,7 +714,9 @@ Read:
 
 ```text
 The joint observer concentrates over plausible trajectories without needing
-exact trajectory recovery.
+exact trajectory recovery. This supports the softer feature-recovery readout:
+the posterior need not put all mass on one exact image/trace pair to preserve
+the correct feature direction.
 ```
 
 Use: supplement or small inset.
@@ -746,6 +799,28 @@ matched-static, 0.5x, pyramid k8 feature posterior:
 Use: main.
 
 Boundary: matched-static feature-posterior readout; hard negatives remain a guardrail.
+The promoted strict continuous joint estimator weakens this as a cross-panel
+claim: its all-scale along-minus-across feature-cosine contrast is only
+`+0.0011`, with intervals crossing zero. At 1x it is `0.9407` along versus
+`0.9366` across with identical image accuracy (`0.7031`). So D2 remains an
+axis-conditioned matched-static readout, not a guaranteed property of the
+strict no-start joint estimator.
+
+Matched-static versus strict-continuous distinction: D2 uses matched-static
+response candidates and scores joint-minus-zero gain in pyramid feature
+`-MSE`. The promoted 4C diagnostic uses the hard-negative continuous-joint
+cache, a no-start latent trajectory estimator, and posterior feature cosine.
+Thus D2 supports "axis priors can help this matched-static feature decoder,"
+whereas the promoted 4C check asks the harder inheritance question, "does the
+strict continuous observer itself prefer along-contour traces?" That latter
+answer is currently weak/null.
+
+Known-axis guardrail: a direct rotated-trace diagnostic asks the simpler
+question with the trajectory index known. In the same matched-static 0.5x,
+`pyramid_local_field` k8 cache, across-contour feature cosine is `0.8834` and
+along-contour is `0.8758`; along-minus-across is `-0.0076`, CI
+`[-0.0096, -0.0057]`, p `0.0010`. So D2 should not be interpreted as a direct
+known-trace feature-alignment advantage for along-contour motion.
 
 Flags: `F007`.
 
@@ -990,13 +1065,14 @@ F002: Module A subpanels exist, but final composite selection remains open
     Use A1/A2/A4 as the likely main setup; route A5 to supplement unless the
     covariance caveat is made explicit.
 
-F003: aggregate FEM information is a deterministic decoding proxy
+F003: aggregate FEM information uses a decoder lower-bound increment
   Meaning:
-    B3/B4 report feature-decoding gain in -MSE units from deterministic
-    V1-twin responses. They are not literal mutual information.
+    The promoted B3/B4-style recompute reports feature-information gain in bits
+    from held-out residual variances. Legacy B3/B4 report feature-decoding gain
+    in -MSE units and are retained only as archive/QC.
   Handling:
-    Use "feature-decodable structure", "decoding gain", or "information
-    proxy"; avoid unqualified "mutual information".
+    Use "decoder information increment" or "decoder lower-bound gain"; avoid
+    unqualified absolute mutual information.
 
 F004: Brownian/rotated control specificity narrows at larger scales
   Meaning:
@@ -1059,11 +1135,14 @@ F010: final atlas composites are not built yet
 
 F011: C subpanels are generated but not integrated
   Meaning:
-    The joint observer is conceptually central, but it is absent from the old
-    rendered headline figure and still needs final style integration.
+    The joint observer is conceptually central. The verified promoted result is
+    now the continuous no-anchor feature-recovery observer, but the old
+    rendered headline/contact-sheet panels mostly show the finite-cache
+    image-identity lineage and still need final style integration.
   Handling:
-    Promote C2/C3 into the main Figure 4 candidate and route C4-C6 based on
-    space.
+    Promote the continuous feature-recovery readout into the main Figure 4
+    candidate, keep finite-cache image-identity panels as context/guardrails,
+    and route C4-C6 based on space.
 
 F012: E metric convention must be stated explicitly
   Meaning:

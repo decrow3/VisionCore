@@ -1,0 +1,6 @@
+row_type,run_slug,run_label,n_eval,image_accuracy,mean_feature_cosine,mean_true_mass,median_N_eff_fraction,baseline_slug,image_accuracy_ci_low,image_accuracy_ci_high,mean_feature_cosine_ci_low,mean_feature_cosine_ci_high,fraction_feature_delta_positive
+run,scale2_parallel_k15_ridge0p1,"2.0x parallel k=15, ridge 0.1",128,0.59375,0.9045010079155298,0.4096427059796084,0.8184354821210061,,,,,,
+run,scale2_parallel_k10_ridge0p01,"2.0x parallel k=10, ridge 0.01",128,0.578125,0.8992797133753616,0.40203127884729684,0.8357530250979897,,,,,,
+run,scale2_parallel_k20_ridge0p1,"2.0x parallel k=20, ridge 0.1",128,0.6171875,0.9045739105447488,0.41388429639383584,0.8041819373157025,,,,,,
+paired_delta,scale2_parallel_k15_ridge0p1_minus_scale2_parallel_k20_ridge0p1,2.0x parallel k15/r0.1 - scale2_parallel_k20_ridge0p1,128,-0.0234375,-7.29026292189041e-05,,,scale2_parallel_k20_ridge0p1,-0.0859375,0.0390625,-0.0038553400913620656,0.003912655807425489,0.4609375
+paired_delta,scale2_parallel_k15_ridge0p1_minus_scale2_parallel_k10_ridge0p01,2.0x parallel k15/r0.1 - scale2_parallel_k10_ridge0p01,128,0.015625,0.005221294540168222,,,scale2_parallel_k10_ridge0p01,-0.0546875,0.0859375,0.0005144992527016219,0.010092312411907507,0.5625

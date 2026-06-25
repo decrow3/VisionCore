@@ -1,0 +1,4 @@
+row_type,split_key,calibration_mode,prior_scale,prior_family,eval_split,selected_on_split,selected_run_slug,selected_run_label,train_feature_cosine,eval_feature_cosine,eval_image_accuracy,eval_delta_vs_default,selected_temperature,n_eval
+split,trial_id,scale_specific,all,all,0,1,affine_x1000,Affine intercept ridge x1000,0.9408429612864871,0.9339473538258436,0.6927083333333334,0.01635475009203191,"0.5:0.25,1.0:0.25,2.0:0.25",384
+split,trial_id,scale_specific,all,all,1,0,affine_x1000,Affine intercept ridge x1000,0.9339473538258436,0.9408429612864871,0.6927083333333334,0.023040922930765245,"0.5:0.25,1.0:0.25,2.0:0.5",384
+aggregate,trial_id,scale_specific,all,all,-1,-1,affine_x1000;affine_x1000,Affine intercept ridge x1000;Affine intercept ridge x1000,0.9373951575561653,0.9373951575561653,0.6927083333333334,0.019697836511398576,"0.5:0.25,1.0:0.25,2.0:0.25;0.5:0.25,1.0:0.25,2.0:0.5",768

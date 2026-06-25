@@ -1,0 +1,6 @@
+row_type,run_slug,run_label,n_eval,image_accuracy,mean_feature_cosine,mean_true_mass,median_N_eff_fraction,baseline_slug,image_accuracy_ci_low,image_accuracy_ci_high,mean_feature_cosine_ci_low,mean_feature_cosine_ci_high,fraction_feature_delta_positive
+run,scale1_k15_ridge0p1,"1.0x k=15, ridge 0.1",256,0.6875,0.9102607880927294,0.4142943712655924,0.8599691879093088,,,,,,
+run,scale1_k10_ridge0p01,"1.0x k=10, ridge 0.01",256,0.671875,0.9095592653592599,0.4133009671408402,0.8668486559740931,,,,,,
+run,scale1_k20_ridge0p1,"1.0x k=20, ridge 0.1",256,0.703125,0.910335603072445,0.4158108222683058,0.8595465892428115,,,,,,
+paired_delta,scale1_k15_ridge0p1_minus_scale1_k20_ridge0p1,1.0x k15/r0.1 - scale1_k20_ridge0p1,256,-0.015625,-7.481497971568128e-05,,,scale1_k20_ridge0p1,-0.04296875,0.01171875,-0.0017765020990105791,0.0016000339087353908,0.48046875
+paired_delta,scale1_k15_ridge0p1_minus_scale1_k10_ridge0p01,1.0x k15/r0.1 - scale1_k10_ridge0p01,256,0.015625,0.0007015227334693586,,,scale1_k10_ridge0p01,-0.0234375,0.0546875,-0.0016087250591680067,0.0030397668528721225,0.51953125

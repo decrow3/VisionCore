@@ -1,0 +1,16 @@
+motion_summary,lhs_family,rhs_family,scale_id,latent,k,incremental_gain_delta_neg_mse,ci95_low,ci95_high,n_images,n_sessions,scale
+temporal_pca,empirical,brownian,rel_0p25x,gabor_local_field,4,10.518701365082784,5.0935578793823,16.165492644793378,256,29,0.25
+temporal_pca,empirical,brownian,rel_0p5x,gabor_local_field,4,7.89068519607263,2.555274070274031,12.79392075956727,256,29,0.5
+temporal_pca,empirical,brownian,rel_1x,gabor_local_field,4,0.5116108585734048,-4.3240255682034325,5.326267074466365,256,29,1.0
+temporal_pca,empirical,brownian,rel_1p5x,gabor_local_field,4,0.1461120884751519,-5.299215632906318,5.232388128194486,256,29,1.5
+temporal_pca,empirical,brownian,rel_2x,gabor_local_field,4,-0.6019755462823874,-7.094743883162713,5.357552709186398,256,29,2.0
+temporal_pca,empirical,ou,rel_0p25x,gabor_local_field,4,21.24393559028812,12.705736825803786,29.868055218768983,256,29,0.25
+temporal_pca,empirical,ou,rel_0p5x,gabor_local_field,4,19.5898834985072,10.928717049284352,30.51688264508199,256,29,0.5
+temporal_pca,empirical,ou,rel_1x,gabor_local_field,4,17.15998676971516,9.74967604748756,25.53019398256037,256,29,1.0
+temporal_pca,empirical,ou,rel_1p5x,gabor_local_field,4,18.6945101235238,12.02849814326972,26.13819414514646,256,29,1.5
+temporal_pca,empirical,ou,rel_2x,gabor_local_field,4,18.0340547829021,11.141022082960866,26.010731044107807,256,29,2.0
+temporal_pca,empirical,rotated,rel_0p25x,gabor_local_field,4,15.265229994118435,5.920968960427569,26.18936068699126,256,29,0.25
+temporal_pca,empirical,rotated,rel_0p5x,gabor_local_field,4,11.209168802599724,3.2845715139962914,19.786681684425343,256,29,0.5
+temporal_pca,empirical,rotated,rel_1x,gabor_local_field,4,5.634436805493354,-1.1315927240216503,13.818624606362334,256,29,1.0
+temporal_pca,empirical,rotated,rel_1p5x,gabor_local_field,4,8.58057678140575,2.7534682959252743,16.25996485457279,256,29,1.5
+temporal_pca,empirical,rotated,rel_2x,gabor_local_field,4,7.549749362647002,1.218735577757159,15.300911215186389,256,29,2.0

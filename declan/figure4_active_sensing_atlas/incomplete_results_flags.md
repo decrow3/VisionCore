@@ -55,13 +55,14 @@ Keep A5 as bridge/supplement unless the covariance denominator caveat is made
 central and explicit.
 ```
 
-### F003: Aggregate FEM Information Is A Decoding Proxy
+### F003: Aggregate FEM Information Axis
 
 Module: B.
 
-The cleaned BackImage aggregate result is strong for deterministic
-static-plus-motion feature-decoding gain, but it is not literal mutual
-information.
+The legacy cleaned BackImage aggregate result used deterministic
+static-plus-motion `-MSE` feature-decoding gain. The promoted 4B recompute now
+uses a Gaussian variational decoder lower-bound increment in bits, computed
+from held-out residual variances over the stabilized/static baseline.
 
 Primary source:
 
@@ -74,9 +75,10 @@ outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
 Current handling:
 
 ```text
-Use "feature-decodable structure", "decoding gain", or "information proxy".
-Avoid unqualified "mutual information" unless a fixed noise/logdet model is
-added.
+Use "feature information gain over stabilized, decoder lower bound" or
+"decoder information increment." Avoid unqualified absolute mutual information:
+H(Phi) cancels in the increment, so the plotted quantity is a lower-bound
+change, not an entropy estimate.
 ```
 
 ### F004: Brownian/Rotated Control Specificity Narrows At Larger Scales
@@ -166,6 +168,29 @@ compact-removed falls toward the zeroed-eye curve, and compact-addback
 reconstructs full joint to numerical tolerance. Keep the broader non-unique
 mechanism caveat: static-PC/non-compact controls still belong in caption or
 supplement before claiming uniqueness.
+```
+
+### F006B: Continuous Feature Embedding Is Diagnostic, Not Promoted
+
+Module: C.
+
+The first continuous feature-embedding reconstruction branch removes finite
+candidate selection at test time, but its compact-basis linear-Gaussian
+readout does not yet beat the stabilized 0x counterfactual.
+
+Primary source:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+  continuous_feature_embedding/
+```
+
+Current handling:
+
+```text
+Use this as the next-method diagnostic. Do not replace the promoted 4C
+candidate-posterior feature endpoint until a true joint `(z, tau)` optimizer or
+posterior improves the moving-vs-stabilized ordering.
 ```
 
 ### F007: Axis Preference Is Candidate-Set And Scale Dependent

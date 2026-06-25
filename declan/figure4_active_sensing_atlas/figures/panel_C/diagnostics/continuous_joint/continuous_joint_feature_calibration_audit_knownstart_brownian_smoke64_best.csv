@@ -1,0 +1,4 @@
+run_slug,run_label,split_key,calibration_mode,n_eval,selected_temperature_by_split,default_mean_feature_cosine,eval_mean_feature_cosine,delta_vs_default,eval_image_accuracy,eval_mean_true_mass,eval_median_N_eff_fraction
+knownstart_ar1_smoke64,Known-start_AR1,trial_id,scale_specific,64,"0.5:0.25,1.0:0.25,2.0:0.25;0.5:0.125,1.0:0.25,2.0:0.25",0.9430011850185269,0.9646941138569276,0.021692928838400703,0.796875,0.619152274623294,0.44390826218221385
+origin_smoke64,Inferred-start,trial_id,scale_specific,64,"0.5:0.125,1.0:0.25,2.0:0.25;0.5:0.125,1.0:0.25,2.0:0.5",0.9424322285852089,0.9636736635188936,0.02124143493368476,0.796875,0.6143667181504789,0.45297954440366295
+knownstart_brownian_smoke64,Known-start_Brownian,trial_id,scale_specific,64,"0.5:0.25,1.0:0.5,2.0:0.25;0.5:0.125,1.0:0.25,2.0:0.125",0.9423494018529139,0.9584539773587083,0.016104575505794413,0.8125,0.6019633638140316,0.4400697585360803

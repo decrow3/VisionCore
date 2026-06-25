@@ -554,6 +554,60 @@ recover similar true-score rescue at k=10/20. Use as sufficiency evidence, not
 unique-mechanism proof.
 ```
 
+## Module C Diagnostic: Continuous Feature Embedding
+
+Code:
+
+```text
+declan/figure4_active_sensing_atlas/scripts/
+  build_panel_c_continuous_feature_embedding_reconstruction.py
+```
+
+Output:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+  continuous_feature_embedding/
+    continuous_feature_embedding_reconstruction_manifest.json
+    continuous_feature_embedding_reconstruction_summary.csv
+    continuous_feature_embedding_reconstruction_contrasts.csv
+    continuous_feature_embedding_reconstruction.png
+```
+
+Run scope:
+
+```text
+response cache = backimage_axis_conditioned_hard_negative_shared_source_gpu1_n128_c4_k16_scales_0p5_1_2_v1
+feature target = 32D whitened PCA of pyramid_local_field
+response target = 20D image-disjoint compact basis, flattened across 40 time bins
+folding = source-row cross-fit
+endpoint = cosine(z_hat, z_true)
+```
+
+Full-cache read:
+
+```text
+known eye feature cosine:               0.1261
+hidden-eye tau-nuisance feature cosine: 0.1036
+zero-eye model on motion:               0.0471
+0x stabilized feature cosine:           0.1860
+
+known - hidden:                         +0.0225
+hidden - zero-eye model:                +0.0565
+known motion - 0x stabilized:           -0.0599
+hidden motion - 0x stabilized:          -0.0824
+```
+
+Boundary:
+
+```text
+This is the first candidate-free continuous feature-embedding branch. It
+supports the feasibility of continuous z inference and shows hidden-eye gain
+over the zero-eye model, but it does not replace the promoted 4C
+candidate-posterior endpoint because the stabilized 0x counterfactual remains
+higher in this compact-basis linear-Gaussian readout.
+```
+
 ## Module D: Axis-Conditioned Observer
 
 Code:
@@ -839,4 +893,147 @@ Model-objective caveat:
 ```text
 The current V1-twin pose-aware/pose-blind/Pareto objectives do not cleanly
 outperform raw edge orientation. Raw image geometry is the baseline to beat.
+```
+
+## 4C Continuous Feature-Embedding Target-Space Sweep
+
+Output:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+  continuous_feature_embedding/
+    continuous_feature_embedding_reconstruction_summary.csv
+    continuous_feature_embedding_reconstruction_contrasts.csv
+    continuous_feature_embedding_reconstruction_manifest.json
+```
+
+Implemented options:
+
+```text
+global_centered_whitened_pca
+fold_centered_whitened_pca
+fold_zscore_whitened_pca
+fold_zscore_pca
+```
+
+All-scale feature cosine:
+
+```text
+feature-space mode              known   hidden  zero-model  0x stabilized
+global centered whitened PCA    0.1261  0.1036  0.0471      0.1860
+fold centered whitened PCA      0.1203  0.0994  0.0567      0.1896
+fold z-scored whitened PCA      0.1505  0.1271  0.0618      0.2330
+fold z-scored PCA               0.1372  0.1346  0.1368      0.3218
+```
+
+Status:
+
+```text
+Best Gaussian-prior variant so far: fold_zscore_whitened_pca.
+Still diagnostic: no target-space option beats the 0x stabilized
+counterfactual with the current compact-basis linear-Gaussian readout.
+```
+
+## 4C Continuous Feature-Embedding MLP Upper Bound
+
+Output:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+  continuous_feature_embedding_mlp_hammer/
+    continuous_feature_embedding_reconstruction_summary.csv
+    continuous_feature_embedding_reconstruction_contrasts.csv
+    continuous_feature_embedding_reconstruction_manifest.json
+```
+
+Configuration:
+
+```text
+decoder_mode = mlp
+target = fold_zscore_whitened_pca, 32D pyramid_local_field
+response = 20D image-disjoint compact response movie
+MLP = 4 layers, hidden_dim 512, dropout 0, AdamW lr 1e-3, weight_decay 1e-5
+split = source-row cross-fit, source-group validation within training folds
+```
+
+All-scale feature cosine:
+
+```text
+known-eye moving response:           0.2329
+hidden/tau-nuisance moving response: 0.3482
+zero-eye model on moving response:   0.1824
+0x stabilized response:              0.2819
+```
+
+Paired contrasts:
+
+```text
+hidden - zero-eye model:       +0.1657  CI [+0.1422, +0.1912]
+hidden motion - 0x stabilized: +0.0662  CI [+0.0450, +0.0887]
+known motion - 0x stabilized:  -0.0491  CI [-0.0684, -0.0302]
+```
+
+Safe claim:
+
+```text
+With a strong nonlinear readout, compact moving responses contain recoverable
+feature information above both the zero-eye model and the 0x stabilized
+counterfactual. This is an information upper-bound result, not a claim that V1
+features are linearly decodable downstream.
+```
+
+## 4C Continuous-Tau MLP Feature Decoder
+
+Output:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+  continuous_tau_mlp_feature_decoder_augmented/
+    continuous_tau_mlp_feature_decoder_summary.csv
+    continuous_tau_mlp_feature_decoder_contrasts.csv
+    continuous_tau_mlp_feature_decoder_models.csv
+    continuous_tau_mlp_feature_decoder_manifest.json
+```
+
+Configuration:
+
+```text
+script = declan/figure4_active_sensing_atlas/scripts/build_panel_c_continuous_tau_mlp_feature_decoder.py
+target = fold_zscore_whitened_pca, 32D pyramid_local_field
+response = 20D image-disjoint compact response movie
+tau = continuous tau_hat from promoted continuous-joint scorer
+decoder = MLP, 4 layers, hidden_dim 512
+split = source-row cross-fit, source-group validation within training folds
+endpoint = direct feature embedding recovery, not image-candidate choice
+```
+
+All-scale feature cosine:
+
+```text
+augmented compact-only hidden readout: 0.3695
+augmented continuous tau_hat readout:  0.3140
+augmented continuous tau interactions: 0.3078
+augmented true-tau readout:            0.3521
+augmented true-tau interactions:       0.3499
+augmented 0x stabilized readout:       0.3243
+augmented known-eye readout:           0.3196
+```
+
+Paired contrasts:
+
+```text
+augmented compact-only - augmented 0x: +0.0452  CI [+0.0292, +0.0618]
+continuous tau_hat - augmented 0x:     -0.0104  CI [-0.0307, +0.0084]
+true tau - augmented 0x:               +0.0278  CI [+0.0095, +0.0466]
+```
+
+Safe claim:
+
+```text
+The candidate-free nonlinear feature decoder beats the fair augmented static
+baseline through nuisance-augmented moving compact responses. Estimated
+continuous tau_hat concatenation does not yet beat the fair static baseline,
+although the true-tau ceiling does, so the next attempt should improve the
+trajectory-conditioned representation or infer (z, tau) jointly rather than
+only appending tau_hat to the response vector.
 ```

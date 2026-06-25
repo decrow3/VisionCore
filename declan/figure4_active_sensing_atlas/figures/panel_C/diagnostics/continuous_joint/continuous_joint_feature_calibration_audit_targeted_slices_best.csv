@@ -1,0 +1,4 @@
+run_slug,run_label,split_key,calibration_mode,n_eval,selected_temperature_by_split,default_mean_feature_cosine,eval_mean_feature_cosine,delta_vs_default,eval_image_accuracy,eval_mean_true_mass,eval_median_N_eff_fraction
+scale0p5_k10_ridge0p1,0.5x k10 ridge0.1,trial_id,scale_specific,256,0.5:0.125;0.5:0.125,0.9174505161729383,0.9531212885545988,0.035670772381660554,0.796875,0.6766393201023875,0.32158213763266186
+scale1_k15_ridge0p1,1.0x k15 ridge0.1,trial_id,scale_specific,256,1.0:0.25;1.0:0.125,0.9102607880927294,0.9340685217904791,0.023807733697749744,0.6875,0.5849152883838137,0.4434798839415353
+scale2_parallel_k15_ridge0p1,2.0x parallel k15 ridge0.1,trial_id,scale_specific,128,2.0:0.25;2.0:0.5,0.9045010079155299,0.9092991214903279,0.004798113574798035,0.59375,0.4992303451998055,0.5401247601250545

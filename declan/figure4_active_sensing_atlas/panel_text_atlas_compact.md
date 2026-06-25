@@ -22,7 +22,8 @@ Current compressed story:
 ```text
 A: FEMs convert a fixed screen image into a retinal movie.
 B: Empirical drift-like movies produce feature-relevant response changes.
-C: A joint image-and-eye observer recovers information lost by ignoring motion.
+C: A joint image-and-eye observer preserves image-feature information when eye
+   position is latent.
 D: Local image geometry defines useful motion axes, with guardrails.
 E: Measured free-viewing FEM axes align with local image geometry.
 ```
@@ -84,18 +85,23 @@ nested-regularization gates.
 Load-bearing read:
 
 ```text
-The finite trajectory-table observer shows the expected ordering: known-eye is
-highest, zero-eye drops when motion matters, and joint-eye inference recovers
-much of the known-minus-zero gap by marginalizing over plausible trajectories.
-Matched-static distractors make this the conceptual center of the current atlas.
+The promoted continuous no-anchor observer is best judged by posterior feature
+recovery rather than exact image identity. In the verified full
+scale-calibrated artifact, posterior expected features reach mean cosine 0.9358
+to the true image feature, while exact image accuracy is 0.7083. The older
+finite trajectory-table observer remains useful context: it shows known-eye
+highest, zero-eye impaired, and joint-eye inference recovering much of the
+known-minus-zero image-identity gap by marginalizing over plausible
+trajectories.
 ```
 
 Boundary:
 
 ```text
-The observer is exact-cache and finite-candidate scoped. The posterior need not
-identify one exact trajectory. Compact geometry is a sufficiency/mechanism
-bridge, not unique mechanism proof.
+Feature recovery is the primary C diagnostic; exact image identity is a hard
+secondary endpoint. The rendered C composite still mostly reflects the
+finite-cache lineage. Compact geometry is a sufficiency/mechanism bridge, not
+unique mechanism proof.
 ```
 
 ## Module D: Image-Dependent Useful Motion Directions
@@ -156,7 +162,8 @@ F006: compact mechanism is sufficient/supportive, not unique.
 F007: axis preference depends on candidate set and scale.
 F008: edge-parallel preservation is local stability, not full objective.
 F009: raw edge geometry remains the behavior baseline to beat.
-F011: observer panels are generated but need final integration.
+F011: promoted C is the continuous feature-recovery observer, but the rendered
+      panels still need final integration.
 F012: behavior metric convention must stay explicit.
 ```
 

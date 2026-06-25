@@ -22,7 +22,9 @@ os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-cache")
 
 import numpy as np
 import pandas as pd
+from scipy.ndimage import map_coordinates
 from sklearn.decomposition import PCA
+from sklearn.linear_model import Ridge
 from tqdm import tqdm
 
 try:
@@ -37,14 +39,37 @@ try:
         _cross_validated_decode,
         _dct_features,
         _extract_latents,
+        _mean_r2,
+        GABOR_ENERGY_GRID_BY_NAME,
+        GABOR_ENERGY_ORIENTCOV_GRID_BY_NAME,
+        GABOR_ENERGY_ORIENTCOV_TYPEBALANCED_NAMES,
+        GABOR_LOCAL_FIELD_GRID4,
+        _gabor_energy_bands_from_filter_bands,
+        _gabor_energy_orientcov_type_balance_weights,
         _gabor_features,
+        _gabor_filter_bands,
+        _gabor_features_from_bands,
+        _gabor_local_energy_from_bands,
+        _gabor_local_energy_orientcov_from_bands,
         _parse_float_list,
         _parse_int_list,
         _parse_str_list,
+        _pyramid_complex_energy_bands,
+        _pyramid_energy_orientcov_type_balance_weights,
+        _pyramid_local_energy_from_bands,
+        _pyramid_local_energy_orientcov_from_bands,
+        PYRAMID_ENERGY_GRID_BY_NAME,
+        PYRAMID_ENERGY_ORIENTCOV_GRID_BY_NAME,
+        PYRAMID_ENERGY_ORIENTCOV_TYPEBALANCED_NAMES,
+        _pyramid_phase_preserving_scale_balance_weights,
         _pyramid_features,
+        _pyramid_features_phase_preserving,
         _scale_token,
         _static_trace,
         _standardize_uint_like,
+        _standardize_train_test,
+        _split_outer,
+        _trace_xy_to_twin_helper_order,
         _trace_rms,
         _write_json,
     )
@@ -63,19 +88,47 @@ except ImportError:  # pragma: no cover - script-mode fallback
         _cross_validated_decode,
         _dct_features,
         _extract_latents,
+        _mean_r2,
+        GABOR_ENERGY_GRID_BY_NAME,
+        GABOR_ENERGY_ORIENTCOV_GRID_BY_NAME,
+        GABOR_ENERGY_ORIENTCOV_TYPEBALANCED_NAMES,
+        GABOR_LOCAL_FIELD_GRID4,
+        _gabor_energy_bands_from_filter_bands,
+        _gabor_energy_orientcov_type_balance_weights,
         _gabor_features,
+        _gabor_filter_bands,
+        _gabor_features_from_bands,
+        _gabor_local_energy_from_bands,
+        _gabor_local_energy_orientcov_from_bands,
         _parse_float_list,
         _parse_int_list,
         _parse_str_list,
+        _pyramid_complex_energy_bands,
+        _pyramid_energy_orientcov_type_balance_weights,
+        _pyramid_local_energy_from_bands,
+        _pyramid_local_energy_orientcov_from_bands,
+        PYRAMID_ENERGY_GRID_BY_NAME,
+        PYRAMID_ENERGY_ORIENTCOV_GRID_BY_NAME,
+        PYRAMID_ENERGY_ORIENTCOV_TYPEBALANCED_NAMES,
+        _pyramid_phase_preserving_scale_balance_weights,
         _pyramid_features,
+        _pyramid_features_phase_preserving,
         _scale_token,
         _static_trace,
         _standardize_uint_like,
+        _standardize_train_test,
+        _split_outer,
+        _trace_xy_to_twin_helper_order,
         _trace_rms,
         _write_json,
     )
     from declan.fixation_statistics_by_stimulus.run_fixation_statistics_by_stimulus import load_sessions
     from jake.twininfo.eye_controls import detect_microsaccade_events, speed_threshold_mad
+
+
+PHASE_PRESERVING_LATENT = "pyramid_local_field_phase_preserving"
+PHASE_PRESERVING_SCALE_BALANCED_LATENT = "pyramid_local_field_phase_preserving_scale_balanced"
+PYRAMID_STATS_ENERGY_ORIENTCOV_LATENT = "pyramid_local_stats_energy_orientcov"
 
 
 DEFAULT_INPUT = Path(
@@ -101,6 +154,9 @@ class AggregateConfig:
     latent_crop_px: int
     center_crop_px: int
     local_field_grid: int
+    feature_target_mode: str
+    spatial_readout_mode: str
+    spatial_readout_radius: int
     n_timepoints: int
     temporal_pc_components: int
     pca_k_list: list[int]
@@ -133,6 +189,9 @@ class AggregateConfig:
     seed: int
     dry_run: bool
     save_response_sample_arrays: bool
+    compute_ssi_features: bool
+    ssi_summary_names: list[str]
+    ssi_incremental_base_summaries: list[str]
 
 
 def _progress(message: str) -> None:
@@ -153,6 +212,188 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(f, fieldnames=keys)
         writer.writeheader()
         writer.writerows(rows)
+
+
+class AggregateSsiTwinScorer(CanonicalTwinScorer):
+    """Canonical scorer that also exposes spatial-SSI summaries before max-pooling."""
+
+    def __init__(self, *, device: str, batch_size: int, empty_cache_every_batch: bool = False):
+        super().__init__(device=device, batch_size=batch_size, empty_cache_every_batch=empty_cache_every_batch)
+        scripts_dir = Path(__file__).resolve().parents[2] / "scripts"
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        from scripts.spatial_info import spatial_ssi_population
+
+        self.spatial_ssi_population = spatial_ssi_population
+
+    def _ssi_from_rate_map(self, rate_map: Any) -> dict[str, np.ndarray]:
+        rate_map = rate_map.clamp_min(0.0)
+        ispike_t, irate_t, i_tn = self.spatial_ssi_population(rate_map, dt=1.0)
+        rbar_tn = rate_map.reshape(rate_map.shape[0], rate_map.shape[1], -1).mean(dim=2)
+        return {
+            "ssi_itn": i_tn.detach().cpu().numpy().astype(np.float32, copy=False),
+            "ssi_rbar_tn": rbar_tn.detach().cpu().numpy().astype(np.float32, copy=False),
+            "ssi_ispike_t": ispike_t.detach().cpu().numpy().astype(np.float32, copy=False),
+            "ssi_irate_t": irate_t.detach().cpu().numpy().astype(np.float32, copy=False),
+        }
+
+    def responses_with_ssi(
+        self,
+        patch: np.ndarray,
+        traces: list[np.ndarray],
+        *,
+        trace_batch_size: int = 1,
+    ) -> list[tuple[np.ndarray, dict[str, np.ndarray]]]:
+        if not traces:
+            return []
+        image = _standardize_uint_like(patch)
+        trace_batch_size = max(1, int(trace_batch_size))
+        out: list[tuple[np.ndarray, dict[str, np.ndarray]]] = []
+        for start in range(0, len(traces), trace_batch_size):
+            trace_chunk = traces[start : start + trace_batch_size]
+            stims = []
+            lengths = []
+            for trace in trace_chunk:
+                trace = np.asarray(trace, dtype=np.float32)
+                full_stack = np.broadcast_to(
+                    image[None, :, :],
+                    (trace.shape[0] + self.common.N_LAGS + 1, *image.shape),
+                ).copy()
+                eye = self.torch.from_numpy(_trace_xy_to_twin_helper_order(trace))
+                stim = self.common.make_counterfactual_stim(
+                    full_stack,
+                    eye,
+                    ppd=self.common.PPD,
+                    scale_factor=1.0,
+                    n_lags=self.common.N_LAGS,
+                    out_size=self.common.OUT_SIZE,
+                )
+                stims.append((stim - 127.0) / 255.0)
+                lengths.append(int(stim.shape[0]))
+            rate_map = self._compute_rate_map_batched(self.torch.cat(stims, dim=0))
+            rates = rate_map.amax(dim=(-2, -1)).detach().cpu().numpy().astype(np.float32, copy=False)
+            ssi_all = self._ssi_from_rate_map(rate_map)
+            offset = 0
+            for length in lengths:
+                response = rates[offset : offset + length]
+                ssi = {key: value[offset : offset + length] for key, value in ssi_all.items()}
+                out.append((response, ssi))
+                offset += length
+            del stims, rate_map, rates, ssi_all
+        return out
+
+
+def _rate_map_shift_scale(scorer: CanonicalTwinScorer, rate_map_shape: tuple[int, int]) -> tuple[float, float]:
+    h_map, w_map = int(rate_map_shape[0]), int(rate_map_shape[1])
+    space_weights = getattr(scorer.ctx.readout, "space_weights", None)
+    if space_weights is not None:
+        kernel_h = int(space_weights.shape[-2])
+        kernel_w = int(space_weights.shape[-1])
+    else:
+        kernel_h = kernel_w = 14
+    core_h = h_map + kernel_h - 1
+    core_w = w_map + kernel_w - 1
+    out_h, out_w = int(scorer.common.OUT_SIZE[0]), int(scorer.common.OUT_SIZE[1])
+    return core_h / float(out_h), core_w / float(out_w)
+
+
+def _pool_rate_map_response(
+    rate_map: Any,
+    trace: np.ndarray,
+    scorer: CanonicalTwinScorer,
+    *,
+    mode: str,
+    radius: int,
+) -> np.ndarray:
+    values = rate_map.detach().cpu().numpy().astype(np.float32, copy=False)
+    if str(mode) == "amax":
+        return values.max(axis=(-2, -1)).astype(np.float32, copy=False)
+    if values.ndim != 4:
+        raise ValueError(f"Expected rate_map shape (T, N, H, W), got {values.shape}")
+    T, n_units, h_map, w_map = values.shape
+    radius = max(0, int(radius))
+    yy, xx = np.mgrid[-radius : radius + 1, -radius : radius + 1].astype(np.float64)
+    offsets_y = yy.reshape(-1)
+    offsets_x = xx.reshape(-1)
+    center_y = (float(h_map) - 1.0) / 2.0
+    center_x = (float(w_map) - 1.0) / 2.0
+    trace_rs = _resample_trace(np.asarray(trace, dtype=np.float64), int(T))
+    scale_y, scale_x = _rate_map_shift_scale(scorer, (h_map, w_map))
+    unit_idx = np.repeat(np.arange(n_units, dtype=np.float64), offsets_x.size)
+    out = np.empty((T, n_units), dtype=np.float32)
+    for t in range(T):
+        if str(mode) == "center_mean":
+            dx_map = 0.0
+            dy_map = 0.0
+        elif str(mode) == "trace_registered_center_mean":
+            dx_map = float(trace_rs[t, 0]) * float(scorer.common.PPD) * scale_x
+            dy_map = -float(trace_rs[t, 1]) * float(scorer.common.PPD) * scale_y
+        else:
+            raise ValueError(f"Unknown spatial readout mode {mode!r}")
+        sample_y = center_y + dy_map + offsets_y
+        sample_x = center_x + dx_map + offsets_x
+        coords_y = np.tile(sample_y, n_units)
+        coords_x = np.tile(sample_x, n_units)
+        sampled = map_coordinates(
+            values[t],
+            [unit_idx, coords_y, coords_x],
+            order=1,
+            mode="nearest",
+            prefilter=False,
+        ).reshape(n_units, offsets_x.size)
+        out[t] = np.mean(sampled, axis=1)
+    return out
+
+
+def _responses_with_spatial_readout(
+    scorer: CanonicalTwinScorer,
+    patch: np.ndarray,
+    traces: list[np.ndarray],
+    *,
+    trace_batch_size: int,
+    spatial_readout_mode: str,
+    spatial_readout_radius: int,
+) -> list[np.ndarray]:
+    if not traces:
+        return []
+    image = _standardize_uint_like(patch)
+    trace_batch_size = max(1, int(trace_batch_size))
+    out: list[np.ndarray] = []
+    for start in range(0, len(traces), trace_batch_size):
+        trace_chunk = traces[start : start + trace_batch_size]
+        stims = []
+        lengths = []
+        for trace in trace_chunk:
+            trace = np.asarray(trace, dtype=np.float32)
+            full_stack = np.broadcast_to(
+                image[None, :, :],
+                (trace.shape[0] + scorer.common.N_LAGS + 1, *image.shape),
+            ).copy()
+            eye = scorer.torch.from_numpy(_trace_xy_to_twin_helper_order(trace))
+            stim = scorer.common.make_counterfactual_stim(
+                full_stack,
+                eye,
+                ppd=scorer.common.PPD,
+                scale_factor=1.0,
+                n_lags=scorer.common.N_LAGS,
+                out_size=scorer.common.OUT_SIZE,
+            )
+            stims.append((stim - 127.0) / 255.0)
+            lengths.append(int(stim.shape[0]))
+        rate_map = scorer._compute_rate_map_batched(scorer.torch.cat(stims, dim=0))
+        offset = 0
+        for trace, length in zip(trace_chunk, lengths, strict=True):
+            pooled = _pool_rate_map_response(
+                rate_map[offset : offset + length],
+                trace,
+                scorer,
+                mode=str(spatial_readout_mode),
+                radius=int(spatial_readout_radius),
+            )
+            out.append(pooled.astype(np.float32, copy=False))
+            offset += length
+        del stims, rate_map
+    return out
 
 
 def _prepare_windows(args: argparse.Namespace) -> pd.DataFrame:
@@ -276,7 +517,16 @@ def _extract_requested_latents(
         )
     image = _standardize_uint_like(patch)
     out: dict[str, np.ndarray] = {}
-    need_field = any(name.endswith("_local_field") for name in requested)
+    need_field = any(
+        name.endswith("_local_field")
+        or name in {PHASE_PRESERVING_LATENT, PHASE_PRESERVING_SCALE_BALANCED_LATENT, PYRAMID_STATS_ENERGY_ORIENTCOV_LATENT}
+        or name in PYRAMID_ENERGY_GRID_BY_NAME
+        or name in PYRAMID_ENERGY_ORIENTCOV_GRID_BY_NAME
+        or name == GABOR_LOCAL_FIELD_GRID4
+        or name in GABOR_ENERGY_GRID_BY_NAME
+        or name in GABOR_ENERGY_ORIENTCOV_GRID_BY_NAME
+        for name in requested
+    )
     need_center = any(name.endswith("_center") for name in requested)
     field_crop = _central_crop(image, int(latent_crop_px)) if need_field else None
     center_crop = _central_crop(image, int(center_crop_px)) if need_center else None
@@ -286,13 +536,118 @@ def _extract_requested_latents(
         out["dct_local_field"] = _dct_features(field_crop, n_freq=8)
     if "gabor_center" in requested and center_crop is not None:
         out["gabor_center"] = _gabor_features(center_crop, scope="center", local_grid=int(local_field_grid))
+    requested_gabor_energy_names = set(GABOR_ENERGY_GRID_BY_NAME).union(GABOR_ENERGY_ORIENTCOV_GRID_BY_NAME).intersection(requested)
+    requested_gabor_field_names = {"gabor_local_field", GABOR_LOCAL_FIELD_GRID4}.intersection(requested)
+    gabor_bands = _gabor_filter_bands(field_crop) if field_crop is not None and (requested_gabor_energy_names or requested_gabor_field_names) else []
     if "gabor_local_field" in requested and field_crop is not None:
-        out["gabor_local_field"] = _gabor_features(field_crop, scope="local_field", local_grid=int(local_field_grid))
+        out["gabor_local_field"] = _gabor_features_from_bands(gabor_bands, scope="local_field", local_grid=int(local_field_grid))
+    if GABOR_LOCAL_FIELD_GRID4 in requested and field_crop is not None:
+        out[GABOR_LOCAL_FIELD_GRID4] = _gabor_features_from_bands(gabor_bands, scope="local_field", local_grid=4)
+    if requested_gabor_energy_names and field_crop is not None:
+        gabor_energy_bands = _gabor_energy_bands_from_filter_bands(gabor_bands)
+        for name, grid in GABOR_ENERGY_GRID_BY_NAME.items():
+            if name in requested:
+                out[name] = _gabor_local_energy_from_bands(gabor_energy_bands, local_grid=int(grid))
+        for name, grid in GABOR_ENERGY_ORIENTCOV_GRID_BY_NAME.items():
+            if name in requested:
+                out[name] = _gabor_local_energy_orientcov_from_bands(gabor_energy_bands, local_grid=int(grid))
     if HAVE_STEERABLE_PYRAMID and "pyramid_center" in requested and center_crop is not None:
         out["pyramid_center"] = _pyramid_features(center_crop, scope="center", local_grid=int(local_field_grid))
     if HAVE_STEERABLE_PYRAMID and "pyramid_local_field" in requested and field_crop is not None:
         out["pyramid_local_field"] = _pyramid_features(field_crop, scope="local_field", local_grid=int(local_field_grid))
+    phase_requested = bool({PHASE_PRESERVING_LATENT, PHASE_PRESERVING_SCALE_BALANCED_LATENT}.intersection(requested))
+    if HAVE_STEERABLE_PYRAMID and phase_requested and field_crop is not None:
+        phase_features = _pyramid_features_phase_preserving(field_crop, scope="local_field", local_grid=int(local_field_grid))
+        if PHASE_PRESERVING_LATENT in requested:
+            out[PHASE_PRESERVING_LATENT] = phase_features
+        if PHASE_PRESERVING_SCALE_BALANCED_LATENT in requested:
+            out[PHASE_PRESERVING_SCALE_BALANCED_LATENT] = phase_features
+    if HAVE_STEERABLE_PYRAMID and field_crop is not None:
+        requested_energy_names = set(PYRAMID_ENERGY_GRID_BY_NAME).union(PYRAMID_ENERGY_ORIENTCOV_GRID_BY_NAME).intersection(requested)
+        energy_bands = _pyramid_complex_energy_bands(field_crop) if requested_energy_names else []
+        for name, grid in PYRAMID_ENERGY_GRID_BY_NAME.items():
+            if name in requested:
+                out[name] = _pyramid_local_energy_from_bands(energy_bands, local_grid=int(grid))
+        for name, grid in PYRAMID_ENERGY_ORIENTCOV_GRID_BY_NAME.items():
+            if name in requested:
+                out[name] = _pyramid_local_energy_orientcov_from_bands(energy_bands, local_grid=int(grid))
     return {key: value for key, value in out.items() if value.size > 0}
+
+
+def _clip_patch_subpixel(canvas: np.ndarray, center_xy_px: tuple[float, float], size_px: int) -> np.ndarray:
+    size_px = int(size_px)
+    half = size_px // 2
+    cx, cy = float(center_xy_px[0]), float(center_xy_px[1])
+    x = cx + np.arange(size_px, dtype=np.float64) - float(half)
+    y = cy + np.arange(size_px, dtype=np.float64) - float(half)
+    xx, yy = np.meshgrid(x, y)
+    fill = float(np.nanmean(canvas))
+    patch = map_coordinates(
+        np.asarray(canvas, dtype=np.float32),
+        [yy, xx],
+        order=1,
+        mode="constant",
+        cval=fill,
+        prefilter=False,
+    )
+    return np.asarray(patch, dtype=np.float32)
+
+
+def _trace_registered_latents(
+    canvas: np.ndarray,
+    center_px: np.ndarray,
+    trace: np.ndarray,
+    *,
+    ppd: float,
+    patch_size_px: int,
+    latent_crop_px: int,
+    center_crop_px: int,
+    local_field_grid: int,
+    requested: set[str],
+) -> dict[str, np.ndarray]:
+    """Average feature targets over source-image locations sampled by a trace."""
+    trace = np.asarray(trace, dtype=np.float64)
+    if trace.ndim != 2 or trace.shape[1] != 2:
+        raise ValueError(f"Expected trace shape (T, 2), got {trace.shape}")
+    center = np.asarray(center_px, dtype=np.float64).reshape(2)
+    if trace.shape[0] <= 1 or float(np.nanmax(np.linalg.norm(trace - trace[:1], axis=1))) <= 1e-12:
+        xy = trace[0] if trace.shape[0] else np.zeros(2, dtype=np.float64)
+        frame_center = (
+            float(center[0] - float(xy[0]) * float(ppd)),
+            float(center[1] + float(xy[1]) * float(ppd)),
+        )
+        frame_patch = _clip_patch_subpixel(canvas, frame_center, int(patch_size_px))
+        return _extract_requested_latents(
+            frame_patch,
+            latent_crop_px=int(latent_crop_px),
+            center_crop_px=int(center_crop_px),
+            local_field_grid=int(local_field_grid),
+            requested=requested,
+        )
+    by_name: dict[str, list[np.ndarray]] = {}
+    for xy in trace:
+        # Match make_counterfactual_stim: source x samples move opposite the
+        # x trace, while positive y samples lower screen rows after the helper
+        # converts gaze degrees to grid_sample coordinates.
+        frame_center = (
+            float(center[0] - float(xy[0]) * float(ppd)),
+            float(center[1] + float(xy[1]) * float(ppd)),
+        )
+        frame_patch = _clip_patch_subpixel(canvas, frame_center, int(patch_size_px))
+        latents = _extract_requested_latents(
+            frame_patch,
+            latent_crop_px=int(latent_crop_px),
+            center_crop_px=int(center_crop_px),
+            local_field_grid=int(local_field_grid),
+            requested=requested,
+        )
+        for name, value in latents.items():
+            by_name.setdefault(name, []).append(np.asarray(value, dtype=np.float32))
+    return {
+        name: np.mean(np.vstack(values), axis=0).astype(np.float32)
+        for name, values in by_name.items()
+        if values
+    }
 
 
 def _resample_trace(trace: np.ndarray, n_timepoints: int) -> np.ndarray:
@@ -701,6 +1056,119 @@ def _summarize_response(response: np.ndarray, static: np.ndarray, basis: np.ndar
     }
 
 
+def _align_ssi_to_trace(ssi: dict[str, np.ndarray], n_timepoints: int) -> dict[str, np.ndarray]:
+    return {key: _align_response_to_trace(value, int(n_timepoints)) for key, value in ssi.items()}
+
+
+def _summarize_ssi_features(
+    ssi: dict[str, np.ndarray],
+    summary_names: list[str],
+    *,
+    static_ssi: dict[str, np.ndarray] | None = None,
+    eps: float = 1e-8,
+) -> dict[str, np.ndarray]:
+    i_tn = np.asarray(ssi["ssi_itn"], dtype=np.float32)
+    rbar_tn = np.asarray(ssi["ssi_rbar_tn"], dtype=np.float32)
+    ispike_t = np.asarray(ssi["ssi_ispike_t"], dtype=np.float32)
+    irate_t = np.asarray(ssi["ssi_irate_t"], dtype=np.float32)
+    if i_tn.shape != rbar_tn.shape:
+        raise ValueError(f"SSI I_tn shape {i_tn.shape} does not match rbar shape {rbar_tn.shape}")
+    weighted_unit = np.sum(i_tn * rbar_tn, axis=0) / (np.sum(rbar_tn, axis=0) + float(eps))
+    available = {
+        "ssi_itn": i_tn.reshape(-1).astype(np.float32),
+        "ssi_unit_mean": np.mean(i_tn, axis=0).astype(np.float32),
+        "ssi_unit_spike_weighted_mean": weighted_unit.astype(np.float32),
+        "ssi_rbar_itn": rbar_tn.reshape(-1).astype(np.float32),
+        "ssi_itn_plus_rbar": np.concatenate([i_tn.reshape(-1), rbar_tn.reshape(-1)]).astype(np.float32),
+        "ssi_population_time": np.concatenate([ispike_t.reshape(-1), irate_t.reshape(-1)]).astype(np.float32),
+    }
+    if static_ssi is not None:
+        static_i_tn = np.asarray(static_ssi["ssi_itn"], dtype=np.float32)
+        static_rbar_tn = np.asarray(static_ssi["ssi_rbar_tn"], dtype=np.float32)
+        static_ispike_t = np.asarray(static_ssi["ssi_ispike_t"], dtype=np.float32)
+        static_irate_t = np.asarray(static_ssi["ssi_irate_t"], dtype=np.float32)
+        if static_i_tn.shape != i_tn.shape:
+            raise ValueError(f"Static SSI I_tn shape {static_i_tn.shape} does not match response SSI shape {i_tn.shape}")
+        if static_rbar_tn.shape != rbar_tn.shape:
+            raise ValueError(f"Static SSI rbar shape {static_rbar_tn.shape} does not match response rbar shape {rbar_tn.shape}")
+        delta_i_tn = i_tn - static_i_tn
+        delta_rbar_tn = rbar_tn - static_rbar_tn
+        delta_ispike_t = ispike_t - static_ispike_t
+        delta_irate_t = irate_t - static_irate_t
+        weighted_delta_unit = np.sum(delta_i_tn * rbar_tn, axis=0) / (np.sum(rbar_tn, axis=0) + float(eps))
+        available.update(
+            {
+                "delta_ssi_itn": delta_i_tn.reshape(-1).astype(np.float32),
+                "delta_ssi_unit_mean": np.mean(delta_i_tn, axis=0).astype(np.float32),
+                "delta_ssi_unit_spike_weighted_mean": weighted_delta_unit.astype(np.float32),
+                "delta_ssi_rbar_itn": delta_rbar_tn.reshape(-1).astype(np.float32),
+                "delta_ssi_itn_plus_rbar": np.concatenate([delta_i_tn.reshape(-1), delta_rbar_tn.reshape(-1)]).astype(np.float32),
+                "delta_ssi_population_time": np.concatenate([delta_ispike_t.reshape(-1), delta_irate_t.reshape(-1)]).astype(np.float32),
+            }
+        )
+    missing = sorted(set(summary_names).difference(available))
+    if missing:
+        raise ValueError(f"Unknown SSI summary names: {missing}; available={sorted(available)}")
+    return {name: available[name] for name in summary_names}
+
+
+def _delta_ssi_summary_name(name: str) -> str:
+    name = str(name)
+    return name if name.startswith("delta_ssi_") else f"delta_{name}"
+
+
+def _expand_ssi_summary_names(summary_names: list[str]) -> list[str]:
+    out: list[str] = []
+    for name in summary_names:
+        for candidate in (str(name), _delta_ssi_summary_name(str(name))):
+            if candidate not in out:
+                out.append(candidate)
+    return out
+
+
+def _ssi_component_for_incremental_base(
+    summaries: dict[str, np.ndarray],
+    *,
+    base: str,
+    ssi_name: str,
+) -> str:
+    if str(base).startswith("delta_"):
+        delta_name = _delta_ssi_summary_name(str(ssi_name))
+        if delta_name in summaries:
+            return delta_name
+    return str(ssi_name)
+
+
+def _add_ssi_incremental_summaries(
+    summaries: dict[str, np.ndarray],
+    *,
+    base_summaries: list[str],
+    ssi_summary_names: list[str],
+) -> list[str]:
+    added: list[str] = []
+    for base in base_summaries:
+        if base not in summaries:
+            raise ValueError(f"Cannot build SSI incremental summary; missing base summary {base!r}")
+        for ssi_name in ssi_summary_names:
+            component_name = _ssi_component_for_incremental_base(summaries, base=str(base), ssi_name=str(ssi_name))
+            if component_name not in summaries:
+                raise ValueError(f"Cannot build SSI incremental summary; missing SSI summary {component_name!r}")
+            out_name = f"{base}_plus_{component_name}"
+            summaries[out_name] = np.concatenate(
+                [
+                    np.asarray(summaries[base], dtype=np.float32).reshape(-1),
+                    np.asarray(summaries[component_name], dtype=np.float32).reshape(-1),
+                ]
+            ).astype(np.float32)
+            added.append(out_name)
+    return added
+
+
+def _is_ssi_summary_name(name: str) -> bool:
+    text = str(name)
+    return text.startswith("ssi_") or text.startswith("delta_ssi_") or "_plus_ssi_" in text or "_plus_delta_ssi_" in text
+
+
 def _add_temporal_basis_summaries(
     out: dict[str, np.ndarray],
     response: np.ndarray,
@@ -759,6 +1227,36 @@ def _stack_condition_sample_features(
             out[key] = np.vstack([by_image[i][0] for i in image_indices]).astype(np.float32)
             continue
         out[key] = np.stack([np.vstack(by_image[i]) for i in image_indices], axis=0).astype(np.float32)
+    return out
+
+
+def _stack_condition_targets(
+    records: list[dict[str, Any]],
+    target_latents_by_response: dict[int, dict[str, np.ndarray]],
+) -> dict[tuple[str, str], dict[str, np.ndarray]]:
+    grouped: dict[tuple[str, str], dict[int, list[dict[str, np.ndarray]]]] = defaultdict(lambda: defaultdict(list))
+    for rec in records:
+        response_id = int(rec["response_id"])
+        if response_id not in target_latents_by_response:
+            raise ValueError(f"Missing feature target latents for response_id={response_id}")
+        if rec["family"] == "static":
+            key = ("static", "static")
+        else:
+            key = (str(rec["family"]), str(rec["scale_id"]))
+        grouped[key][int(rec["image_index"])].append(target_latents_by_response[response_id])
+
+    out: dict[tuple[str, str], dict[str, np.ndarray]] = {}
+    for key, by_image in grouped.items():
+        names = sorted({name for items in by_image.values() for item in items for name in item})
+        condition_targets: dict[str, list[np.ndarray]] = {name: [] for name in names}
+        for image_index in sorted(by_image):
+            items = by_image[image_index]
+            for name in names:
+                values = [np.asarray(item[name], dtype=np.float32) for item in items if name in item]
+                if len(values) != len(items):
+                    raise ValueError(f"Condition {key} image {image_index} is missing registered target {name!r}")
+                condition_targets[name].append(np.mean(np.vstack(values), axis=0).astype(np.float32))
+        out[key] = {name: np.vstack(values).astype(np.float32) for name, values in condition_targets.items()}
     return out
 
 
@@ -878,13 +1376,33 @@ def _decode_rows(
     latent_arrays: dict[str, np.ndarray],
     groups: np.ndarray,
     args: argparse.Namespace,
+    *,
+    latent_arrays_by_condition: dict[tuple[str, str], dict[str, np.ndarray]] | None = None,
+    target_weight_arrays: dict[str, np.ndarray] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[tuple[str, str, str, int], np.ndarray]]:
     rows: list[dict[str, Any]] = []
     per_image: dict[tuple[str, str, str, int], np.ndarray] = {}
     alphas = _parse_float_list(args.ridge_alphas)
     fixed_alpha = float(args.fixed_ridge_alpha) if args.fixed_ridge_alpha is not None else float(alphas[len(alphas) // 2])
     for (family, scale_id), X in sorted(feature_by_condition.items()):
-        for latent_name, Z in sorted(latent_arrays.items()):
+        condition_key = (family, scale_id)
+        condition_latents = (
+            latent_arrays
+            if latent_arrays_by_condition is None
+            else latent_arrays_by_condition.get(condition_key, {})
+        )
+        if not condition_latents:
+            raise ValueError(f"No latent targets available for condition {condition_key}")
+        for latent_name, Z in sorted(condition_latents.items()):
+            target_weights = None if target_weight_arrays is None else target_weight_arrays.get(latent_name)
+            if target_weights is None:
+                target_weighting = "none"
+            elif latent_name in PYRAMID_ENERGY_ORIENTCOV_TYPEBALANCED_NAMES:
+                target_weighting = "pyramid_energy_orientcov_type_balanced_after_zscore"
+            elif latent_name in GABOR_ENERGY_ORIENTCOV_TYPEBALANCED_NAMES:
+                target_weighting = "gabor_energy_orientcov_type_balanced_after_zscore"
+            else:
+                target_weighting = "pyramid_scale_balanced_after_zscore"
             for k in _parse_int_list(args.pca_k_list):
                 result = _cross_validated_decode(
                     X,
@@ -897,6 +1415,7 @@ def _decode_rows(
                     outer_folds=int(args.outer_folds),
                     inner_folds=int(args.inner_folds),
                     seed=int(args.seed),
+                    target_feature_weights=target_weights,
                 )
                 key = (family, scale_id, latent_name, int(k))
                 per_image[key] = np.asarray(result["per_window_score"], dtype=np.float64)
@@ -916,9 +1435,224 @@ def _decode_rows(
                         "decode_group_mode": str(args.decode_group_mode),
                         "n_decode_groups": int(np.unique(groups).size),
                         "feature_dim": int(X.shape[1]),
+                        "target_weighting": target_weighting,
+                        "feature_target_mode": str(getattr(args, "feature_target_mode", "static")),
                     }
                 )
     return rows, per_image
+
+
+def _target_weighting_label(latent_name: str, target_weights: np.ndarray | None) -> str:
+    if target_weights is None:
+        return "none"
+    if latent_name in PYRAMID_ENERGY_ORIENTCOV_TYPEBALANCED_NAMES:
+        return "pyramid_energy_orientcov_type_balanced_after_zscore"
+    if latent_name in GABOR_ENERGY_ORIENTCOV_TYPEBALANCED_NAMES:
+        return "gabor_energy_orientcov_type_balanced_after_zscore"
+    return "pyramid_scale_balanced_after_zscore"
+
+
+def _standardize_with_train_stats(values: np.ndarray, mean: np.ndarray, sd: np.ndarray) -> np.ndarray:
+    return (np.asarray(values, dtype=np.float64) - mean) / sd
+
+
+def _decode_rows_shared_target_basis(
+    feature_by_condition: dict[tuple[str, str], np.ndarray],
+    latent_arrays_by_condition: dict[tuple[str, str], dict[str, np.ndarray]],
+    groups: np.ndarray,
+    args: argparse.Namespace,
+    *,
+    target_weight_arrays: dict[str, np.ndarray] | None = None,
+) -> tuple[list[dict[str, Any]], dict[tuple[str, str, str, int], np.ndarray]]:
+    rows: list[dict[str, Any]] = []
+    per_image: dict[tuple[str, str, str, int], np.ndarray] = {}
+    alphas = _parse_float_list(args.ridge_alphas)
+    fixed_alpha = float(args.fixed_ridge_alpha) if args.fixed_ridge_alpha is not None else float(alphas[len(alphas) // 2])
+    groups = np.asarray(groups)
+    condition_keys = sorted(feature_by_condition)
+    latent_names = sorted(
+        set.intersection(
+            *[
+                set(latent_arrays_by_condition.get(condition_key, {}))
+                for condition_key in condition_keys
+            ]
+        )
+    )
+    if not latent_names:
+        raise ValueError("No shared registered target latent names are available across all conditions")
+    splits = _split_outer(groups, int(args.outer_folds), int(args.seed))
+    min_train_n = min((len(train_idx) for train_idx, _ in splits), default=int(groups.size))
+
+    for latent_name in latent_names:
+        target_by_condition = {
+            condition_key: np.asarray(latent_arrays_by_condition[condition_key][latent_name], dtype=np.float64)
+            for condition_key in condition_keys
+        }
+        target_dims = {Z.shape[1] for Z in target_by_condition.values()}
+        if len(target_dims) != 1:
+            raise ValueError(f"Registered target {latent_name!r} has inconsistent dimensions: {sorted(target_dims)}")
+        target_dim = int(next(iter(target_dims)))
+        target_weights = None if target_weight_arrays is None else target_weight_arrays.get(latent_name)
+        target_weights_arr = None
+        if target_weights is not None:
+            target_weights_arr = np.asarray(target_weights, dtype=np.float64).reshape(-1)
+            if target_weights_arr.shape[0] != target_dim:
+                raise ValueError(
+                    f"Target feature weights length {target_weights_arr.shape[0]} "
+                    f"does not match target feature dimension {target_dim}"
+                )
+        target_weighting = _target_weighting_label(latent_name, target_weights_arr)
+        for k in _parse_int_list(args.pca_k_list):
+            n = int(groups.size)
+            k_eff = int(min(int(k), target_dim, max(1, min_train_n * len(condition_keys))))
+            pred_by_condition = {
+                condition_key: np.full((n, k_eff), np.nan, dtype=np.float64)
+                for condition_key in condition_keys
+            }
+            target_by_condition_pc = {
+                condition_key: np.full((n, k_eff), np.nan, dtype=np.float64)
+                for condition_key in condition_keys
+            }
+            fold_r2s_by_condition: dict[tuple[str, str], list[float]] = {condition_key: [] for condition_key in condition_keys}
+            chosen_alphas_by_condition: dict[tuple[str, str], list[float]] = {condition_key: [] for condition_key in condition_keys}
+            for fold, (train_idx, test_idx) in enumerate(splits):
+                ref_train = np.vstack([Z[train_idx] for Z in target_by_condition.values()])
+                target_mean = np.nanmean(ref_train, axis=0, keepdims=True)
+                target_sd = np.nanstd(ref_train, axis=0, keepdims=True)
+                target_sd[~np.isfinite(target_sd) | (target_sd <= 1e-12)] = 1.0
+                ref_train_std = _standardize_with_train_stats(ref_train, target_mean, target_sd)
+                if target_weights_arr is not None:
+                    ref_train_std = ref_train_std * target_weights_arr[None, :]
+                pca = PCA(n_components=k_eff, svd_solver="full")
+                pca.fit(ref_train_std)
+                for condition_key in condition_keys:
+                    X = np.asarray(feature_by_condition[condition_key], dtype=np.float64)
+                    Z = target_by_condition[condition_key]
+                    if X.shape[0] != n or Z.shape[0] != n:
+                        raise ValueError(
+                            f"Condition {condition_key} has X/Z rows {X.shape[0]}/{Z.shape[0]}, expected {n}"
+                        )
+                    X_train_raw, X_test = _standardize_train_test(X[train_idx], X[test_idx])
+                    Z_train_raw = _standardize_with_train_stats(Z[train_idx], target_mean, target_sd)
+                    Z_test_raw = _standardize_with_train_stats(Z[test_idx], target_mean, target_sd)
+                    if target_weights_arr is not None:
+                        Z_train_raw = Z_train_raw * target_weights_arr[None, :]
+                        Z_test_raw = Z_test_raw * target_weights_arr[None, :]
+                    Y_train = pca.transform(Z_train_raw)
+                    Y_test = pca.transform(Z_test_raw)
+                    alpha = fixed_alpha
+                    model = Ridge(alpha=float(alpha), fit_intercept=True)
+                    model.fit(X_train_raw, Y_train)
+                    Y_pred = model.predict(X_test)
+                    pred_by_condition[condition_key][test_idx] = Y_pred
+                    target_by_condition_pc[condition_key][test_idx] = Y_test
+                    fold_r2s_by_condition[condition_key].append(_mean_r2(Y_test, Y_pred))
+                    chosen_alphas_by_condition[condition_key].append(float(alpha))
+            for condition_key in condition_keys:
+                family, scale_id = condition_key
+                target = target_by_condition_pc[condition_key]
+                pred = pred_by_condition[condition_key]
+                mse = np.mean((target - pred) ** 2, axis=1)
+                key = (family, scale_id, latent_name, int(k))
+                per_image[key] = -mse
+                valid_fold_r2s = [float(v) for v in fold_r2s_by_condition[condition_key] if np.isfinite(v)]
+                rows.append(
+                    {
+                        "family": family,
+                        "scale_id": scale_id,
+                        "latent": latent_name,
+                        "k": int(k),
+                        "mean_neg_mse": float(np.nanmean(-mse)),
+                        "r2": float(np.mean(valid_fold_r2s)) if valid_fold_r2s else float("nan"),
+                        "chosen_alpha_median": float(np.nanmedian(chosen_alphas_by_condition[condition_key])),
+                        "ridge_alpha_mode": "fixed",
+                        "fixed_ridge_alpha": fixed_alpha,
+                        "target_dim": int(k_eff),
+                        "raw_target_dim": int(target_dim),
+                        "n_images": n,
+                        "decode_group_mode": str(args.decode_group_mode),
+                        "n_decode_groups": int(np.unique(groups).size),
+                        "feature_dim": int(feature_by_condition[condition_key].shape[1]),
+                        "target_weighting": target_weighting,
+                        "feature_target_mode": str(getattr(args, "feature_target_mode", "static")),
+                        "target_basis_mode": "shared_registered_train_conditions",
+                    }
+                )
+    return rows, per_image
+
+
+def _ssi_incremental_decode_rows(
+    decode_rows: list[dict[str, Any]],
+    per_image: dict[tuple[str, str, str, str, int], np.ndarray],
+    sessions: np.ndarray,
+    args: argparse.Namespace,
+    *,
+    incremental_summary_names: list[str],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if not incremental_summary_names:
+        return rows
+    rng = np.random.default_rng(int(args.seed) + 303)
+    row_lookup = {
+        (
+            str(row["response_summary"]),
+            str(row["family"]),
+            str(row["scale_id"]),
+            str(row["latent"]),
+            int(row["k"]),
+        ): row
+        for row in decode_rows
+    }
+    incremental_set = set(incremental_summary_names)
+    for row in decode_rows:
+        combined_summary = str(row["response_summary"])
+        if combined_summary not in incremental_set or "_plus_" not in combined_summary:
+            continue
+        base_summary, ssi_summary = combined_summary.split("_plus_", 1)
+        key = (
+            combined_summary,
+            str(row["family"]),
+            str(row["scale_id"]),
+            str(row["latent"]),
+            int(row["k"]),
+        )
+        base_key = (
+            base_summary,
+            str(row["family"]),
+            str(row["scale_id"]),
+            str(row["latent"]),
+            int(row["k"]),
+        )
+        if key not in per_image or base_key not in per_image or base_key not in row_lookup:
+            continue
+        mean, lo, hi = _bootstrap_condition_delta(
+            per_image[key],
+            per_image[base_key],
+            sessions,
+            n_bootstrap=int(args.n_bootstrap),
+            rng=rng,
+        )
+        base_row = row_lookup[base_key]
+        rows.append(
+            {
+                "base_summary": base_summary,
+                "ssi_summary": ssi_summary,
+                "combined_summary": combined_summary,
+                "family": str(row["family"]),
+                "scale_id": str(row["scale_id"]),
+                "latent": str(row["latent"]),
+                "k": int(row["k"]),
+                "combined_mean_neg_mse": float(row["mean_neg_mse"]),
+                "base_mean_neg_mse": float(base_row["mean_neg_mse"]),
+                "mean_incremental_neg_mse": mean,
+                "ci95_low": lo,
+                "ci95_high": hi,
+                "n_images": int(sessions.size),
+                "base_feature_dim": int(base_row["feature_dim"]),
+                "combined_feature_dim": int(row["feature_dim"]),
+            }
+        )
+    return rows
 
 
 def _contrast_rows(
@@ -981,7 +1715,7 @@ def _contrast_rows(
                     "n_images": int(sessions.size),
                 }
             )
-        if str(row["family"]) != "empirical":
+        if str(row["family"]) != "empirical" or ("empirical", "static") in contrasts:
             continue
         lhs_key = ("empirical", scale_id, latent, k)
         rhs_key = static_key_by_latent_k.get((latent, k))
@@ -1027,9 +1761,47 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--latent-crop-px", type=int, default=151)
     parser.add_argument("--center-crop-px", type=int, default=41)
     parser.add_argument("--local-field-grid", type=int, default=8)
+    parser.add_argument(
+        "--feature-target-mode",
+        choices=("static", "static_subpixel", "trace_registered"),
+        default="static",
+        help=(
+            "Feature target extraction mode. static uses the centered BackImage crop for every condition. "
+            "static_subpixel uses the same centered target with bilinear subpixel cropping. "
+            "trace_registered averages targets over source-image locations sampled by each eye trace, "
+            "so motion responses are decoded against pose-registered image features."
+        ),
+    )
+    parser.add_argument(
+        "--spatial-readout-mode",
+        choices=("amax", "center_mean", "trace_registered_center_mean"),
+        default="amax",
+        help=(
+            "How to pool the twin rate map before response summarization. amax is the historical "
+            "spatial max over the full map. center_mean averages a fixed central map crop. "
+            "trace_registered_center_mean uses eye position to sample the central source region "
+            "from the shifted activation map before averaging."
+        ),
+    )
+    parser.add_argument(
+        "--spatial-readout-radius",
+        type=int,
+        default=1,
+        help="Radius, in 51x51 rate-map bins, for center_mean and trace_registered_center_mean pooling.",
+    )
     parser.add_argument("--n-timepoints", type=int, default=40)
     parser.add_argument("--temporal-pc-components", type=int, default=4)
-    parser.add_argument("--latent-names", default="gabor_local_field,pyramid_local_field")
+    parser.add_argument(
+        "--latent-names",
+        default="gabor_local_field,pyramid_local_field",
+        help=(
+            "Comma-separated feature targets. Baselines include gabor_local_field,pyramid_local_field,dct_local_field. "
+            "V1-stat targets include pyramid_energy_global,pyramid_energy_grid4,pyramid_energy_grid8,"
+            "pyramid_energy_orientcov_grid4_typebalanced,pyramid_energy_orientcov_grid8_typebalanced,"
+            "gabor_local_field_grid4,gabor_energy_global,gabor_energy_grid4,gabor_energy_grid8,"
+            "gabor_energy_orientcov_grid4_typebalanced,gabor_energy_orientcov_grid8_typebalanced."
+        ),
+    )
     parser.add_argument("--pca-k-list", default="4,8")
     parser.add_argument("--ridge-alphas", default="0.01,0.1,1,10,100,1000")
     parser.add_argument("--fixed-ridge-alpha", type=float, default=None)
@@ -1116,6 +1888,33 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also save per-image x per-trace response summary arrays for hidden-trajectory posthocs.",
     )
+    parser.add_argument(
+        "--compute-ssi-features",
+        action="store_true",
+        help=(
+            "Compute spatial-SSI-derived response summaries from the full readout maps before spatial max-pooling, "
+            "then decode them with the same grouped ridge endpoint."
+        ),
+    )
+    parser.add_argument(
+        "--ssi-summary-names",
+        default="ssi_itn,ssi_unit_mean,ssi_itn_plus_rbar",
+        help=(
+            "Comma-separated SSI summaries to decode when --compute-ssi-features is set. "
+            "Available: ssi_itn, ssi_unit_mean, ssi_unit_spike_weighted_mean, "
+            "ssi_rbar_itn, ssi_itn_plus_rbar, ssi_population_time, and their "
+            "static-referenced delta_ssi_* variants."
+        ),
+    )
+    parser.add_argument(
+        "--ssi-incremental-base-summaries",
+        default="mean,delta_mean",
+        help=(
+            "Comma-separated ordinary response summaries to concatenate with each SSI summary "
+            "for incremental decode tests. Delta bases use static-referenced SSI deltas, "
+            "e.g. delta_mean_plus_delta_ssi_itn."
+        ),
+    )
     return parser
 
 
@@ -1153,6 +1952,8 @@ def run(args: argparse.Namespace) -> Path:
     invalid = sorted(set(families).difference(valid_families))
     if invalid:
         raise ValueError(f"Unknown --motion-families entries: {invalid}")
+    if bool(args.compute_ssi_features) and str(args.spatial_readout_mode) != "amax":
+        raise ValueError("--compute-ssi-features currently requires --spatial-readout-mode amax")
     scales = _parse_float_list(args.observed_rms_scales)
     latent_filter = set(_parse_str_list(args.latent_names))
     cfg = AggregateConfig(
@@ -1167,6 +1968,9 @@ def run(args: argparse.Namespace) -> Path:
         latent_crop_px=int(args.latent_crop_px),
         center_crop_px=int(args.center_crop_px),
         local_field_grid=int(args.local_field_grid),
+        feature_target_mode=str(args.feature_target_mode),
+        spatial_readout_mode=str(args.spatial_readout_mode),
+        spatial_readout_radius=int(args.spatial_readout_radius),
         n_timepoints=int(args.n_timepoints),
         temporal_pc_components=int(args.temporal_pc_components),
         pca_k_list=_parse_int_list(args.pca_k_list),
@@ -1213,6 +2017,11 @@ def run(args: argparse.Namespace) -> Path:
         seed=int(args.seed),
         dry_run=bool(args.dry_run),
         save_response_sample_arrays=bool(args.save_response_sample_arrays),
+        compute_ssi_features=bool(args.compute_ssi_features),
+        ssi_summary_names=_parse_str_list(args.ssi_summary_names) if bool(args.compute_ssi_features) else [],
+        ssi_incremental_base_summaries=(
+            _parse_str_list(args.ssi_incremental_base_summaries) if bool(args.compute_ssi_features) else []
+        ),
     )
     _write_json(out_dir / "run_metadata.json", {"config": asdict(cfg), "steerable_pyramid": HAVE_STEERABLE_PYRAMID})
     _progress(
@@ -1289,11 +2098,18 @@ def run(args: argparse.Namespace) -> Path:
             f"events<={args.max_trace_source_microsaccade_events})"
         )
 
-    scorer = None if args.dry_run else CanonicalTwinScorer(device=str(args.device), batch_size=int(args.twin_batch_size))
+    if args.dry_run:
+        scorer = None
+    elif bool(args.compute_ssi_features):
+        scorer = AggregateSsiTwinScorer(device=str(args.device), batch_size=int(args.twin_batch_size))
+    else:
+        scorer = CanonicalTwinScorer(device=str(args.device), batch_size=int(args.twin_batch_size))
     image_rows: list[dict[str, Any]] = []
     motion_rows: list[dict[str, Any]] = []
     latent_values: dict[str, list[np.ndarray]] = {}
+    target_latents_by_response: dict[int, dict[str, np.ndarray]] = {}
     raw_responses: list[np.ndarray] = []
+    raw_ssi_features: list[dict[str, np.ndarray] | None] = []
     records: list[dict[str, Any]] = []
     canvas_cache: dict[tuple[str, int], tuple[np.ndarray, float, tuple[int, int]]] = {}
 
@@ -1308,13 +2124,26 @@ def run(args: argparse.Namespace) -> Path:
             screen_shape=screen_shape,
         )
         patch = _clip_patch(canvas, (float(center_px[0]), float(center_px[1])), int(args.patch_size_px))
-        latents = _extract_requested_latents(
-            patch,
-            latent_crop_px=int(args.latent_crop_px),
-            center_crop_px=int(args.center_crop_px),
-            local_field_grid=int(args.local_field_grid),
-            requested=latent_filter,
-        )
+        if str(args.feature_target_mode) in {"static_subpixel", "trace_registered"}:
+            latents = _trace_registered_latents(
+                canvas,
+                center_px,
+                _static_trace(int(args.n_timepoints)),
+                ppd=float(ppd),
+                patch_size_px=int(args.patch_size_px),
+                latent_crop_px=int(args.latent_crop_px),
+                center_crop_px=int(args.center_crop_px),
+                local_field_grid=int(args.local_field_grid),
+                requested=latent_filter,
+            )
+        else:
+            latents = _extract_requested_latents(
+                patch,
+                latent_crop_px=int(args.latent_crop_px),
+                center_crop_px=int(args.center_crop_px),
+                local_field_grid=int(args.local_field_grid),
+                requested=latent_filter,
+            )
         if not latents:
             raise ValueError(f"No requested latent features were available for image {image_index}.")
         for name, value in latents.items():
@@ -1449,11 +2278,51 @@ def run(args: argparse.Namespace) -> Path:
                             "speed_p95_deg_s": float(meta["speed_p95_deg_s"]),
                         }
                     )
-        responses = scorer.responses(patch, traces, trace_batch_size=int(args.twin_trace_batch_size))
-        aligned = [_align_response_to_trace(resp, int(args.n_timepoints)) for resp in responses]
-        for spec, resp in zip(trace_specs, aligned, strict=True):
+        if str(args.feature_target_mode) == "trace_registered":
+            target_latents_for_specs = [
+                _trace_registered_latents(
+                    canvas,
+                    center_px,
+                    trace,
+                    ppd=float(ppd),
+                    patch_size_px=int(args.patch_size_px),
+                    latent_crop_px=int(args.latent_crop_px),
+                    center_crop_px=int(args.center_crop_px),
+                    local_field_grid=int(args.local_field_grid),
+                    requested=latent_filter,
+                )
+                for trace in traces
+            ]
+        else:
+            target_latents_for_specs = [latents for _ in traces]
+        if bool(args.compute_ssi_features):
+            assert isinstance(scorer, AggregateSsiTwinScorer)
+            response_items = scorer.responses_with_ssi(patch, traces, trace_batch_size=int(args.twin_trace_batch_size))
+            aligned_items = [
+                (
+                    _align_response_to_trace(resp, int(args.n_timepoints)),
+                    _align_ssi_to_trace(ssi, int(args.n_timepoints)),
+                )
+                for resp, ssi in response_items
+            ]
+        else:
+            if str(args.spatial_readout_mode) == "amax":
+                responses = scorer.responses(patch, traces, trace_batch_size=int(args.twin_trace_batch_size))
+            else:
+                responses = _responses_with_spatial_readout(
+                    scorer,
+                    patch,
+                    traces,
+                    trace_batch_size=int(args.twin_trace_batch_size),
+                    spatial_readout_mode=str(args.spatial_readout_mode),
+                    spatial_readout_radius=int(args.spatial_readout_radius),
+                )
+            aligned_items = [(_align_response_to_trace(resp, int(args.n_timepoints)), None) for resp in responses]
+        for spec, target_latents, (resp, ssi) in zip(trace_specs, target_latents_for_specs, aligned_items, strict=True):
             response_id = len(raw_responses)
             raw_responses.append(resp.astype(np.float32, copy=False))
+            raw_ssi_features.append(ssi)
+            target_latents_by_response[response_id] = target_latents
             records.append(
                 {
                     "response_id": response_id,
@@ -1513,6 +2382,42 @@ def run(args: argparse.Namespace) -> Path:
         motion_summary.to_csv(out_dir / "aggregate_motion_summary.csv", index=False)
     latent_arrays = {name: np.vstack(values).astype(np.float32) for name, values in latent_values.items()}
     np.savez_compressed(out_dir / "latent_feature_arrays.npz", **latent_arrays)
+    latent_arrays_by_condition: dict[tuple[str, str], dict[str, np.ndarray]] | None = None
+    if str(args.feature_target_mode) == "trace_registered" and target_latents_by_response:
+        latent_arrays_by_condition = _stack_condition_targets(records, target_latents_by_response)
+        registered_arrays = {
+            f"{name}__{family}__{scale_id}": arr
+            for (family, scale_id), condition_latents in sorted(latent_arrays_by_condition.items())
+            for name, arr in sorted(condition_latents.items())
+        }
+        np.savez_compressed(out_dir / "latent_feature_arrays_trace_registered_by_condition.npz", **registered_arrays)
+    target_weight_arrays: dict[str, np.ndarray] = {}
+    if PHASE_PRESERVING_SCALE_BALANCED_LATENT in latent_arrays:
+        weights = _pyramid_phase_preserving_scale_balance_weights(local_grid=int(args.local_field_grid))
+        if weights.shape[0] != latent_arrays[PHASE_PRESERVING_SCALE_BALANCED_LATENT].shape[1]:
+            raise ValueError(
+                f"{PHASE_PRESERVING_SCALE_BALANCED_LATENT} weights have length {weights.shape[0]}, "
+                f"but latent dim is {latent_arrays[PHASE_PRESERVING_SCALE_BALANCED_LATENT].shape[1]}"
+            )
+        target_weight_arrays[PHASE_PRESERVING_SCALE_BALANCED_LATENT] = weights.astype(np.float32)
+    for name in sorted(PYRAMID_ENERGY_ORIENTCOV_TYPEBALANCED_NAMES):
+        if name not in latent_arrays:
+            continue
+        grid = int(PYRAMID_ENERGY_ORIENTCOV_GRID_BY_NAME[name])
+        weights = _pyramid_energy_orientcov_type_balance_weights(local_grid=grid)
+        if weights.shape[0] != latent_arrays[name].shape[1]:
+            raise ValueError(f"{name} weights have length {weights.shape[0]}, but latent dim is {latent_arrays[name].shape[1]}")
+        target_weight_arrays[name] = weights.astype(np.float32)
+    for name in sorted(GABOR_ENERGY_ORIENTCOV_TYPEBALANCED_NAMES):
+        if name not in latent_arrays:
+            continue
+        grid = int(GABOR_ENERGY_ORIENTCOV_GRID_BY_NAME[name])
+        weights = _gabor_energy_orientcov_type_balance_weights(local_grid=grid)
+        if weights.shape[0] != latent_arrays[name].shape[1]:
+            raise ValueError(f"{name} weights have length {weights.shape[0]}, but latent dim is {latent_arrays[name].shape[1]}")
+        target_weight_arrays[name] = weights.astype(np.float32)
+    if target_weight_arrays:
+        np.savez_compressed(out_dir / "latent_feature_weights.npz", **target_weight_arrays)
 
     if args.dry_run:
         _progress("dry run complete; skipped twin responses and summaries")
@@ -1526,7 +2431,23 @@ def run(args: argparse.Namespace) -> Path:
         for rec in records
         if rec["family"] == "static"
     }
+    static_ssi_by_image: dict[int, dict[str, np.ndarray]] = {}
+    if bool(args.compute_ssi_features):
+        for rec in records:
+            if rec["family"] != "static":
+                continue
+            image_index = int(rec["image_index"])
+            ssi = raw_ssi_features[int(rec["response_id"])]
+            if ssi is None:
+                raise ValueError("SSI features were requested but one static response has no SSI feature dictionary")
+            static_ssi_by_image[image_index] = ssi
     response_summaries = {}
+    ssi_summary_names = _parse_str_list(args.ssi_summary_names) if bool(args.compute_ssi_features) else []
+    ssi_standalone_summary_names = _expand_ssi_summary_names(ssi_summary_names) if bool(args.compute_ssi_features) else []
+    ssi_incremental_base_summaries = (
+        _parse_str_list(args.ssi_incremental_base_summaries) if bool(args.compute_ssi_features) else []
+    )
+    ssi_incremental_names: list[str] = []
     for rec in records:
         response_id = int(rec["response_id"])
         image_index = int(rec["image_index"])
@@ -1538,8 +2459,27 @@ def run(args: argparse.Namespace) -> Path:
             dct_basis,
             prefix="temporal_dct",
         )
+        if bool(args.compute_ssi_features):
+            ssi = raw_ssi_features[response_id]
+            if ssi is None:
+                raise ValueError("SSI features were requested but one response has no SSI feature dictionary")
+            summaries.update(
+                _summarize_ssi_features(
+                    ssi,
+                    ssi_standalone_summary_names,
+                    static_ssi=static_ssi_by_image[image_index],
+                )
+            )
+            for name in _add_ssi_incremental_summaries(
+                summaries,
+                base_summaries=ssi_incremental_base_summaries,
+                ssi_summary_names=ssi_summary_names,
+            ):
+                if name not in ssi_incremental_names:
+                    ssi_incremental_names.append(name)
         response_summaries[response_id] = summaries
-    summary_names = ["temporal_pca", "temporal_delta_pca", "temporal_dct", "temporal_dct_delta", "mean", "delta_mean"]
+    base_summary_names = ["temporal_pca", "temporal_delta_pca", "temporal_dct", "temporal_dct_delta", "mean", "delta_mean"]
+    summary_names = base_summary_names + ssi_standalone_summary_names + ssi_incremental_names
     summary_arrays: dict[str, np.ndarray] = {}
     for summary in summary_names:
         by_condition = _stack_condition_features(records, response_summaries, summary)
@@ -1569,7 +2509,22 @@ def run(args: argparse.Namespace) -> Path:
     all_per_image: dict[tuple[str, str, str, str, int], np.ndarray] = {}
     for summary in summary_names:
         by_condition = _stack_condition_features(records, response_summaries, summary)
-        rows, per_image = _decode_rows(by_condition, latent_arrays, decode_groups, args)
+        if latent_arrays_by_condition is None:
+            rows, per_image = _decode_rows(
+                by_condition,
+                latent_arrays,
+                decode_groups,
+                args,
+                target_weight_arrays=target_weight_arrays,
+            )
+        else:
+            rows, per_image = _decode_rows_shared_target_basis(
+                by_condition,
+                latent_arrays_by_condition,
+                decode_groups,
+                args,
+                target_weight_arrays=target_weight_arrays,
+            )
         for row in rows:
             row["response_summary"] = summary
             all_decode_rows.append(row)
@@ -1577,6 +2532,14 @@ def run(args: argparse.Namespace) -> Path:
             all_per_image[(summary, *key)] = values
         _progress(f"decoded summary={summary}; jobs={len(rows)}")
     _write_csv(out_dir / "decode_summary.csv", all_decode_rows)
+    ssi_incremental_decode_rows = _ssi_incremental_decode_rows(
+        all_decode_rows,
+        all_per_image,
+        sessions,
+        args,
+        incremental_summary_names=ssi_incremental_names,
+    )
+    _write_csv(out_dir / "ssi_incremental_decode.csv", ssi_incremental_decode_rows)
 
     contrast_input_rows = []
     contrast_rows: list[dict[str, Any]] = []
@@ -1594,7 +2557,8 @@ def run(args: argparse.Namespace) -> Path:
     _write_csv(out_dir / "decode_contrasts.csv", contrast_rows)
 
     condition_keys = sorted({("static", "static")} | {(str(rec["family"]), str(rec["scale_id"])) for rec in records if rec["family"] != "static"})
-    cov_rows = _covariance_rows(records, response_summaries, summary_names, condition_keys, overlap_dim=5)
+    covariance_summary_names = [name for name in summary_names if not _is_ssi_summary_name(name)]
+    cov_rows = _covariance_rows(records, response_summaries, covariance_summary_names, condition_keys, overlap_dim=5)
     _write_csv(out_dir / "covariance_summary.csv", cov_rows)
 
     report = [
@@ -1606,13 +2570,34 @@ def run(args: argparse.Namespace) -> Path:
         f"- Scales: {', '.join(str(v) for v in scales)}",
         f"- Temporal basis components: {basis.shape[1]}",
         f"- Latents: {', '.join(latent_arrays)}",
+        f"- Feature target mode: {args.feature_target_mode}",
+        f"- Spatial readout mode: {args.spatial_readout_mode}; radius `{args.spatial_readout_radius}`",
+        f"- Target basis mode: {'shared train-condition PCA' if str(args.feature_target_mode) == 'trace_registered' else 'condition-local PCA'}",
+        f"- Target feature weighting: {', '.join(sorted(target_weight_arrays)) if target_weight_arrays else 'none'}",
+        f"- SSI feature summaries: {', '.join(ssi_standalone_summary_names) if ssi_standalone_summary_names else 'not computed'}",
+        f"- SSI incremental bases: {', '.join(ssi_incremental_base_summaries) if ssi_incremental_base_summaries else 'none'}",
         "",
         "Primary files:",
         "- `decode_summary.csv`",
         "- `decode_contrasts.csv`",
+        "- `ssi_incremental_decode.csv`",
         "- `covariance_summary.csv`",
         "- `response_summary_arrays.npz`",
     ]
+    if str(args.feature_target_mode) == "trace_registered":
+        report.append("- `latent_feature_arrays_trace_registered_by_condition.npz`")
+    if ssi_summary_names:
+        report.extend(
+            [
+                "",
+                "SSI adjudication:",
+                "- SSI summaries were decoded with the same grouped ridge endpoint as the ordinary response summaries.",
+                "- Static-referenced `delta_ssi_*` summaries are generated alongside absolute SSI summaries.",
+                "- Incremental summaries concatenate an ordinary response summary with the matched SSI component; delta response bases use delta SSI components.",
+                "- `ssi_incremental_decode.csv` reports same-condition held-out decode gain from adding SSI to the base response summary.",
+                "- Covariance/subspace diagnostics are kept to ordinary response summaries to avoid treating high-dimensional SSI features as a separate covariance claim.",
+            ]
+        )
     (out_dir / "summary_report.md").write_text("\n".join(report) + "\n", encoding="utf-8")
     _progress(f"complete; wrote summaries to {out_dir}")
     return out_dir

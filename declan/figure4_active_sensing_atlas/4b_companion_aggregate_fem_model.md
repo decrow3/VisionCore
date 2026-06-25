@@ -257,6 +257,69 @@ image-relative direction matters. OU-like confined motion remains audit-only
 because its below-static behavior may reflect a trace-generation or readout
 mismatch.
 
+## SSI Adjudication Test
+
+The older spatial-SSI analysis should not be dismissed as only a "where"
+measure. The activation map contains many differently tuned units, so map
+peakiness can in principle carry image-content information. The clean test is
+therefore not an argument about whether SSI or the decoder is better in the
+abstract. The clean test is to feed SSI-derived features into the same held-out
+feature decoder used for 4B.
+
+The implemented adjudication keeps the downstream endpoint fixed:
+
+```text
+target: pyramid_local_field image feature target
+decoder: grouped-by-image ridge decoder
+folds and ridge policy: same as the aggregate 4B decoder
+score: held-out feature prediction / negative-MSE gain
+```
+
+Only the input representation changes:
+
+```text
+ordinary response summary:
+  X = mean, delta_mean, temporal PCA/DCT, etc.
+
+SSI representation:
+  X = spatial-SSI-derived features computed from the full readout map before
+      spatial max-pooling
+
+incremental representation:
+  X = [ordinary response summary, SSI representation]
+```
+
+The aggregate runner now exposes this with:
+
+```text
+--compute-ssi-features
+--ssi-summary-names
+--ssi-incremental-base-summaries
+```
+
+The main SSI summary is `ssi_itn`, the flattened per-time, per-unit
+Skaggs-style SSI quantity. Smaller or more generous variants are also
+available: `ssi_unit_mean`, `ssi_unit_spike_weighted_mean`, `ssi_rbar_itn`,
+`ssi_itn_plus_rbar`, and `ssi_population_time`. Incremental summaries such as
+`delta_mean_plus_ssi_itn` ask whether SSI features add held-out feature
+prediction beyond an ordinary response summary.
+
+Interpretation is endpoint-specific:
+
+```text
+If SSI features improve held-out feature prediction beyond the response
+summary, then the response summary is leaving content-relevant map structure on
+the table.
+
+If SSI features do not improve held-out feature prediction, then any real SSI
+gain is not adding recoverable image-feature information for the current 4B
+endpoint.
+```
+
+This test does not make SSI the gold standard. It uses the feature decoder as a
+common measuring stick so SSI and ordinary response summaries answer the same
+question: how much do they predict about image content on held-out images?
+
 ## Feature Target Interpretation
 
 The `pyramid_local_field` target is not an image reconstruction target. It is a

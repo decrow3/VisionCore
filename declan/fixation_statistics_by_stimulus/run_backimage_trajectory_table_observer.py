@@ -1166,6 +1166,8 @@ def run(args: argparse.Namespace) -> Path:
                                 "true_trajectory_index": int(true_prior_index),
                                 "nearest_trajectory_index": int(nearest_idx),
                                 "nearest_trajectory_distance": float(nearest_dist),
+                                "has_prior_trajectory_xy": False,
+                                "has_observed_trajectory_xy": False,
                                 "prior_duplicate_trajectory_count": int(prior_duplicate_count),
                                 **prior_rejection_meta,
                                 "dry_run": True,
@@ -1196,6 +1198,11 @@ def run(args: argparse.Namespace) -> Path:
                     # zero-eye baseline only changes the response table used to
                     # explain that same moved observation.
                     y_obs_counts = known_counts[int(cand["true_candidate_index"])]
+                    prior_trajectory_xy = (
+                        np.asarray(prior_traces_by_candidate, dtype=np.float32)
+                        if axis_per_candidate
+                        else np.asarray(prior_traces, dtype=np.float32)
+                    )
 
                     cache_rel = ""
                     if not bool(args.skip_response_cache):
@@ -1209,6 +1216,8 @@ def run(args: argparse.Namespace) -> Path:
                             known_lambda_counts=known_counts.astype(np.float32, copy=False),
                             zero_lambda_counts=zero_counts.astype(np.float32, copy=False),
                             y_obs_counts=y_obs_counts.astype(np.float32, copy=False),
+                            prior_trajectory_xy=prior_trajectory_xy.astype(np.float32, copy=False),
+                            observed_trajectory_xy=np.asarray(obs_trace, dtype=np.float32),
                             candidate_ids=np.asarray(cand["candidate_ids"]),
                             prior_trajectory_ids=(
                                 _spec_id_array(prior_specs_by_candidate)
@@ -1221,6 +1230,9 @@ def run(args: argparse.Namespace) -> Path:
                             nearest_trajectory_distance=np.asarray([float(nearest_dist)], dtype=np.float32),
                             observation_reference_mode=np.asarray(["observed_trace_moved"]),
                             zero_reference_mode=np.asarray(["patch_center_static_tau_zero"]),
+                            trajectory_coordinate_schema=np.asarray(
+                                ["prior_trajectory_xy is (candidate,trajectory,time,xy) for per_candidate catalogs, else (trajectory,time,xy); observed_trajectory_xy is (time,xy)"]
+                            ),
                         )
                         cache_rel = str(cache_path.relative_to(out_dir))
                         cache_rows.append(
@@ -1239,6 +1251,8 @@ def run(args: argparse.Namespace) -> Path:
                                 "true_trajectory_index": int(true_prior_index),
                                 "nearest_trajectory_index": int(nearest_idx),
                                 "nearest_trajectory_distance": float(nearest_dist),
+                                "has_prior_trajectory_xy": True,
+                                "has_observed_trajectory_xy": True,
                                 "prior_duplicate_trajectory_count": int(prior_duplicate_count),
                                 "response_frames_before_alignment_min": int(min(response_frames_before_alignment)),
                                 "response_frames_before_alignment_max": int(max(response_frames_before_alignment)),

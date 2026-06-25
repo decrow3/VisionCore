@@ -1,0 +1,8 @@
+run_slug,run_label,posterior_temperature,mean_feature_cosine,mean_true_mass,median_N_eff_fraction,n
+catalog_residual_top2_shrink,Catalog residual top-2 shrink,0.125,0.9725330153130823,0.7200979476100465,0.3122678955807088,768.0
+noanchor_ar1,No-anchor AR(1),2.0,0.8712516407592331,0.34954440571248896,0.8517401675918512,768.0
+noanchor_brownian_ctf,No-anchor Brownian CTF,1.0,0.8711401009251821,0.3946530629408147,0.6995855997976567,768.0
+noanchor_quadratic_poisson,No-anchor quadratic,0.25,0.932116431536067,0.5638788404444086,0.49990626741103233,768.0
+noanchor_quadratic_scale_conditioned,No-anchor quadratic scale-conditioned,0.25,0.9325021632270855,0.5675400070810775,0.49053125201586817,768.0
+noanchor_quadratic_scale_conditioned_iter160,No-anchor quadratic scale-conditioned iter160,0.25,0.9324041176515787,0.5677745991592512,0.4905746438277143,768.0
+noanchor_residual_ctf,No-anchor residual CTF,2.0,0.8700092093648765,0.34832165837213336,0.8513521897814234,768.0

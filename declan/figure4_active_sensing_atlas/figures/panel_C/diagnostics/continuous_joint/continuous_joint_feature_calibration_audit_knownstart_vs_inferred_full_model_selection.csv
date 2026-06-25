@@ -1,0 +1,4 @@
+row_type,split_key,calibration_mode,prior_scale,prior_family,eval_split,selected_on_split,selected_run_slug,selected_run_label,train_feature_cosine,eval_feature_cosine,eval_image_accuracy,eval_delta_vs_default,selected_temperature,n_eval
+split,trial_id,scale_specific,all,all,0,1,origin_knownstart_full,Origin known-start full,0.9377076831707964,0.9344421392331617,0.7109375,0.023490602179368342,"0.5:0.125,1.0:0.125,2.0:0.25",384
+split,trial_id,scale_specific,all,all,1,0,origin_knownstart_full,Origin known-start full,0.9344421392331617,0.9377076831707964,0.703125,0.026427236881576888,"0.5:0.125,1.0:0.125,2.0:0.5",384
+aggregate,trial_id,scale_specific,all,all,-1,-1,origin_knownstart_full;origin_knownstart_full,Origin known-start full;Origin known-start full,0.9360749112019789,0.9360749112019789,0.70703125,0.024958919530472617,"0.5:0.125,1.0:0.125,2.0:0.25;0.5:0.125,1.0:0.125,2.0:0.5",768

@@ -288,27 +288,117 @@ def _block_means(image: np.ndarray, grid: int) -> np.ndarray:
     return np.asarray(out, dtype=np.float64)
 
 
-def _gabor_features(crop: np.ndarray, *, scope: str, local_grid: int) -> np.ndarray:
+GABOR_ORIENTATIONS_DEG = (0.0, 22.5, 45.0, 67.5, 90.0, 112.5, 135.0, 157.5)
+GABOR_FREQUENCIES = (0.06, 0.11, 0.18)
+GABOR_LOCAL_FIELD_GRID4 = "gabor_local_field_grid4"
+GABOR_ENERGY_GLOBAL = "gabor_energy_global"
+GABOR_ENERGY_GRID4 = "gabor_energy_grid4"
+GABOR_ENERGY_GRID8 = "gabor_energy_grid8"
+GABOR_ENERGY_ORIENTCOV_GRID4_TYPEBALANCED = "gabor_energy_orientcov_grid4_typebalanced"
+GABOR_ENERGY_ORIENTCOV_GRID8_TYPEBALANCED = "gabor_energy_orientcov_grid8_typebalanced"
+
+GABOR_ENERGY_GRID_BY_NAME = {
+    GABOR_ENERGY_GLOBAL: 1,
+    GABOR_ENERGY_GRID4: 4,
+    GABOR_ENERGY_GRID8: 8,
+}
+GABOR_ENERGY_ORIENTCOV_GRID_BY_NAME = {
+    GABOR_ENERGY_ORIENTCOV_GRID4_TYPEBALANCED: 4,
+    GABOR_ENERGY_ORIENTCOV_GRID8_TYPEBALANCED: 8,
+}
+GABOR_ENERGY_ORIENTCOV_TYPEBALANCED_NAMES = {
+    GABOR_ENERGY_ORIENTCOV_GRID4_TYPEBALANCED,
+    GABOR_ENERGY_ORIENTCOV_GRID8_TYPEBALANCED,
+}
+
+
+def _gabor_filter_bands(crop: np.ndarray) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
     image = _zscore_image(_resize_to_square(crop, size_px=64))
-    orientations = (0.0, 22.5, 45.0, 67.5, 90.0, 112.5, 135.0, 157.5)
-    freqs = (0.06, 0.11, 0.18)
-    feats: list[np.ndarray] = []
-    for freq in freqs:
+    bands: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+    for freq in GABOR_FREQUENCIES:
         sigma = max(3.0, 0.55 / float(freq))
         kernel_size = int(min(31, max(9, 2 * round(3.0 * sigma) + 1)))
         if kernel_size % 2 == 0:
             kernel_size += 1
-        for theta in orientations:
+        evs: list[np.ndarray] = []
+        ods: list[np.ndarray] = []
+        amps: list[np.ndarray] = []
+        for theta in GABOR_ORIENTATIONS_DEG:
             even, odd = _gabor_kernel(kernel_size, freq, theta, sigma=min(sigma, 8.0))
             ev = convolve(image, even, mode="nearest")
             od = convolve(image, odd, mode="nearest")
-            amp = np.sqrt(ev * ev + od * od)
+            evs.append(ev.astype(np.float64, copy=False))
+            ods.append(od.astype(np.float64, copy=False))
+            amps.append(np.sqrt(ev * ev + od * od).astype(np.float64, copy=False))
+        bands.append((np.stack(evs), np.stack(ods), np.stack(amps)))
+    return bands
+
+
+def _gabor_features_from_bands(
+    bands: list[tuple[np.ndarray, np.ndarray, np.ndarray]],
+    *,
+    scope: str,
+    local_grid: int,
+) -> np.ndarray:
+    feats: list[np.ndarray] = []
+    for evs, ods, amps in bands:
+        for orient_idx in range(amps.shape[0]):
+            ev = evs[orient_idx]
+            od = ods[orient_idx]
+            amp = amps[orient_idx]
             if scope == "center":
                 cy, cx = amp.shape[0] // 2, amp.shape[1] // 2
                 feats.append(np.asarray([float(ev[cy, cx]), float(od[cy, cx]), float(amp[cy, cx])], dtype=np.float64))
             else:
                 feats.extend((_block_means(ev, grid=local_grid), _block_means(od, grid=local_grid), _block_means(amp, grid=local_grid)))
+    if not feats:
+        return np.empty(0, dtype=np.float64)
     return np.concatenate(feats).astype(np.float64)
+
+
+def _gabor_features(crop: np.ndarray, *, scope: str, local_grid: int) -> np.ndarray:
+    return _gabor_features_from_bands(_gabor_filter_bands(crop), scope=scope, local_grid=int(local_grid))
+
+
+def _gabor_energy_bands_from_filter_bands(bands: list[tuple[np.ndarray, np.ndarray, np.ndarray]]) -> list[np.ndarray]:
+    return [(amps * amps).astype(np.float64, copy=False) for _evs, _ods, amps in bands]
+
+
+def _gabor_local_energy_from_bands(energy_bands: list[np.ndarray], *, local_grid: int) -> np.ndarray:
+    feats: list[np.ndarray] = []
+    for energy in energy_bands:
+        for orient_idx in range(energy.shape[0]):
+            feats.append(_block_means(energy[orient_idx], grid=int(local_grid)))
+    if not feats:
+        return np.empty(0, dtype=np.float64)
+    return np.concatenate(feats).astype(np.float64)
+
+
+def _gabor_local_energy_orientcov_from_bands(energy_bands: list[np.ndarray], *, local_grid: int) -> np.ndarray:
+    feats: list[np.ndarray] = []
+    for energy in energy_bands:
+        for orient_idx in range(energy.shape[0]):
+            feats.append(_block_means(energy[orient_idx], grid=int(local_grid)))
+        feats.append(_block_orientation_covariances(energy, grid=int(local_grid)))
+    if not feats:
+        return np.empty(0, dtype=np.float64)
+    return np.concatenate(feats).astype(np.float64)
+
+
+def _gabor_energy_orientcov_type_balance_weights(*, local_grid: int) -> np.ndarray:
+    n_orient = len(GABOR_ORIENTATIONS_DEG)
+    n_cov = n_orient * (n_orient + 1) // 2
+    block_count = int(local_grid) * int(local_grid)
+    energy_dim = n_orient * block_count
+    cov_dim = n_cov * block_count
+    reference_dim = 0.5 * float(energy_dim + cov_dim)
+    freq_weights = np.concatenate(
+        [
+            np.full(energy_dim, np.sqrt(reference_dim / float(energy_dim)), dtype=np.float64),
+            np.full(cov_dim, np.sqrt(reference_dim / float(cov_dim)), dtype=np.float64),
+        ]
+    )
+    return np.tile(freq_weights, len(GABOR_FREQUENCIES)).astype(np.float64)
 
 
 def _tensor_to_numpy(value) -> np.ndarray:
@@ -355,7 +445,233 @@ def _pyramid_features(crop: np.ndarray, *, scope: str, local_grid: int, height: 
     return np.concatenate(feats).astype(np.float64)
 
 
-def _extract_latents(patch: np.ndarray, *, latent_crop_px: int, center_crop_px: int, local_field_grid: int) -> dict[str, np.ndarray]:
+PYRAMID_PHASE_PRESERVING_REAL_IMAG_GRIDS = (64, 32, 16, 8)
+PYRAMID_LOCAL_FIELD_PHASE_PRESERVING = "pyramid_local_field_phase_preserving"
+PYRAMID_LOCAL_FIELD_PHASE_PRESERVING_SCALE_BALANCED = "pyramid_local_field_phase_preserving_scale_balanced"
+PYRAMID_LOCAL_STATS_ENERGY_ORIENTCOV = "pyramid_local_stats_energy_orientcov"
+PYRAMID_ENERGY_GLOBAL = "pyramid_energy_global"
+PYRAMID_ENERGY_GRID4 = "pyramid_energy_grid4"
+PYRAMID_ENERGY_GRID8 = "pyramid_energy_grid8"
+PYRAMID_ENERGY_ORIENTCOV_GRID4_TYPEBALANCED = "pyramid_energy_orientcov_grid4_typebalanced"
+PYRAMID_ENERGY_ORIENTCOV_GRID8_TYPEBALANCED = "pyramid_energy_orientcov_grid8_typebalanced"
+
+PYRAMID_ENERGY_GRID_BY_NAME = {
+    PYRAMID_ENERGY_GLOBAL: 1,
+    PYRAMID_ENERGY_GRID4: 4,
+    PYRAMID_ENERGY_GRID8: 8,
+}
+PYRAMID_ENERGY_ORIENTCOV_GRID_BY_NAME = {
+    PYRAMID_LOCAL_STATS_ENERGY_ORIENTCOV: 8,
+    PYRAMID_ENERGY_ORIENTCOV_GRID4_TYPEBALANCED: 4,
+    PYRAMID_ENERGY_ORIENTCOV_GRID8_TYPEBALANCED: 8,
+}
+PYRAMID_ENERGY_ORIENTCOV_TYPEBALANCED_NAMES = {
+    PYRAMID_ENERGY_ORIENTCOV_GRID4_TYPEBALANCED,
+    PYRAMID_ENERGY_ORIENTCOV_GRID8_TYPEBALANCED,
+}
+
+
+def _pyramid_phase_preserving_band_dims(
+    *,
+    local_grid: int,
+    height: int = 4,
+    order: int = 3,
+    phase_grids: tuple[int, ...] = PYRAMID_PHASE_PRESERVING_REAL_IMAG_GRIDS,
+) -> list[int]:
+    n_orientations = int(order) + 1
+    dims: list[int] = []
+    for band_index in range(int(height)):
+        phase_grid = int(phase_grids[band_index]) if 0 <= band_index < len(phase_grids) else int(local_grid)
+        dims.append(n_orientations * (2 * phase_grid * phase_grid + int(local_grid) * int(local_grid)))
+    return dims
+
+
+def _pyramid_phase_preserving_scale_balance_weights(
+    *,
+    local_grid: int,
+    height: int = 4,
+    order: int = 3,
+    phase_grids: tuple[int, ...] = PYRAMID_PHASE_PRESERVING_REAL_IMAG_GRIDS,
+) -> np.ndarray:
+    dims = _pyramid_phase_preserving_band_dims(
+        local_grid=int(local_grid),
+        height=int(height),
+        order=int(order),
+        phase_grids=phase_grids,
+    )
+    reference_dim = float(np.mean(dims))
+    weights = [np.full(dim, np.sqrt(reference_dim / float(dim)), dtype=np.float64) for dim in dims]
+    return np.concatenate(weights).astype(np.float64)
+
+
+def _pyramid_features_phase_preserving(
+    crop: np.ndarray,
+    *,
+    scope: str,
+    local_grid: int,
+    height: int = 4,
+    order: int = 3,
+    phase_grids: tuple[int, ...] = PYRAMID_PHASE_PRESERVING_REAL_IMAG_GRIDS,
+) -> np.ndarray:
+    if not HAVE_STEERABLE_PYRAMID:
+        return np.empty(0, dtype=np.float64)
+    if scope == "center":
+        return _pyramid_features(crop, scope=scope, local_grid=local_grid, height=height, order=order)
+
+    image = _zscore_image(_resize_to_square(crop, size_px=128)).astype(np.float32)
+    patch, _padding = _padded_even_patch(image)
+    pyr = _steerable_pyramid(patch.shape, height=int(height), order=int(order))
+    coeffs = pyr(_patch_to_tensor(patch))
+    feats: list[np.ndarray] = []
+    complex_band_index = 0
+    for key, value in coeffs.items():
+        arr = _tensor_to_numpy(value)
+        if not np.iscomplexobj(arr):
+            continue
+        if arr.ndim == 2:
+            arr = arr[None, :, :]
+        try:
+            band_index = int(key)
+        except (TypeError, ValueError):
+            band_index = complex_band_index
+        complex_band_index += 1
+        phase_grid = int(phase_grids[band_index]) if 0 <= band_index < len(phase_grids) else int(local_grid)
+        for orient_idx in range(arr.shape[0]):
+            plane = arr[orient_idx]
+            real = np.real(plane)
+            imag = np.imag(plane)
+            mag = np.abs(plane)
+            feats.extend(
+                (
+                    _block_means(real, grid=phase_grid),
+                    _block_means(imag, grid=phase_grid),
+                    _block_means(mag, grid=local_grid),
+                )
+            )
+    if not feats:
+        return np.empty(0, dtype=np.float64)
+    return np.concatenate(feats).astype(np.float64)
+
+
+def _pyramid_complex_energy_bands(crop: np.ndarray, *, height: int = 4, order: int = 3) -> list[np.ndarray]:
+    if not HAVE_STEERABLE_PYRAMID:
+        return []
+    image = _zscore_image(_resize_to_square(crop, size_px=128)).astype(np.float32)
+    patch, _padding = _padded_even_patch(image)
+    pyr = _steerable_pyramid(patch.shape, height=int(height), order=int(order))
+    coeffs = pyr(_patch_to_tensor(patch))
+    bands: list[np.ndarray] = []
+    for _key, value in coeffs.items():
+        arr = _tensor_to_numpy(value)
+        if not np.iscomplexobj(arr):
+            continue
+        if arr.ndim == 2:
+            arr = arr[None, :, :]
+        bands.append((np.abs(arr) ** 2).astype(np.float64))
+    return bands
+
+
+def _pyramid_local_energy(
+    crop: np.ndarray,
+    *,
+    local_grid: int,
+    height: int = 4,
+    order: int = 3,
+) -> np.ndarray:
+    return _pyramid_local_energy_from_bands(_pyramid_complex_energy_bands(crop, height=int(height), order=int(order)), local_grid=local_grid)
+
+
+def _pyramid_local_energy_from_bands(energy_bands: list[np.ndarray], *, local_grid: int) -> np.ndarray:
+    feats: list[np.ndarray] = []
+    for energy in energy_bands:
+        for orient_idx in range(energy.shape[0]):
+            feats.append(_block_means(energy[orient_idx], grid=int(local_grid)))
+    if not feats:
+        return np.empty(0, dtype=np.float64)
+    return np.concatenate(feats).astype(np.float64)
+
+
+def _block_orientation_covariances(orientation_values: np.ndarray, grid: int) -> np.ndarray:
+    orientation_values = np.asarray(orientation_values, dtype=np.float64)
+    if orientation_values.ndim != 3:
+        raise ValueError(f"Expected orientation values with shape (orientation, H, W); got {orientation_values.shape}")
+    n_orient = int(orientation_values.shape[0])
+    upper = np.triu_indices(n_orient)
+    rows = np.array_split(np.arange(orientation_values.shape[1]), int(grid))
+    cols = np.array_split(np.arange(orientation_values.shape[2]), int(grid))
+    out = []
+    for rr in rows:
+        for cc in cols:
+            block = orientation_values[:, rr[:, None], cc].reshape(n_orient, -1).T
+            block = block - np.nanmean(block, axis=0, keepdims=True)
+            cov = (block.T @ block) / max(1, block.shape[0])
+            out.append(cov[upper])
+    return np.concatenate(out).astype(np.float64)
+
+
+def _pyramid_local_energy_orientcov(
+    crop: np.ndarray,
+    *,
+    local_grid: int,
+    height: int = 4,
+    order: int = 3,
+) -> np.ndarray:
+    return _pyramid_local_energy_orientcov_from_bands(
+        _pyramid_complex_energy_bands(crop, height=int(height), order=int(order)),
+        local_grid=local_grid,
+    )
+
+
+def _pyramid_local_energy_orientcov_from_bands(energy_bands: list[np.ndarray], *, local_grid: int) -> np.ndarray:
+    feats: list[np.ndarray] = []
+    for energy in energy_bands:
+        for orient_idx in range(energy.shape[0]):
+            feats.append(_block_means(energy[orient_idx], grid=int(local_grid)))
+        feats.append(_block_orientation_covariances(energy, grid=int(local_grid)))
+    if not feats:
+        return np.empty(0, dtype=np.float64)
+    return np.concatenate(feats).astype(np.float64)
+
+
+def _pyramid_local_stats_energy_orientcov(
+    crop: np.ndarray,
+    *,
+    local_grid: int,
+    height: int = 4,
+    order: int = 3,
+) -> np.ndarray:
+    return _pyramid_local_energy_orientcov(crop, local_grid=local_grid, height=height, order=order)
+
+
+def _pyramid_energy_orientcov_type_balance_weights(
+    *,
+    local_grid: int,
+    height: int = 4,
+    order: int = 3,
+) -> np.ndarray:
+    n_orient = int(order) + 1
+    n_cov = n_orient * (n_orient + 1) // 2
+    block_count = int(local_grid) * int(local_grid)
+    energy_dim = n_orient * block_count
+    cov_dim = n_cov * block_count
+    reference_dim = 0.5 * float(energy_dim + cov_dim)
+    band_weights = np.concatenate(
+        [
+            np.full(energy_dim, np.sqrt(reference_dim / float(energy_dim)), dtype=np.float64),
+            np.full(cov_dim, np.sqrt(reference_dim / float(cov_dim)), dtype=np.float64),
+        ]
+    )
+    return np.tile(band_weights, int(height)).astype(np.float64)
+
+
+def _extract_latents(
+    patch: np.ndarray,
+    *,
+    latent_crop_px: int,
+    center_crop_px: int,
+    local_field_grid: int,
+    requested: set[str] | None = None,
+) -> dict[str, np.ndarray]:
     image = _standardize_uint_like(patch)
     field_crop = _central_crop(image, int(latent_crop_px))
     center_crop = _central_crop(image, int(center_crop_px))
@@ -365,9 +681,49 @@ def _extract_latents(patch: np.ndarray, *, latent_crop_px: int, center_crop_px: 
         "gabor_center": _gabor_features(center_crop, scope="center", local_grid=int(local_field_grid)),
         "gabor_local_field": _gabor_features(field_crop, scope="local_field", local_grid=int(local_field_grid)),
     }
+    requested_gabor_names = set(GABOR_ENERGY_GRID_BY_NAME).union(GABOR_ENERGY_ORIENTCOV_GRID_BY_NAME)
+    requested_gabor_names = requested_gabor_names.intersection(requested or set())
+    if requested and GABOR_LOCAL_FIELD_GRID4 in requested:
+        out[GABOR_LOCAL_FIELD_GRID4] = _gabor_features(field_crop, scope="local_field", local_grid=4)
+    if requested_gabor_names:
+        gabor_bands = _gabor_filter_bands(field_crop)
+        gabor_energy_bands = _gabor_energy_bands_from_filter_bands(gabor_bands)
+        for name, grid in GABOR_ENERGY_GRID_BY_NAME.items():
+            if requested and name in requested:
+                out[name] = _gabor_local_energy_from_bands(gabor_energy_bands, local_grid=int(grid))
+        for name, grid in GABOR_ENERGY_ORIENTCOV_GRID_BY_NAME.items():
+            if requested and name in requested:
+                out[name] = _gabor_local_energy_orientcov_from_bands(gabor_energy_bands, local_grid=int(grid))
     if HAVE_STEERABLE_PYRAMID:
         out["pyramid_center"] = _pyramid_features(center_crop, scope="center", local_grid=int(local_field_grid))
         out["pyramid_local_field"] = _pyramid_features(field_crop, scope="local_field", local_grid=int(local_field_grid))
+        phase_requested = bool(
+            requested
+            and {
+                PYRAMID_LOCAL_FIELD_PHASE_PRESERVING,
+                PYRAMID_LOCAL_FIELD_PHASE_PRESERVING_SCALE_BALANCED,
+            }.intersection(requested)
+        )
+        if phase_requested:
+            phase_features = _pyramid_features_phase_preserving(
+                field_crop,
+                scope="local_field",
+                local_grid=int(local_field_grid),
+            )
+            if requested and PYRAMID_LOCAL_FIELD_PHASE_PRESERVING in requested:
+                out[PYRAMID_LOCAL_FIELD_PHASE_PRESERVING] = phase_features
+            if requested and PYRAMID_LOCAL_FIELD_PHASE_PRESERVING_SCALE_BALANCED in requested:
+                out[PYRAMID_LOCAL_FIELD_PHASE_PRESERVING_SCALE_BALANCED] = phase_features
+        energy_names = set(PYRAMID_ENERGY_GRID_BY_NAME).union(PYRAMID_ENERGY_ORIENTCOV_GRID_BY_NAME)
+        requested_energy_names = energy_names.intersection(requested or set())
+        if requested_energy_names:
+            energy_bands = _pyramid_complex_energy_bands(field_crop)
+            for name, grid in PYRAMID_ENERGY_GRID_BY_NAME.items():
+                if requested and name in requested:
+                    out[name] = _pyramid_local_energy_from_bands(energy_bands, local_grid=int(grid))
+            for name, grid in PYRAMID_ENERGY_ORIENTCOV_GRID_BY_NAME.items():
+                if requested and name in requested:
+                    out[name] = _pyramid_local_energy_orientcov_from_bands(energy_bands, local_grid=int(grid))
     return {key: value for key, value in out.items() if value.size > 0}
 
 
@@ -743,20 +1099,34 @@ def _cross_validated_decode(
     outer_folds: int,
     inner_folds: int,
     seed: int,
+    target_feature_weights: np.ndarray | None = None,
 ) -> dict[str, Any]:
     X = np.asarray(X, dtype=np.float64)
     Z = np.asarray(Z, dtype=np.float64)
     groups = np.asarray(groups)
     n = X.shape[0]
-    k_eff = int(min(int(k), Z.shape[1], max(1, n - 2)))
+    splits = _split_outer(groups, int(outer_folds), int(seed))
+    min_train_n = min((len(train_idx) for train_idx, _ in splits), default=n)
+    k_eff = int(min(int(k), Z.shape[1], max(1, min_train_n)))
     pred = np.full((n, k_eff), np.nan, dtype=np.float64)
     target = np.full((n, k_eff), np.nan, dtype=np.float64)
     chosen_alphas = []
     fold_r2s = []
-    splits = _split_outer(groups, int(outer_folds), int(seed))
+    fold_residuals = []
+    target_feature_weights_arr = None
+    if target_feature_weights is not None:
+        target_feature_weights_arr = np.asarray(target_feature_weights, dtype=np.float64).reshape(-1)
+        if target_feature_weights_arr.shape[0] != Z.shape[1]:
+            raise ValueError(
+                f"Target feature weights length {target_feature_weights_arr.shape[0]} "
+                f"does not match target feature dimension {Z.shape[1]}"
+            )
     for fold, (train_idx, test_idx) in enumerate(splits):
         X_train_raw, X_test = _standardize_train_test(X[train_idx], X[test_idx])
         Z_train_raw, Z_test_raw = _standardize_train_test(Z[train_idx], Z[test_idx])
+        if target_feature_weights_arr is not None:
+            Z_train_raw = Z_train_raw * target_feature_weights_arr[None, :]
+            Z_test_raw = Z_test_raw * target_feature_weights_arr[None, :]
         pca = PCA(n_components=k_eff, svd_solver="full")
         Y_train = pca.fit_transform(Z_train_raw)
         Y_test = pca.transform(Z_test_raw)
@@ -779,6 +1149,16 @@ def _cross_validated_decode(
         fold_r2s.append(_mean_r2(Y_test, Y_pred))
         pred[test_idx] = Y_pred
         target[test_idx] = Y_test
+        fold_residuals.append(
+            {
+                "fold": int(fold),
+                "test_idx": np.asarray(test_idx, dtype=np.int64),
+                "residual": np.asarray(Y_test - Y_pred, dtype=np.float64),
+                "target_dim": int(k_eff),
+                "n_test": int(len(test_idx)),
+                "alpha": float(alpha),
+            }
+        )
         chosen_alphas.append(alpha)
     mse = np.mean((target - pred) ** 2, axis=1)
     valid_fold_r2s = [float(v) for v in fold_r2s if np.isfinite(v)]
@@ -790,6 +1170,7 @@ def _cross_validated_decode(
         "ridge_alpha_mode": str(alpha_mode),
         "target_dim": k_eff,
         "r2_method": "mean_outer_fold_r2_in_fold_pca_basis",
+        "fold_residuals": fold_residuals,
     }
 
 
@@ -928,7 +1309,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--latent-names",
         default=None,
-        help="Optional comma-separated latent names to keep, e.g. pyramid_local_field,gabor_local_field,dct_local_field.",
+        help=(
+            "Optional comma-separated latent names to keep, e.g. pyramid_local_field,"
+            "pyramid_local_field_phase_preserving,pyramid_local_field_phase_preserving_scale_balanced,"
+            "pyramid_energy_global,pyramid_energy_grid4,pyramid_energy_grid8,"
+            "pyramid_energy_orientcov_grid4_typebalanced,pyramid_energy_orientcov_grid8_typebalanced,"
+            "pyramid_local_stats_energy_orientcov,gabor_local_field,gabor_local_field_grid4,"
+            "gabor_energy_global,gabor_energy_grid4,gabor_energy_grid8,"
+            "gabor_energy_orientcov_grid4_typebalanced,gabor_energy_orientcov_grid8_typebalanced,"
+            "dct_local_field."
+        ),
     )
     parser.add_argument("--pca-k-list", default="4,8,16")
     parser.add_argument("--ridge-alphas", default="0.01,0.1,1,10,100,1000")
@@ -1183,6 +1573,7 @@ def run(args: argparse.Namespace) -> Path:
             latent_crop_px=int(args.latent_crop_px),
             center_crop_px=int(args.center_crop_px),
             local_field_grid=int(args.local_field_grid),
+            requested=latent_name_filter,
         )
         if latent_name_filter:
             latents = {name: value for name, value in latents.items() if name in latent_name_filter}

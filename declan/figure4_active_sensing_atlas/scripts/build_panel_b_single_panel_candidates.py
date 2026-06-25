@@ -36,12 +36,17 @@ AGGREGATE_DIR = (
     / "backimage_aggregate_fem_information_n256_k48_rel025-2_drift_only_common_unclipped_patched"
 )
 RELIDS_DIR = AGGREGATE_DIR / "incremental_static_plus_motion_relids"
-POWER_RERUN_DIR = (
-    REPO_ROOT
-    / "outputs"
-    / "fixation_statistics_by_stimulus_all_sessions_after_review"
-    / "backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1"
-    / "incremental_staticmean_plus_motion_tworeadout_v2"
+POWER_RERUN_DIR = Path(
+    os.environ.get(
+        "PANEL_B_POWER_RERUN_DIR",
+        str(
+            REPO_ROOT
+            / "outputs"
+            / "fixation_statistics_by_stimulus_all_sessions_after_review"
+            / "backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1"
+            / "incremental_staticmean_plus_motion_info_decode_bootstrap_fullshape_b50"
+        ),
+    )
 )
 POSE_UNAWARE_DIR = (
     REPO_ROOT
@@ -72,6 +77,15 @@ MOTION_LABELS = {
 NO_OU_CONTROL_FAMILIES = ("brownian", "rotated")
 NO_OU_ABSOLUTE_FAMILIES = ("empirical", "brownian", "rotated")
 POWER_RERUN_FAMILIES = ("empirical", "ou", "brownian", "rotated")
+ALLOW_LEGACY_MSE_FALLBACK = os.environ.get("PANEL_B_ALLOW_LEGACY_MSE", "").strip() == "1"
+INFO_GAIN_COL = "incremental_gain_info_diag_bits"
+INFO_CONTRAST_COL = "incremental_gain_delta_info_diag_bits"
+INFO_LO_COL = "info_diag_ci95_low"
+INFO_HI_COL = "info_diag_ci95_high"
+LEGACY_GAIN_COL = "incremental_gain_neg_mse"
+LEGACY_CONTRAST_COL = "incremental_gain_delta_neg_mse"
+LEGACY_LO_COL = "ci95_low"
+LEGACY_HI_COL = "ci95_high"
 
 
 @dataclass(frozen=True)
@@ -86,10 +100,10 @@ class Candidate:
 CANDIDATES = (
     Candidate(
         slug="4B_candidate_1_gain_over_static_audited",
-        title="Audited gain over static",
+        title="Archived gain over static",
         source_png="B3_empirical_gain_vs_static.png",
-        recommendation="Cleanest single-panel headline: empirical drift-like motion adds feature-decodable response structure beyond static.",
-        boundary="Does not show motion-family specificity by itself; pair with control text or supplement.",
+        recommendation="Archived legacy view retained only for comparison with the new information-axis recompute.",
+        boundary="Uses deterministic -MSE units; do not promote as the current 4B information panel.",
     ),
     Candidate(
         slug="4B_candidate_2_empirical_minus_controls",
@@ -100,10 +114,10 @@ CANDIDATES = (
     ),
     Candidate(
         slug="4B_candidate_3_power_rerun_absolute_gain",
-        title="Corrected power-rerun readout",
+        title="Corrected information readout",
         source_png=None,
-        recommendation="Selected provisional B after correction: known-eye empirical drift has positive delta-mean feature gain, while the pose-unaware empirical trace falls below static.",
-        boundary="Pose-unaware is a hidden-sample proxy, not the older covariance-aware Fisher observer; OU is withheld from the main trace set pending its audit.",
+        recommendation="Promoted 4B target: diagonal Gaussian decoder information gain over stabilized/static in bits.",
+        boundary="Pose-unaware proxy is omitted unless it has been recomputed on the same information axis; full-covariance log-det stays supplemental.",
     ),
     Candidate(
         slug="4B_candidate_4_k16_tworeadout_preview",
@@ -172,6 +186,71 @@ def _errbar(
         color=color,
         label=label,
     )
+
+
+def _metric_columns(df: pd.DataFrame, *, contrast: bool) -> tuple[str, str, str, str, str]:
+    info_value = INFO_CONTRAST_COL if contrast else INFO_GAIN_COL
+    legacy_value = LEGACY_CONTRAST_COL if contrast else LEGACY_GAIN_COL
+    info_cols = (info_value, INFO_LO_COL, INFO_HI_COL)
+    if all(col in df.columns for col in info_cols):
+        _require_decode_bootstrap_information(df)
+        _require_finite_metric(df, info_cols, metric_name="decoder-information")
+        ylabel = (
+            "information-gain contrast,\n$\\Delta\\Delta\\hat{I}$ (bits)"
+            if contrast
+            else "feature information gain over stabilized,\n$\\Delta\\hat{I}$ (bits) - decoder lower bound"
+        )
+        return info_value, INFO_LO_COL, INFO_HI_COL, ylabel, "info_diag_bits"
+    legacy_cols = (legacy_value, LEGACY_LO_COL, LEGACY_HI_COL)
+    if ALLOW_LEGACY_MSE_FALLBACK and all(col in df.columns for col in legacy_cols):
+        _require_finite_metric(df, legacy_cols, metric_name="legacy -MSE")
+        ylabel = "legacy gain contrast (-MSE)" if contrast else "legacy feature-decoding gain (-MSE)"
+        return legacy_value, LEGACY_LO_COL, LEGACY_HI_COL, ylabel, "legacy_neg_mse"
+    missing = ", ".join(info_cols)
+    raise ValueError(
+        "Panel 4B now requires recomputed decoder-information columns "
+        f"({missing}). Rerun the incremental static-plus-motion summary, or set "
+        "PANEL_B_ALLOW_LEGACY_MSE=1 for an explicitly legacy QC render."
+    )
+
+
+def _require_finite_metric(df: pd.DataFrame, cols: tuple[str, str, str], *, metric_name: str) -> None:
+    values = df.loc[:, list(cols)].to_numpy(dtype=float)
+    finite_rows = np.all(np.isfinite(values), axis=1)
+    if values.size == 0 or not np.any(finite_rows):
+        raise ValueError(f"No finite {metric_name} rows are available for Panel 4B plotting columns {cols}")
+    if not np.all(finite_rows):
+        bad = int(np.size(finite_rows) - np.sum(finite_rows))
+        raise ValueError(f"{bad} Panel 4B rows have non-finite {metric_name} y/CI values in columns {cols}")
+    y = df[cols[0]].to_numpy(dtype=float)
+    lo = df[cols[1]].to_numpy(dtype=float)
+    hi = df[cols[2]].to_numpy(dtype=float)
+    outside = finite_rows & ((y < lo - 1e-9) | (y > hi + 1e-9))
+    if np.any(outside):
+        bad = df.loc[outside, [col for col in ("motion_summary", "family", "lhs_family", "rhs_family", "scale_id", "latent", "k") if col in df.columns]].head(6)
+        raise ValueError(
+            f"{int(np.sum(outside))} Panel 4B {metric_name} rows have point estimates outside their CI bars "
+            f"for columns {cols}. First bad rows:\n{bad.to_string(index=False)}"
+        )
+
+
+def _require_decode_bootstrap_information(df: pd.DataFrame) -> None:
+    if "information_ci_method" not in df.columns:
+        raise ValueError("Panel 4B information tables must include `information_ci_method` provenance")
+    methods = set(df["information_ci_method"].dropna().astype(str))
+    if methods != {"decode_pipeline_group_bootstrap"}:
+        raise ValueError(
+            "Panel 4B promoted information axis requires decode-bootstrap CIs; "
+            f"found information_ci_method={sorted(methods)}"
+        )
+    if "n_information_bootstrap_success" in df.columns:
+        successes = df["n_information_bootstrap_success"].to_numpy(dtype=float)
+        if np.any(~np.isfinite(successes)) or np.any(successes < 2):
+            raise ValueError("Panel 4B information tables need at least two successful decode-bootstrap replicates")
+
+
+def _has_information_gain(df: pd.DataFrame) -> bool:
+    return all(col in df.columns for col in (INFO_GAIN_COL, INFO_LO_COL, INFO_HI_COL))
 
 
 def _copy_source_candidate(candidate: Candidate) -> Path:
@@ -277,15 +356,16 @@ def _build_control_contrasts_no_ou() -> tuple[Path, pd.DataFrame]:
         k=4,
         rhs_families=NO_OU_CONTROL_FAMILIES,
     )
+    y_col, lo_col, hi_col, ylabel, metric = _metric_columns(contrast_block, contrast=True)
 
     fig, ax = plt.subplots(figsize=(3.45, 2.65), constrained_layout=True)
     for rhs, marker in [("brownian", "s"), ("rotated", "^")]:
         _errbar(
             ax,
             contrast_block[contrast_block["rhs_family"] == rhs],
-            y_col="incremental_gain_delta_neg_mse",
-            lo_col="ci95_low",
-            hi_col="ci95_high",
+            y_col=y_col,
+            lo_col=lo_col,
+            hi_col=hi_col,
             label=f"empirical - {MOTION_LABELS[rhs]}",
             color=COLORS[rhs],
             marker=marker,
@@ -293,7 +373,7 @@ def _build_control_contrasts_no_ou() -> tuple[Path, pd.DataFrame]:
     ax.axhline(0.0, color="#222222", lw=0.8)
     ax.set_title("Empirical minus generic controls")
     ax.set_xlabel("motion scale")
-    ax.set_ylabel("gain contrast (-MSE)")
+    ax.set_ylabel(ylabel)
     scales = sorted(contrast_block["scale"].unique())
     ax.set_xticks(scales, [_scale_label(v) for v in scales])
     ax.grid(axis="y", color="#d8dde3", lw=0.8)
@@ -305,7 +385,7 @@ def _build_control_contrasts_no_ou() -> tuple[Path, pd.DataFrame]:
     fig.savefig(out.with_suffix(".pdf"), bbox_inches="tight")
     plt.close(fig)
 
-    return out, contrast_block.assign(candidate_metric="empirical_minus_control_no_ou")
+    return out, contrast_block.assign(candidate_metric="empirical_minus_control_no_ou", plotted_metric=metric)
 
 
 def _build_absolute_guardrail_no_ou() -> tuple[Path, pd.DataFrame]:
@@ -314,15 +394,16 @@ def _build_absolute_guardrail_no_ou() -> tuple[Path, pd.DataFrame]:
         k=4,
         families=NO_OU_ABSOLUTE_FAMILIES,
     )
+    y_col, lo_col, hi_col, ylabel, metric = _metric_columns(gain_block, contrast=False)
 
     fig, ax = plt.subplots(figsize=(3.55, 2.75), constrained_layout=True)
     for family, marker in [("empirical", "o"), ("brownian", "s"), ("rotated", "^")]:
         _errbar(
             ax,
             gain_block[gain_block["family"] == family],
-            y_col="incremental_gain_neg_mse",
-            lo_col="ci95_low",
-            hi_col="ci95_high",
+            y_col=y_col,
+            lo_col=lo_col,
+            hi_col=hi_col,
             label="recorded drift" if family == "empirical" else MOTION_LABELS[family],
             color=COLORS[family],
             marker=marker,
@@ -330,7 +411,7 @@ def _build_absolute_guardrail_no_ou() -> tuple[Path, pd.DataFrame]:
     ax.axhline(0.0, color="#222222", lw=0.8)
     ax.set_title("Retinal motion adds feature information")
     ax.set_xlabel("motion scale")
-    ax.set_ylabel("feature encoding gain over static (-MSE)")
+    ax.set_ylabel(ylabel)
     scales = sorted(gain_block["scale"].unique())
     ax.set_xticks(scales, [_scale_label(v) for v in scales])
     ax.grid(axis="y", color="#d8dde3", lw=0.8)
@@ -342,44 +423,52 @@ def _build_absolute_guardrail_no_ou() -> tuple[Path, pd.DataFrame]:
     fig.savefig(out.with_suffix(".pdf"), bbox_inches="tight")
     plt.close(fig)
 
-    return out, gain_block.assign(candidate_metric="absolute_gain_no_ou")
+    return out, gain_block.assign(candidate_metric="absolute_gain_no_ou", plotted_metric=metric)
 
 
 def _build_power_rerun_absolute_gain() -> tuple[Path, pd.DataFrame]:
     gain_block = _power_gain_block(("empirical", "brownian", "rotated"))
+    y_col, lo_col, hi_col, ylabel, metric = _metric_columns(gain_block, contrast=False)
     pose_block = _pose_unaware_proxy_block()
+    check_pose = _has_information_gain(pose_block) or ALLOW_LEGACY_MSE_FALLBACK
+    pose_plotted = False
 
     fig, ax = plt.subplots(figsize=(3.75, 2.95), constrained_layout=True)
     for family, marker in [("empirical", "o"), ("brownian", "s"), ("rotated", "^")]:
         _errbar(
             ax,
             gain_block[gain_block["family"] == family],
-            y_col="incremental_gain_neg_mse",
-            lo_col="ci95_low",
-            hi_col="ci95_high",
+            y_col=y_col,
+            lo_col=lo_col,
+            hi_col=hi_col,
             label="known-eye drift" if family == "empirical" else MOTION_LABELS[family],
             color=COLORS[family],
             marker=marker,
         )
-    _errbar(
-        ax,
-        pose_block,
-        y_col="incremental_gain_neg_mse",
-        lo_col="ci95_low",
-        hi_col="ci95_high",
-        label=MOTION_LABELS["pose_unaware"],
-        color=COLORS["pose_unaware"],
-        marker="v",
-    )
-    for line in ax.lines[-1:]:
-        line.set_linestyle("--")
+    if check_pose:
+        pose_y_col, pose_lo_col, pose_hi_col, _, pose_metric = _metric_columns(pose_block, contrast=False)
+        if pose_metric == metric:
+            pose_plotted = True
+            _errbar(
+                ax,
+                pose_block,
+                y_col=pose_y_col,
+                lo_col=pose_lo_col,
+                hi_col=pose_hi_col,
+                label=MOTION_LABELS["pose_unaware"],
+                color=COLORS["pose_unaware"],
+                marker="v",
+            )
+            for line in ax.lines[-1:]:
+                line.set_linestyle("--")
     ax.axhline(0.0, color="#222222", lw=0.8)
-    ax.set_title("Motion enhances feature encoding\nbut only when eye position is known")
+    ax.set_title("Motion enhances feature information")
     ax.set_xlabel("motion scale")
-    ax.set_ylabel("delta-mean gain over static mean (-MSE)")
-    scales = sorted(set(gain_block["scale"].unique()).union(set(pose_block["scale"].unique())))
+    ax.set_ylabel(ylabel)
+    scales = sorted(
+        set(gain_block["scale"].unique()).union(set(pose_block["scale"].unique()) if pose_plotted else set())
+    )
     ax.set_xticks(scales, [_scale_label(v) for v in scales])
-    ax.set_ylim(-7.6, 4.2)
     ax.grid(axis="y", color="#d8dde3", lw=0.8)
     ax.legend(frameon=False, loc="lower right", fontsize=6.8)
     _clean_axis(ax)
@@ -391,8 +480,11 @@ def _build_power_rerun_absolute_gain() -> tuple[Path, pd.DataFrame]:
 
     values = pd.concat(
         [
-            gain_block.assign(candidate_metric="power_rerun_absolute_gain_known_eye"),
-            pose_block.assign(candidate_metric="pose_unaware_hidden_samples_proxy"),
+            gain_block.assign(candidate_metric="power_rerun_absolute_gain_known_eye", plotted_metric=metric),
+            pose_block.assign(
+                candidate_metric="pose_unaware_hidden_samples_proxy",
+                plotted_metric=(metric if pose_plotted else "not_plotted_missing_information_recompute"),
+            ),
         ],
         ignore_index=True,
         sort=False,
@@ -403,23 +495,28 @@ def _build_power_rerun_absolute_gain() -> tuple[Path, pd.DataFrame]:
 def _build_k16_preview() -> tuple[Path, pd.DataFrame]:
     gain_block = _power_gain_block(("empirical",))
     contrast_block = _power_contrast_block()
+    gain_y_col, gain_lo_col, gain_hi_col, gain_ylabel, gain_metric = _metric_columns(gain_block, contrast=False)
+    contrast_y_col, contrast_lo_col, contrast_hi_col, contrast_ylabel, contrast_metric = _metric_columns(
+        contrast_block,
+        contrast=True,
+    )
 
     fig, axes = plt.subplots(1, 2, figsize=(7.1, 3.0), constrained_layout=True)
     ax = axes[0]
     _errbar(
         ax,
         gain_block,
-        y_col="incremental_gain_neg_mse",
-        lo_col="ci95_low",
-        hi_col="ci95_high",
+        y_col=gain_y_col,
+        lo_col=gain_lo_col,
+        hi_col=gain_hi_col,
         label="recorded drift",
         color=COLORS["pyramid"],
         marker="s",
     )
     ax.axhline(0.0, color="#222222", lw=0.8)
-    ax.set_title("Corrected gain over static mean")
+    ax.set_title("Information gain over static mean")
     ax.set_xlabel("motion scale")
-    ax.set_ylabel("delta-mean gain (-MSE)")
+    ax.set_ylabel(gain_ylabel)
     ax.set_xticks(sorted(gain_block["scale"].unique()), [_scale_label(v) for v in sorted(gain_block["scale"].unique())])
     ax.grid(axis="y", color="#d8dde3", lw=0.8)
     _clean_axis(ax)
@@ -429,9 +526,9 @@ def _build_k16_preview() -> tuple[Path, pd.DataFrame]:
         _errbar(
             ax,
             contrast_block[contrast_block["rhs_family"] == rhs],
-            y_col="incremental_gain_delta_neg_mse",
-            lo_col="ci95_low",
-            hi_col="ci95_high",
+            y_col=contrast_y_col,
+            lo_col=contrast_lo_col,
+            hi_col=contrast_hi_col,
             label=f"empirical - {MOTION_LABELS[rhs]}",
             color=color,
             marker=marker,
@@ -439,13 +536,13 @@ def _build_k16_preview() -> tuple[Path, pd.DataFrame]:
     ax.axhline(0.0, color="#222222", lw=0.8)
     ax.set_title("Empirical minus generic controls")
     ax.set_xlabel("motion scale")
-    ax.set_ylabel("incremental gain contrast (-MSE)")
+    ax.set_ylabel(contrast_ylabel)
     ax.set_xticks(sorted(contrast_block["scale"].unique()), [_scale_label(v) for v in sorted(contrast_block["scale"].unique())])
     ax.grid(axis="y", color="#d8dde3", lw=0.8)
     ax.legend(frameon=False, loc="upper right", fontsize=7.0)
     _clean_axis(ax)
 
-    fig.suptitle("Corrected power rerun: pyramid k=16 delta mean", fontsize=10.5)
+    fig.suptitle("Corrected power rerun: pyramid k=16 delta mean information", fontsize=10.5)
     out = OUT_DIR / "4B_candidate_4_k16_tworeadout_preview.png"
     fig.savefig(out, dpi=240, bbox_inches="tight")
     fig.savefig(out.with_suffix(".pdf"), bbox_inches="tight")
@@ -453,8 +550,8 @@ def _build_k16_preview() -> tuple[Path, pd.DataFrame]:
 
     values = pd.concat(
         [
-            gain_block.assign(candidate_metric="gain_over_static"),
-            contrast_block.assign(candidate_metric="empirical_minus_control"),
+            gain_block.assign(candidate_metric="gain_over_static", plotted_metric=gain_metric),
+            contrast_block.assign(candidate_metric="empirical_minus_control", plotted_metric=contrast_metric),
         ],
         ignore_index=True,
         sort=False,
@@ -542,7 +639,7 @@ def _write_readme(paths: list[Path], sheet: Path) -> None:
         "",
         "## Recommendation",
         "",
-        "Candidate 3 has been redrawn from the corrected static-mean posthoc plus the production pose-unaware hidden-sample proxy. The current corrected aggregate headline is `pyramid_local_field k16 delta_mean`: known-eye empirical drift is positive at larger scales, while the pose-unaware empirical trace is below static. OU is not shown in the main trace set pending the trace-control audit.",
+        "Candidate 3 is the promoted information-axis target after the incremental static-plus-motion summaries are recomputed. The plotted quantity is diagonal Gaussian decoder information gain over the stabilized/static baseline in bits. The pose-unaware hidden-sample proxy is not plotted unless it has matching information columns.",
         "",
         "## Files",
         "",
@@ -556,7 +653,7 @@ def _write_readme(paths: list[Path], sheet: Path) -> None:
             "",
             "## Claim Boundary",
             "",
-            "All candidates are deterministic V1-twin feature-decoding proxies in -MSE units, not literal mutual information. The corrected production rerun does not support the older temporal-PCA gain-over-static claim. The pose-unaware trace is a hidden-sample proxy, not a full covariance-aware observer; OU remains audit-only until its temporal/readout behavior is resolved.",
+            "The promoted axis is a Gaussian variational decoder lower-bound increment, not an absolute mutual-information estimate. Headline panels use the diagonal residual-variance form in bits; full-covariance Ledoit-Wolf log-det values are supplemental robustness. Legacy `-MSE` candidates remain archive/QC only and require `PANEL_B_ALLOW_LEGACY_MSE=1` to render from old tables.",
             "",
         ]
     )
