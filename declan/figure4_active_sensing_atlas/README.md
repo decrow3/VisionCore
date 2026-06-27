@@ -107,7 +107,7 @@ retinal motion is treated as part of the inference problem rather than as noise.
     `figures/panel_C/diagnostics/continuous_feature_embedding/`.
   - `scripts/build_panel_c_continuous_tau_mlp_feature_decoder.py`
     regenerates the hybrid continuous-tau / MLP feature decoder in
-    `figures/panel_C/diagnostics/continuous_tau_mlp_feature_decoder_augmented/`.
+    `figures/panel_C/diagnostics/continuous_tau_mlp_feature_decoder_residual/`.
   - `scripts/export_panel_text_atlas_pdf.py` regenerates
     `panel_text_atlas.pdf` from the Markdown and local PNGs without external
     PDF dependencies.
@@ -162,10 +162,12 @@ retinal motion is treated as part of the inference problem rather than as noise.
    counterfactual, but a Tejas-style nonlinear MLP upper-bound decoder does:
    hidden/tau-nuisance moving response `0.3482` versus 0x stabilized `0.2819`.
    The newer continuous-tau MLP hybrid keeps the candidate-free feature endpoint
-   and shows the same main lesson with fair augmented baselines: augmented
-   compact-only hidden readout `0.3695` beats augmented 0x static `0.3243`, but
-   estimated continuous `tau_hat` alone is not the winning readout yet
-   (`0.3140`).
+   and fixes the raw-tau red flag with a nested residual eye-trace decoder:
+   augmented compact-only hidden readout `0.3695`, true-tau residual `0.3683`,
+   estimated-`tau_hat` residual `0.3440`, and augmented 0x static `0.3243`.
+   A direct along/across response-movie version of this decoder does not show
+   a reliable along-contour advantage; the apparent sign is source-split
+   sensitive under the MLP.
 4. Module D: edge-parallel stability supports a local image-geometry
    preservation mechanism, while axis preference and response-objective
    optimality remain guarded.

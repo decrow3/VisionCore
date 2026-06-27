@@ -85,9 +85,14 @@ class PopulationReadout(nn.Module):
 
         return out
     
-def get_spatial_readout(model, outputs):
+def get_spatial_readout(model, outputs, return_unit_rows=False):
     """
     Combine readouts from multiple datasets into a single readout.
+
+    If return_unit_rows=True, also returns a list of per-unit metadata dicts
+    (channel, session, source_unit_index, ccnorm, model_readout_index,
+    mcfarland_output_index) derived from the same session matching and ccnorm
+    filter used to build the readout, so the two are guaranteed consistent.
     """
     sessions = [outputs[i]['sess'] for i in range(len(outputs))]
 
@@ -95,12 +100,16 @@ def get_spatial_readout(model, outputs):
     cids2use = [np.where(outputs[sessions.index(model.names[i])]['ccnorm']['ccnorm']>.5)[0] for i in model_dataset_idx]
 
     # make single readout
-
     feat_weights = []
     biases = []
     space_weights = []
+    unit_rows = []
+    channel = 0
     for i in range(len(model_dataset_idx)):
         model_readout_idx = model_dataset_idx[i]
+        session = model.names[model_readout_idx]
+        output_index = sessions.index(session)
+        all_ccnorm = np.asarray(outputs[output_index]['ccnorm']['ccnorm'], dtype=np.float32)
 
         readout = model.model.readouts[model_readout_idx]
         feat_weight = readout.features.weight.detach().cpu()
@@ -115,12 +124,24 @@ def get_spatial_readout(model, outputs):
         biases.append(bias)
         space_weights.append(space_weight)
 
+        for source_unit_index in cids2use[i]:
+            unit_rows.append({
+                "channel": channel,
+                "session": session,
+                "source_unit_index": int(source_unit_index),
+                "ccnorm": float(all_ccnorm[source_unit_index]),
+                "model_readout_index": int(model_readout_idx),
+                "mcfarland_output_index": int(output_index),
+            })
+            channel += 1
+
     feat_weights = torch.cat(feat_weights, dim=0)
     biases = torch.cat(biases, dim=0)
     space_weights = torch.cat(space_weights, dim=0)
 
-    # print(feat_weights.shape, biases.shape, space_weights.shape)
     readout = PopulationReadout(feat_weights, biases, space_weights)
+    if return_unit_rows:
+        return readout, unit_rows
     return readout
 
 def compute_rate_map(model, readout, stim):

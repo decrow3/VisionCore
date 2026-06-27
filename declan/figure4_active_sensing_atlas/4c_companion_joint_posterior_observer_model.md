@@ -181,19 +181,24 @@ continuous trajectory estimate from the promoted continuous-joint model:
 
 ```text
 declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
-continuous_tau_mlp_feature_decoder_augmented/
+continuous_tau_mlp_feature_decoder_residual/
 continuous_tau_mlp_feature_decoder_manifest.json
 ```
 
 This runner trains augmented modes on source-disjoint response-bank rows
 `(prior response, trajectory) -> phi(source image)` and tests on held-out
-observed responses. The MLP decoder is still the upper-bound readout, not a
-downstream linear decoder. All-scale feature cosine:
+observed responses. It now also includes nested residual eye-trace decoders:
+first fit a response-only MLP, then fit an eye-trace correction with a
+validation-selected shrinkage that includes zero as a fallback. The MLP decoder
+is still the upper-bound readout, not a downstream linear decoder. All-scale
+feature cosine:
 
 ```text
 augmented compact-only hidden readout: 0.3695
-augmented continuous tau_hat readout:  0.3140
-augmented true-tau readout:            0.3521
+augmented true-tau residual readout:   0.3683
+augmented true-tau raw readout:        0.3521
+augmented tau_hat residual readout:    0.3440
+augmented tau_hat raw readout:         0.3140
 augmented 0x stabilized readout:       0.3243
 augmented known-eye readout:           0.3196
 ```
@@ -202,17 +207,96 @@ Paired contrasts:
 
 ```text
 augmented compact-only - augmented 0x: +0.0452  CI [+0.0292, +0.0618]
-continuous tau_hat - augmented 0x:     -0.0104  CI [-0.0307, +0.0084]
-true tau - augmented 0x:               +0.0278  CI [+0.0095, +0.0466]
+true-tau residual - augmented 0x:      +0.0440  CI [+0.0276, +0.0610]
+tau_hat residual - augmented 0x:       +0.0196  CI [+0.0029, +0.0374]
+true-tau residual - compact-only:      -0.0012  CI [-0.0183, +0.0154]
 ```
 
-So the current best candidate-free upper-bound is not "estimated tau features
-beat static." It is: with a strong nonlinear decoder, the nuisance-augmented
-moving-response representation recovers local image features above a fair
-augmented 0x static baseline. The true-tau ceiling beating static says accurate
-trajectory conditioning can help, but the recovered continuous `tau_hat` is not
-yet good enough, in this simple concatenated representation, to beat the fair
-static MLP baseline.
+So the red flag was real but local: raw coordinate concatenation was a bad way
+to expose eye position. Once known eye trace is nested as a residual correction,
+it beats the fair augmented static baseline and essentially matches the
+response-only compact decoder. Estimated `tau_hat` also becomes useful in the
+residual form, though it remains below true-tau and compact-only.
+
+The final along/across check for this residual MLP method is negative. The
+paired axis rows share the same observed response and true eye trace; only the
+axis-conditioned trajectory prior/catalog changes. A cache-only posthoc summary
+is here:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+continuous_tau_mlp_feature_decoder_residual/
+continuous_tau_mlp_axis_contrast_README.md
+```
+
+All-scale feature-cosine contrast `axis_edge_parallel - axis_edge_orthogonal`:
+
+```text
+augmented compact-only:     +0.00000  CI [+0.00000, +0.00000]
+true-tau residual:         +0.00000  CI [+0.00000, +0.00000]
+tau_hat residual:          +0.00013  CI [-0.00514, +0.00620]
+raw tau_hat concatenation: -0.01095  CI [-0.02414, +0.00218]
+```
+
+So this method supports the candidate-free moving-versus-static feature
+recovery claim, but not an along-contour advantage. The only axis-dependent
+quantity in this paired setup is the inferred `tau_hat`, and the residual
+decoder makes that axis effect essentially vanish.
+
+That fixed-observation guardrail is not the direct along/across response-movie
+test. The direct test now exists as a separate candidate-free MLP diagnostic:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+direct_axis_mlp_feature_decoder/
+direct_axis_mlp_feature_decoder_README.md
+```
+
+Here, for every axis-conditioned table and trajectory sample, the true
+candidate's sampled along- or across-axis response movie is treated as the
+observation. The decoder is still source-disjoint and feature-embedding based.
+All-scale feature-cosine contrast `axis_edge_parallel - axis_edge_orthogonal`,
+with trial/scale clustered confidence intervals:
+
+```text
+compact response-only: -0.00960  CI [-0.01556, -0.00380]
+true-tau residual:     -0.00557  CI [-0.01093, +0.00019]
+raw true-tau concat:   -0.00120  CI [-0.00800, +0.00569]
+0x static control:     +0.00000  CI [+0.00000, +0.00000]
+```
+
+So the direct candidate-free MLP test also does not support an along-contour
+advantage. A follow-up source-fold seed check is important here: with
+`fold_seed=20260625`, compact response-only changes sign to `+0.00597`, CI
+`[-0.00366, +0.01697]`, while true-tau residual remains near null at
+`-0.00276`, CI `[-0.01039, +0.00520]`. The stricter interpretation is therefore
+not "across wins", but "the direct MLP axis effect is split-sensitive and not
+reliable."
+
+Because the classic axis story came from the matched-static axis cache rather
+than the promoted hard-negative continuous-joint cache, the direct MLP test was
+also rerun on the matched-static cache:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+direct_axis_mlp_feature_decoder_matched_static/
+direct_axis_mlp_feature_decoder_README.md
+```
+
+For that cache, only the response-only and static-control modes are available
+because the response tables do not store trajectory coordinates. The all-scale
+feature-cosine contrast is:
+
+```text
+compact response-only: -0.00541  CI [-0.01492, +0.00426]
+0x static control:     +0.00000  CI [+0.00000, +0.00000]
+```
+
+Thus the matched-static candidate-free MLP version also does not recover a
+reliable along-contour advantage. The alternate source-fold seed also changes
+sign (`+0.00191`, CI `[-0.00668, +0.01086]`). The MLP result should therefore
+be treated as null/split-sensitive, even though the older known-axis posterior
+diagnostic is separately across-favoring.
 
 A separate representation diagnostic now answers a cleaner oracle question:
 does the V1 twin represent local image features better with measured motion

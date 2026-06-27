@@ -57,6 +57,8 @@ from declan.figure4_active_sensing_atlas.scripts.build_panel_c_continuous_featur
     _parse_scales,
     _parse_str_list,
     _source_row_from_candidate_id,
+    _source_group_validation_mask,
+    _stable_token_value,
     _transform_feature_sources,
 )
 
@@ -86,8 +88,10 @@ DEFAULT_INPUT_MODES = (
     "observed_compact",
     "augmented_observed_compact",
     "augmented_continuous_tau",
+    "augmented_continuous_tau_residual",
     "augmented_continuous_tau_interactions",
     "augmented_true_tau",
+    "augmented_true_tau_residual",
     "augmented_true_tau_interactions",
     "augmented_zero_static",
     "augmented_known_eye_model",
@@ -100,8 +104,10 @@ PRIMARY_MODE = "augmented_continuous_tau"
 PRIOR_AUGMENTED_MODES = {
     "augmented_observed_compact",
     "augmented_continuous_tau",
+    "augmented_continuous_tau_residual",
     "augmented_continuous_tau_interactions",
     "augmented_true_tau",
+    "augmented_true_tau_residual",
     "augmented_true_tau_interactions",
 }
 
@@ -219,9 +225,13 @@ def _base_mode(mode: str, *, for_test: bool) -> str:
         return "observed_compact"
     if name == "augmented_continuous_tau":
         return "observed_plus_continuous_tau"
+    if name == "augmented_continuous_tau_residual":
+        return "observed_plus_continuous_tau"
     if name == "augmented_continuous_tau_interactions":
         return "observed_plus_continuous_tau_interactions"
     if name == "augmented_true_tau":
+        return "observed_plus_true_tau" if for_test else "observed_plus_continuous_tau"
+    if name == "augmented_true_tau_residual":
         return "observed_plus_true_tau" if for_test else "observed_plus_continuous_tau"
     if name == "augmented_true_tau_interactions":
         return "observed_plus_true_tau_interactions" if for_test else "observed_plus_continuous_tau_interactions"
@@ -234,6 +244,167 @@ def _base_mode(mode: str, *, for_test: bool) -> str:
 
 def _is_augmented_mode(mode: str) -> bool:
     return str(mode).startswith("augmented_")
+
+
+def _is_residual_mode(mode: str) -> bool:
+    return str(mode) in {"augmented_continuous_tau_residual", "augmented_true_tau_residual"}
+
+
+def _parse_float_list(text: str | None) -> list[float]:
+    if text is None:
+        return []
+    return [float(part.strip()) for part in str(text).split(",") if part.strip()]
+
+
+def _feature_cosine_array(z_hat: np.ndarray, z_true: np.ndarray) -> np.ndarray:
+    pred = np.asarray(z_hat, dtype=np.float64)
+    true = np.asarray(z_true, dtype=np.float64)
+    denom = np.linalg.norm(pred, axis=1) * np.linalg.norm(true, axis=1)
+    out = np.full(pred.shape[0], np.nan, dtype=np.float64)
+    valid = np.isfinite(denom) & (denom > 0.0)
+    out[valid] = np.sum(pred[valid] * true[valid], axis=1) / denom[valid]
+    return out
+
+
+def _prefix_stats(prefix: str, stats: dict[str, Any]) -> dict[str, Any]:
+    return {f"{prefix}_{key}": value for key, value in stats.items()}
+
+
+def _fit_predict_residual_mlp(
+    *,
+    base_x_all: np.ndarray,
+    residual_x_all: np.ndarray,
+    z_all: np.ndarray,
+    source_rows: np.ndarray,
+    train_mask: np.ndarray,
+    base_x_test: np.ndarray,
+    residual_x_test: np.ndarray,
+    config: MLPConfig,
+    fold: int,
+    spec_slug: str,
+    feature_space_mode: str,
+    alpha_grid: list[float],
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Fit response-only base plus eye-trace residual correction.
+
+    A source-held-out slice of the fold-training rows chooses the residual
+    shrinkage.  Since the grid includes 0.0, this can fall back to the base
+    decoder when the eye-trace correction is not useful on validation sources.
+    """
+    base_x = np.asarray(base_x_all, dtype=np.float32)
+    residual_x = np.asarray(residual_x_all, dtype=np.float32)
+    z = np.asarray(z_all, dtype=np.float32)
+    sources = np.asarray(source_rows, dtype=int)
+    train_mask_arr = np.asarray(train_mask, dtype=bool)
+    if base_x.ndim != 2 or residual_x.ndim != 2 or z.ndim != 2:
+        raise ValueError("residual MLP expects 2D base/residual/target matrices")
+    if base_x.shape[0] != residual_x.shape[0] or base_x.shape[0] != z.shape[0]:
+        raise ValueError(f"residual MLP row mismatch: {base_x.shape}, {residual_x.shape}, {z.shape}")
+    train_indices_all = np.flatnonzero(train_mask_arr)
+    if train_indices_all.size <= max(8, 2 * z.shape[1]):
+        raise ValueError(f"Too few residual MLP training rows for {spec_slug} / {feature_space_mode}")
+
+    alpha_val_rel = _source_group_validation_mask(
+        sources[train_indices_all],
+        validation_fraction=float(config.validation_fraction),
+        seed=int(config.seed)
+        + 911 * int(fold)
+        + _stable_token_value(spec_slug)
+        + _stable_token_value(feature_space_mode),
+    )
+    fit_indices = train_indices_all[~alpha_val_rel]
+    alpha_val_indices = train_indices_all[alpha_val_rel]
+    if fit_indices.size <= max(8, z.shape[1]) or alpha_val_indices.size == 0:
+        fit_indices = train_indices_all
+        alpha_val_indices = train_indices_all
+
+    fit_mask = np.zeros(train_mask_arr.shape[0], dtype=bool)
+    fit_mask[fit_indices] = True
+    base_eval_x = np.concatenate(
+        [
+            base_x[fit_indices],
+            base_x[alpha_val_indices],
+            np.asarray(base_x_test, dtype=np.float32),
+        ],
+        axis=0,
+    )
+    base_eval_hat, base_stats = _fit_predict_mlp(
+        x_all=base_x,
+        z_all=z,
+        source_rows=sources,
+        train_mask=fit_mask,
+        x_test=base_eval_x,
+        config=config,
+        fold=int(fold),
+        spec_slug=f"{spec_slug}__base",
+        feature_space_mode=feature_space_mode,
+    )
+    n_fit = int(fit_indices.size)
+    n_alpha = int(alpha_val_indices.size)
+    base_fit_hat = base_eval_hat[:n_fit]
+    base_alpha_hat = base_eval_hat[n_fit : n_fit + n_alpha]
+    base_test_hat = base_eval_hat[n_fit + n_alpha :]
+
+    residual_targets = np.zeros_like(z, dtype=np.float32)
+    residual_targets[fit_indices] = (z[fit_indices] - base_fit_hat).astype(np.float32)
+    residual_eval_x = np.concatenate(
+        [
+            residual_x[alpha_val_indices],
+            np.asarray(residual_x_test, dtype=np.float32),
+        ],
+        axis=0,
+    )
+    residual_eval_hat, residual_stats = _fit_predict_mlp(
+        x_all=residual_x,
+        z_all=residual_targets,
+        source_rows=sources,
+        train_mask=fit_mask,
+        x_test=residual_eval_x,
+        config=config,
+        fold=int(fold),
+        spec_slug=f"{spec_slug}__residual",
+        feature_space_mode=feature_space_mode,
+    )
+    residual_alpha_hat = residual_eval_hat[:n_alpha]
+    residual_test_hat = residual_eval_hat[n_alpha:]
+    z_alpha = z[alpha_val_indices]
+
+    grid = [float(value) for value in alpha_grid]
+    if not grid:
+        grid = [0.0, 0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1.0]
+    if 0.0 not in grid:
+        grid = [0.0, *grid]
+    best_alpha = 0.0
+    best_score = -float("inf")
+    best_mse = float("inf")
+    alpha_rows: list[dict[str, float]] = []
+    for alpha in sorted(set(grid)):
+        pred = base_alpha_hat + float(alpha) * residual_alpha_hat
+        cos = _feature_cosine_array(pred, z_alpha)
+        mse = float(np.mean((pred - z_alpha) ** 2))
+        score = float(np.nanmean(cos))
+        alpha_rows.append({"alpha": float(alpha), "mean_feature_cosine": score, "feature_mse": mse})
+        if score > best_score + 1e-9 or (abs(score - best_score) <= 1e-9 and float(alpha) < best_alpha):
+            best_alpha = float(alpha)
+            best_score = score
+            best_mse = mse
+
+    z_hat = base_test_hat + best_alpha * residual_test_hat
+    stats = {
+        "residual_nested": True,
+        "residual_base_input_dim": int(base_x.shape[1]),
+        "residual_conditioned_input_dim": int(residual_x.shape[1]),
+        "residual_alpha": float(best_alpha),
+        "residual_alpha_grid": [float(row["alpha"]) for row in alpha_rows],
+        "residual_alpha_val_mean_feature_cosine": float(best_score),
+        "residual_alpha_val_feature_mse": float(best_mse),
+        "residual_alpha_val_rows": int(n_alpha),
+        "residual_fit_rows": int(n_fit),
+        "residual_alpha_table": alpha_rows,
+    }
+    stats.update(_prefix_stats("base", base_stats))
+    stats.update(_prefix_stats("residual", residual_stats))
+    return z_hat.astype(np.float64, copy=False), stats
 
 
 def _continuous_kwargs(metadata: dict[str, Any], *, scale: float) -> dict[str, Any]:
@@ -484,10 +655,15 @@ def _fit_modes(
     n_folds: int,
     fold_seed: int,
     mlp_config: MLPConfig,
+    residual_alpha_grid: list[float],
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     source_rows = table_rows["true_source_row"].to_numpy(dtype=int)
     fold_by_source = _assign_source_folds(source_rows, n_folds=n_folds, seed=fold_seed)
     row_folds = np.asarray([fold_by_source[int(source)] for source in source_rows], dtype=int)
+    if "observed_compact" in arrays:
+        response_input_dim = int(arrays["observed_compact"].shape[1])
+    else:
+        response_input_dim = int(min(arr.shape[1] for arr in arrays.values()))
     trial_rows: list[dict[str, Any]] = []
     model_rows: list[dict[str, Any]] = []
 
@@ -514,7 +690,9 @@ def _fit_modes(
                 fit_source_rows = train_source_rows_by_mode[mode]
                 fit_z_all = _transform_feature_sources(transform, feature_table, fit_source_rows)
                 train_mask = np.asarray([fold_by_source.get(int(source), -1) != int(fold) for source in fit_source_rows])
-                if mode == "augmented_zero_static":
+                if _is_residual_mode(mode):
+                    train_source = "augmented_prior_trajectory_responses_nested_residual"
+                elif mode == "augmented_zero_static":
                     train_source = "augmented_zero_static_responses"
                 elif mode == "augmented_known_eye_model":
                     train_source = "augmented_known_eye_responses"
@@ -526,20 +704,38 @@ def _fit_modes(
                 fit_z_all = z_all
                 train_mask = ~test_mask
                 train_source = "observed_true_rows"
-            z_hat, stats = _fit_predict_mlp(
-                x_all=fit_x_all,
-                z_all=fit_z_all,
-                source_rows=fit_source_rows,
-                train_mask=train_mask,
-                x_test=x_all[test_mask],
-                config=mlp_config,
-                fold=int(fold),
-                spec_slug=mode,
-                feature_space_mode=transform.feature_space_mode,
-            )
+            if _is_residual_mode(mode):
+                z_hat, stats = _fit_predict_residual_mlp(
+                    base_x_all=fit_x_all[:, :response_input_dim],
+                    residual_x_all=fit_x_all,
+                    z_all=fit_z_all,
+                    source_rows=fit_source_rows,
+                    train_mask=train_mask,
+                    base_x_test=x_all[test_mask, :response_input_dim],
+                    residual_x_test=x_all[test_mask],
+                    config=mlp_config,
+                    fold=int(fold),
+                    spec_slug=mode,
+                    feature_space_mode=transform.feature_space_mode,
+                    alpha_grid=residual_alpha_grid,
+                )
+                decoder_mode = "mlp_residual"
+            else:
+                z_hat, stats = _fit_predict_mlp(
+                    x_all=fit_x_all,
+                    z_all=fit_z_all,
+                    source_rows=fit_source_rows,
+                    train_mask=train_mask,
+                    x_test=x_all[test_mask],
+                    config=mlp_config,
+                    fold=int(fold),
+                    spec_slug=mode,
+                    feature_space_mode=transform.feature_space_mode,
+                )
+                decoder_mode = "mlp"
             model_row = {
                 "input_mode": mode,
-                "decoder_mode": "mlp",
+                "decoder_mode": decoder_mode,
                 "fold": int(fold),
                 "n_train_rows": int(np.sum(train_mask)),
                 "n_test_rows": int(np.sum(test_mask)),
@@ -561,7 +757,7 @@ def _fit_modes(
                 out.update(
                     {
                         "input_mode": mode,
-                        "decoder_mode": "mlp",
+                        "decoder_mode": decoder_mode,
                         "fold": int(fold),
                         "latent": transform.latent,
                         "feature_space_mode": transform.feature_space_mode,
@@ -621,6 +817,8 @@ def _contrasts(trials: pd.DataFrame, *, primary_mode: str, n_bootstrap: int, see
         (primary_mode, "augmented_observed_compact", "continuous_tau_minus_augmented_observed_compact"),
         (primary_mode, "augmented_known_eye_model", "continuous_tau_minus_augmented_known_eye_model"),
         (primary_mode, "known_eye_model", "continuous_tau_minus_known_eye_model"),
+        ("augmented_continuous_tau_residual", "augmented_zero_static", "continuous_tau_residual_minus_augmented_zero_static"),
+        ("augmented_continuous_tau_residual", primary_mode, "continuous_tau_residual_minus_raw_continuous_tau"),
         ("augmented_observed_compact", "augmented_zero_static", "augmented_observed_minus_augmented_zero_static"),
         (
             "augmented_continuous_tau_interactions",
@@ -629,6 +827,9 @@ def _contrasts(trials: pd.DataFrame, *, primary_mode: str, n_bootstrap: int, see
         ),
         ("augmented_true_tau", "augmented_zero_static", "true_tau_no_interactions_minus_augmented_zero_static"),
         ("augmented_true_tau", primary_mode, "true_tau_no_interactions_minus_continuous_tau"),
+        ("augmented_true_tau_residual", "augmented_zero_static", "true_tau_residual_minus_augmented_zero_static"),
+        ("augmented_true_tau_residual", "augmented_observed_compact", "true_tau_residual_minus_augmented_observed"),
+        ("augmented_true_tau_residual", "augmented_true_tau", "true_tau_residual_minus_raw_true_tau"),
         ("augmented_true_tau_interactions", "augmented_zero_static", "true_tau_minus_augmented_zero_static"),
         ("augmented_true_tau_interactions", "zero_static", "true_tau_minus_zero_static"),
         ("augmented_true_tau_interactions", primary_mode, "true_tau_minus_continuous_tau"),
@@ -680,8 +881,10 @@ def _plot(summary: pd.DataFrame, contrasts: pd.DataFrame, out_dir: Path, *, prim
         "observed_compact": "#66717d",
         "augmented_observed_compact": "#4b5563",
         "augmented_continuous_tau": "#4c78a8",
+        "augmented_continuous_tau_residual": "#2f6faa",
         "augmented_continuous_tau_interactions": "#235789",
         "augmented_true_tau": "#374151",
+        "augmented_true_tau_residual": "#000000",
         "augmented_true_tau_interactions": "#111827",
         "augmented_zero_static": "#8a5ca8",
         "augmented_known_eye_model": "#2f8f6a",
@@ -766,6 +969,9 @@ def _write_readme(out_dir: Path, summary: pd.DataFrame, contrasts: pd.DataFrame,
         return float(row["mean_feature_cosine_delta"]), float(row["ci_low"]), float(row["ci_high"])
 
     delta, lo, hi = contrast("continuous_tau_minus_augmented_zero_static")
+    true_residual_delta, true_residual_lo, true_residual_hi = contrast(
+        "true_tau_residual_minus_augmented_zero_static"
+    )
     lines = [
         "# Continuous-Tau MLP Feature Decoder",
         "",
@@ -775,6 +981,10 @@ def _write_readme(out_dir: Path, summary: pd.DataFrame, contrasts: pd.DataFrame,
         "Augmented modes train on the continuous response-bank rows",
         "`(prior response, trajectory) -> phi(source image)` and test on held-out",
         "observed responses with continuous `tau_hat`.",
+        "Residual modes train a response-only MLP first, then allow an eye-trace",
+        "correction whose shrinkage is selected on source-held-out validation rows;",
+        "the correction grid includes zero, so the model can fall back to the",
+        "response-only decoder.",
         "",
         "Primary input:",
         "",
@@ -790,8 +1000,10 @@ def _write_readme(out_dir: Path, summary: pd.DataFrame, contrasts: pd.DataFrame,
         f"observed compact only:                 {value('observed_compact'):.4f}",
         f"augmented compact only:                {value('augmented_observed_compact'):.4f}",
         f"augmented continuous tau:              {value('augmented_continuous_tau'):.4f}",
+        f"augmented continuous tau residual:     {value('augmented_continuous_tau_residual'):.4f}",
         f"augmented continuous tau + interactions: {value('augmented_continuous_tau_interactions'):.4f}",
         f"augmented true tau:                    {value('augmented_true_tau'):.4f}",
+        f"augmented true tau residual:           {value('augmented_true_tau_residual'):.4f}",
         f"augmented true tau + interactions:     {value('augmented_true_tau_interactions'):.4f}",
         f"augmented 0x stabilized response:      {value('augmented_zero_static'):.4f}",
         f"augmented known-eye model response:     {value('augmented_known_eye_model'):.4f}",
@@ -803,6 +1015,7 @@ def _write_readme(out_dir: Path, summary: pd.DataFrame, contrasts: pd.DataFrame,
         "",
         "```text",
         f"continuous tau - augmented 0x stabilized: {delta:+.4f}  CI [{lo:+.4f}, {hi:+.4f}]",
+        f"true tau residual - augmented 0x stabilized: {true_residual_delta:+.4f}  CI [{true_residual_lo:+.4f}, {true_residual_hi:+.4f}]",
         "```",
         "",
         "Interpretation boundary: the continuous trajectory estimate is recovered",
@@ -850,6 +1063,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mlp-validation-fraction", type=float, default=0.2)
     parser.add_argument("--mlp-max-train-samples", type=int, default=0)
     parser.add_argument("--mlp-device", default="auto")
+    parser.add_argument("--residual-alpha-grid", default="0,0.05,0.1,0.2,0.35,0.5,0.75,1.0")
     parser.add_argument("--progress-every", type=int, default=64)
     parser.add_argument("--out-dir", type=Path, default=OUT_DIR)
     return parser
@@ -910,6 +1124,7 @@ def build(args: argparse.Namespace) -> Path:
         n_folds=int(args.n_folds),
         fold_seed=int(args.fold_seed),
         mlp_config=mlp_config,
+        residual_alpha_grid=_parse_float_list(args.residual_alpha_grid),
     )
     summary = _summarize(trials)
     contrasts = _contrasts(trials, primary_mode=PRIMARY_MODE, n_bootstrap=int(args.n_bootstrap), seed=int(args.fold_seed) + 17)

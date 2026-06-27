@@ -176,7 +176,7 @@ Continuous-tau MLP feature-decoder outputs:
 
 ```text
 declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
-continuous_tau_mlp_feature_decoder_augmented/
+continuous_tau_mlp_feature_decoder_residual/
 ```
 
 The continuous-tau MLP branch is the current hybrid between the strict
@@ -190,19 +190,80 @@ Full-cache all-scale feature cosine:
 
 ```text
 augmented compact-only hidden readout: 0.3695
-augmented continuous tau_hat readout:  0.3140
-augmented true-tau readout:            0.3521
+augmented true-tau residual readout:   0.3683
+augmented true-tau raw readout:        0.3521
+augmented tau_hat residual readout:    0.3440
+augmented tau_hat raw readout:         0.3140
 augmented 0x stabilized readout:       0.3243
 augmented known-eye readout:           0.3196
 ```
 
-The important split is that the nuisance-augmented hidden readout beats the
-fair augmented 0x baseline (`+0.0452`, CI `[+0.0292, +0.0618]`), but the
-estimated continuous-tau readout does not (`-0.0104`, CI `[-0.0307, +0.0084]`).
-The true-tau ceiling does beat the fair static baseline (`+0.0278`, CI
-`[+0.0095, +0.0466]`), so the next methodological target is better
-trajectory-conditioned representation/inference rather than simply adding
-`tau_hat` coordinates to the response vector.
+The important split is that raw coordinate concatenation was a weak known-eye
+interface, but the nested residual version fixes the red flag. True-tau
+residual beats the fair augmented 0x baseline (`+0.0440`, CI
+`[+0.0276, +0.0610]`) and is indistinguishable from augmented compact-only
+(`-0.0012`, CI `[-0.0183, +0.0154]`). Estimated `tau_hat` residual also beats
+the fair augmented 0x baseline (`+0.0196`, CI `[+0.0029, +0.0374]`) while
+remaining below the true-eye ceiling.
+
+The same residual output now has a paired along/across posthoc summary:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+continuous_tau_mlp_feature_decoder_residual/
+continuous_tau_mlp_axis_contrast_README.md
+```
+
+All-scale feature-cosine `axis_edge_parallel - axis_edge_orthogonal` is
+`+0.00000` for augmented compact-only, `+0.00000` for true-tau residual, and
+`+0.00013` for tau-hat residual with CI `[-0.00514, +0.00620]`. Thus this
+candidate-free residual MLP method does not recover a meaningful along-contour
+advantage.
+
+A direct response-movie version of the axis test has also been added:
+
+```text
+declan/figure4_active_sensing_atlas/scripts/build_panel_c_direct_axis_mlp_feature_decoder.py
+```
+
+Output:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+direct_axis_mlp_feature_decoder/
+```
+
+This is the correct direct test for "along versus across with this method":
+the true candidate's sampled along- or across-axis response movie is the test
+observation. With trial/scale clustered confidence intervals, all-scale
+feature-cosine `axis_edge_parallel - axis_edge_orthogonal` is:
+
+```text
+compact response-only: -0.00960  CI [-0.01556, -0.00380]
+true-tau residual:     -0.00557  CI [-0.01093, +0.00019]
+raw true-tau concat:   -0.00120  CI [-0.00800, +0.00569]
+```
+
+Thus the direct candidate-free MLP test does not show an along-contour
+advantage. A second source-fold seed (`20260625`) changes compact response-only
+from `-0.00960` to `+0.00597`, with a cluster CI crossing zero; true-tau
+residual remains near null (`-0.00276`, CI `[-0.01039, +0.00520]`). So the
+right conclusion is null/split-sensitive, not a stable across-axis advantage.
+
+The same direct MLP test was also rerun on the matched-static axis cache, where
+trajectory coordinates are not stored and therefore only response-only/static
+decoder modes are available:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+direct_axis_mlp_feature_decoder_matched_static/
+```
+
+The matched-static all-scale response-only contrast is `-0.00541`, CI
+`[-0.01492, +0.00426]`, for `axis_edge_parallel - axis_edge_orthogonal`; with
+the second source-fold seed it is `+0.00191`, CI `[-0.00668, +0.01086]`. So the
+matched-static candidate-free MLP version also does not recover a reliable
+along-contour advantage.
 
 Key figures:
 

@@ -988,7 +988,7 @@ Output:
 
 ```text
 declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
-  continuous_tau_mlp_feature_decoder_augmented/
+  continuous_tau_mlp_feature_decoder_residual/
     continuous_tau_mlp_feature_decoder_summary.csv
     continuous_tau_mlp_feature_decoder_contrasts.csv
     continuous_tau_mlp_feature_decoder_models.csv
@@ -1011,10 +1011,12 @@ All-scale feature cosine:
 
 ```text
 augmented compact-only hidden readout: 0.3695
-augmented continuous tau_hat readout:  0.3140
-augmented continuous tau interactions: 0.3078
-augmented true-tau readout:            0.3521
+augmented true-tau residual readout:   0.3683
+augmented true-tau raw readout:        0.3521
 augmented true-tau interactions:       0.3499
+augmented tau_hat residual readout:    0.3440
+augmented tau_hat raw readout:         0.3140
+augmented tau_hat interactions:        0.3078
 augmented 0x stabilized readout:       0.3243
 augmented known-eye readout:           0.3196
 ```
@@ -1023,17 +1025,143 @@ Paired contrasts:
 
 ```text
 augmented compact-only - augmented 0x: +0.0452  CI [+0.0292, +0.0618]
-continuous tau_hat - augmented 0x:     -0.0104  CI [-0.0307, +0.0084]
-true tau - augmented 0x:               +0.0278  CI [+0.0095, +0.0466]
+true-tau residual - augmented 0x:      +0.0440  CI [+0.0276, +0.0610]
+tau_hat residual - augmented 0x:       +0.0196  CI [+0.0029, +0.0374]
+true-tau residual - compact-only:      -0.0012  CI [-0.0183, +0.0154]
+true-tau residual - raw true-tau:      +0.0162  CI [-0.0005, +0.0333]
 ```
 
 Safe claim:
 
 ```text
 The candidate-free nonlinear feature decoder beats the fair augmented static
-baseline through nuisance-augmented moving compact responses. Estimated
-continuous tau_hat concatenation does not yet beat the fair static baseline,
-although the true-tau ceiling does, so the next attempt should improve the
-trajectory-conditioned representation or infer (z, tau) jointly rather than
-only appending tau_hat to the response vector.
+baseline through nuisance-augmented moving compact responses. Raw tau
+concatenation is not the right known-eye interface. A nested residual eye-trace
+decoder restores the expected ceiling behavior: true-tau residual matches the
+compact-only readout and beats augmented static, while estimated tau_hat
+residual also beats augmented static but remains below the true-eye ceiling.
+```
+
+## 4C Continuous-Tau MLP Along/Across Contrast
+
+Output:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+  continuous_tau_mlp_feature_decoder_residual/
+    continuous_tau_mlp_axis_summary.csv
+    continuous_tau_mlp_axis_contrasts.csv
+    continuous_tau_mlp_axis_contrast_README.md
+```
+
+Configuration:
+
+```text
+script = declan/figure4_active_sensing_atlas/scripts/summarize_panel_c_continuous_tau_mlp_axis_contrast.py
+source = continuous_tau_mlp_feature_decoder_residual/continuous_tau_mlp_feature_decoder_trials.csv
+contrast = axis_edge_parallel - axis_edge_orthogonal
+paired by = trial_id, prior_scale, true_source_row, input_mode
+```
+
+All-scale feature-cosine contrast:
+
+```text
+augmented compact-only:        +0.00000  CI [+0.00000, +0.00000]
+true-tau residual:            +0.00000  CI [+0.00000, +0.00000]
+tau_hat residual:             +0.00013  CI [-0.00514, +0.00620]
+raw tau_hat concatenation:    -0.01095  CI [-0.02414, +0.00218]
+```
+
+Safe claim:
+
+```text
+The candidate-free residual MLP method does not show a meaningful along-contour
+advantage. In this paired setup the observed response and true trace are the
+same across axis labels; only the axis-conditioned inferred tau_hat can differ,
+and its residual-decoder contrast is effectively zero.
+```
+
+## 4C Direct Axis MLP Feature Decoder
+
+Output:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+  direct_axis_mlp_feature_decoder/
+    direct_axis_mlp_feature_decoder_trials.csv
+    direct_axis_mlp_feature_decoder_summary.csv
+    direct_axis_mlp_feature_decoder_contrasts.csv
+    direct_axis_mlp_feature_decoder_models.csv
+    direct_axis_mlp_feature_decoder_manifest.json
+    direct_axis_mlp_feature_decoder_README.md
+```
+
+Configuration:
+
+```text
+script = declan/figure4_active_sensing_atlas/scripts/build_panel_c_direct_axis_mlp_feature_decoder.py
+source response tables = promoted axis_edge_parallel / axis_edge_orthogonal continuous-joint cache
+test observation = true candidate's sampled prior response movie for each trajectory sample
+target = fold_zscore_whitened_pca, 32D pyramid_local_field
+decoder = source-disjoint MLP; includes response-only, raw true-tau, residual true-tau, static control
+contrast = axis_edge_parallel - axis_edge_orthogonal
+CI = bootstrap over trial/scale cluster means; row-level trajectory-sample CI retained in CSV
+```
+
+All-scale feature-cosine contrast:
+
+```text
+compact response-only: -0.00960  CI [-0.01556, -0.00380]
+true-tau residual:     -0.00557  CI [-0.01093, +0.00019]
+raw true-tau concat:   -0.00120  CI [-0.00800, +0.00569]
+0x static control:     +0.00000  CI [+0.00000, +0.00000]
+```
+
+Safe claim:
+
+```text
+The direct candidate-free MLP test does not show a reliable along-contour
+advantage. A second source-fold seed (`20260625`) changes compact response-only
+from `-0.00960` to `+0.00597`, with a cluster CI crossing zero, while true-eye
+residual stays near null. The direct MLP axis effect should therefore be treated
+as null/split-sensitive, not as a stable across-axis advantage. This should keep
+the Figure 4D along/across story separate from the candidate-free 4C MLP
+feature-decoder result.
+```
+
+Matched-static rerun:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/
+  direct_axis_mlp_feature_decoder_matched_static/
+    direct_axis_mlp_feature_decoder_trials.csv
+    direct_axis_mlp_feature_decoder_summary.csv
+    direct_axis_mlp_feature_decoder_contrasts.csv
+    direct_axis_mlp_feature_decoder_models.csv
+    direct_axis_mlp_feature_decoder_manifest.json
+```
+
+Configuration difference:
+
+```text
+source response tables = backimage_axis_conditioned_matched_static_percandidate_gpu1_n64_c4_k16_v1
+feature npz = backimage_axis_conditioned_matched_static_feature_posterior_gabor_pyramid_k4_8_uncertainty_v2
+available modes = compact response-only, 0x static control
+```
+
+All-scale feature-cosine contrast:
+
+```text
+compact response-only: -0.00541  CI [-0.01492, +0.00426]
+0x static control:     +0.00000  CI [+0.00000, +0.00000]
+```
+
+Matched-static safe claim:
+
+```text
+The matched-static direct candidate-free MLP test also does not show a reliable
+along-contour advantage. The first source split is `-0.00541`, CI
+`[-0.01492, +0.00426]`; the second source split is `+0.00191`, CI
+`[-0.00668, +0.01086]`. The MLP axis result is null/split-sensitive, even
+though the older known-axis posterior diagnostic is separately across-favoring.
 ```
