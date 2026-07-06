@@ -71,6 +71,63 @@ def _synthetic_tables() -> dict[str, np.ndarray]:
     }
 
 
+def _confined_synthetic_tables() -> dict[str, np.ndarray]:
+    rng = np.random.default_rng(0)
+    n_traj = 8
+    n_time = 12
+    trajectories = []
+    for _ in range(n_traj):
+        path = np.zeros((n_time, 2), dtype=np.float64)
+        path[0] = rng.normal(0.0, 0.03, size=2)
+        step = rng.normal(0.0, 0.02, size=2)
+        path[1] = path[0] + step
+        for time_index in range(2, n_time):
+            step = 0.15 * step - 0.25 * path[time_index - 1] + rng.normal(0.0, 0.015, size=2)
+            path[time_index] = path[time_index - 1] + step
+        path -= np.mean(path, axis=0, keepdims=True)
+        trajectories.append(path)
+    trajectory_xy = np.asarray(trajectories, dtype=np.float64)
+    a_true = np.asarray(
+        [
+            [5.0, 0.3],
+            [0.2, 4.0],
+            [2.5, -1.0],
+            [0.0, 0.0],
+        ],
+        dtype=np.float64,
+    )
+    a_other = np.asarray(
+        [
+            [-5.0, -0.3],
+            [-0.2, -4.0],
+            [-2.5, 1.0],
+            [0.0, 0.0],
+        ],
+        dtype=np.float64,
+    )
+    a_by_candidate = np.stack([a_true, a_other], axis=0)
+    n_candidates, n_units = 2, 4
+    zero = np.full((n_candidates, n_time, n_units), 30.0, dtype=np.float64)
+    zero[1, :, 3] = 31.0
+    prior = np.empty((n_candidates, n_traj, n_time, n_units), dtype=np.float64)
+    for candidate_index in range(n_candidates):
+        for trajectory_index in range(n_traj):
+            prior[candidate_index, trajectory_index] = (
+                zero[candidate_index] + trajectory_xy[trajectory_index] @ a_by_candidate[candidate_index].T
+            )
+    known = np.empty((n_candidates, n_time, n_units), dtype=np.float64)
+    for candidate_index in range(n_candidates):
+        known[candidate_index] = zero[candidate_index] + trajectory_xy[0] @ a_by_candidate[candidate_index].T
+    return {
+        "trajectory_xy": trajectory_xy,
+        "prior_lambda_counts": prior,
+        "known_lambda_counts": known,
+        "zero_lambda_counts": zero,
+        "y_obs_counts": known[0],
+        "basis": np.eye(n_units, dtype=np.float64),
+    }
+
+
 def test_kalman_likelihood_prefers_matching_observation_model() -> None:
     fixture = _synthetic_tables()
     tau = fixture["trajectory_xy"][0]
@@ -649,6 +706,38 @@ def test_linear_poisson_profile_supports_catalog_gaussian_prior() -> None:
     assert int(result["continuous_joint_pred_candidate_index"]) == 0
     assert result["trajectory_process_model"] == "catalog_gaussian"
     assert float(result["trajectory_recovery"]["trajectory_rmse"]) < 0.12
+
+
+def test_linear_poisson_profile_supports_synthetic_empirical_confined_prior() -> None:
+    fixture = _confined_synthetic_tables()
+    true_tau = fixture["trajectory_xy"][0]
+    result = score_continuous_joint_score_vectors(
+        y_obs_counts=fixture["y_obs_counts"],
+        prior_lambda_counts=fixture["prior_lambda_counts"],
+        known_lambda_counts=fixture["known_lambda_counts"],
+        zero_lambda_counts=fixture["zero_lambda_counts"],
+        trajectory_xy=fixture["trajectory_xy"],
+        observed_trajectory_xy=true_tau,
+        true_candidate_index=0,
+        candidate_ids=["true", "other"],
+        basis=fixture["basis"],
+        true_trajectory_index=0,
+        observation_var_floor=1e-5,
+        ridge=1e-9,
+        continuous_score_mode="linear_poisson_profile",
+        trajectory_process_model="synthetic_empirical_confined",
+        synthetic_prior_samples=32,
+        synthetic_prior_seed=3,
+        brownian_cov_floor=1e-8,
+    )
+
+    assert int(result["continuous_joint_pred_candidate_index"]) == 0
+    assert result["trajectory_process_model"] == "synthetic_empirical_confined"
+    assert float(result["trajectory_recovery"]["trajectory_rmse"]) < 0.01
+    assert np.asarray(result["synthetic_prior_source_models"], dtype=object)[0] == (
+        "scale_mixture_empirical_confined_step_ar1"
+    )
+    assert int(np.asarray(result["synthetic_prior_empirical_param_counts"], dtype=np.int64)[0]) > 0
 
 
 def test_catalog_residual_profile_supports_max_anchor_aggregation() -> None:

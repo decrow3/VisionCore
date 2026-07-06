@@ -587,14 +587,14 @@ endpoint = cosine(z_hat, z_true)
 Full-cache read:
 
 ```text
-known eye feature cosine:               0.1261
+known-trace feature cosine:             0.1261
 hidden-eye tau-nuisance feature cosine: 0.1036
 zero-eye model on motion:               0.0471
 0x stabilized feature cosine:           0.1860
 
-known - hidden:                         +0.0225
+known-trace - hidden:                   +0.0225
 hidden - zero-eye model:                +0.0565
-known motion - 0x stabilized:           -0.0599
+known-trace motion - 0x stabilized:     -0.0599
 hidden motion - 0x stabilized:          -0.0824
 ```
 
@@ -1036,10 +1036,11 @@ Safe claim:
 ```text
 The candidate-free nonlinear feature decoder beats the fair augmented static
 baseline through nuisance-augmented moving compact responses. Raw tau
-concatenation is not the right known-eye interface. A nested residual eye-trace
-decoder restores the expected ceiling behavior: true-tau residual matches the
-compact-only readout and beats augmented static, while estimated tau_hat
-residual also beats augmented static but remains below the true-eye ceiling.
+concatenation is not the right recorded-eye interface. A nested residual
+eye-trace decoder behaves like a guarded diagnostic: true-tau residual matches
+the compact-only readout and beats augmented static, while estimated tau_hat
+residual also beats augmented static. This is not a physical known-pose
+ceiling.
 ```
 
 ## 4C Continuous-Tau MLP Along/Across Contrast

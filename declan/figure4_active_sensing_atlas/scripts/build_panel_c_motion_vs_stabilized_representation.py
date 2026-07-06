@@ -6,10 +6,11 @@ This is a cache-only analysis for the Figure 4C question:
     measured motion response than with the stabilized zero-motion
     counterfactual?
 
-The clean oracle comparison is known-eye minus zero-static. The known-eye row
-uses the measured trajectory as side information, so it measures representable
-image information without latent-eye uncertainty. The full-joint row is kept as
-the hidden-eye comparison.
+The deterministic known-trace comparison is known-eye minus zero-static. The
+known-eye row uses the measured trajectory in the candidate observer, so it
+removes latent-eye uncertainty inside that deterministic table. It should not
+be read as an independent response target. The full-joint row is kept as the
+hidden-eye comparison.
 """
 
 from __future__ import annotations
@@ -196,10 +197,12 @@ def _write_readme(summary: pd.DataFrame, contrasts: pd.DataFrame) -> None:
         "Question: does the V1 twin population represent the image-feature target",
         "better with measured 1x motion than with the 0x stabilized counterfactual?",
         "",
-        "The clean oracle comparison is `known_eye - zero_static`. `known_eye`",
-        "uses the measured trajectory, so it removes latent eye-position",
-        "uncertainty from the representation question. `full_exact` keeps the",
-        "eye trace hidden and is included as the joint-decoder comparison.",
+        "The deterministic known-trace comparison is `known_eye - zero_static`.",
+        "`known_eye` uses the measured trajectory in the candidate observer,",
+        "so it removes latent eye-position uncertainty inside this table. It",
+        "is a known-trace control, not an independent response target.",
+        "`full_exact` keeps the eye trace hidden and is included as the",
+        "joint-decoder comparison.",
         "",
         "At the 1x scale:",
         "",
@@ -208,16 +211,16 @@ def _write_readme(summary: pd.DataFrame, contrasts: pd.DataFrame) -> None:
         f"1x motion, eye hidden feature cosine: {value['full_exact']:.4f}",
         f"1x motion, eye known feature cosine:  {value['known_eye']:.4f}",
         "",
-        f"oracle 1x gain over 0x:              {delta['known_eye_minus_zero_static']:.4f}",
+        f"known-trace 1x gain over 0x:         {delta['known_eye_minus_zero_static']:.4f}",
         f"hidden-eye 1x gain over 0x:          {delta['full_exact_minus_zero_static']:.4f}",
         f"latent-eye penalty:                  {delta['known_eye_minus_full_exact']:.4f}",
         "```",
         "",
-        "Interpretation: the oracle known-eye comparison supports the claim that",
-        "the moving 1x response carries more recoverable local image-feature",
-        "information than the stabilized 0x counterfactual. The smaller full-joint",
-        "gap shows how much of that representational advantage remains when eye",
-        "position is hidden.",
+        "Interpretation: the known-trace control supports the claim that the",
+        "deterministic moving 1x table contains more recoverable local",
+        "image-feature structure than the stabilized 0x counterfactual. The",
+        "smaller full-joint gap shows how much of that representational",
+        "advantage remains when eye position is hidden.",
         "",
         "Outputs:",
         "",

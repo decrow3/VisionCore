@@ -1,6 +1,6 @@
 # Local BackImage I_z Pairing Revisit
 
-Last curated: 2026-06-18.
+Last curated: 2026-06-30.
 
 ## Purpose
 
@@ -38,12 +38,69 @@ strict drift-only trace-bank filtering
 source traces reused across scales
 effective RMS and clipping/capping audit for every rendered trace
 common-unclipped policy for above-1x scale claims
-grouped-by-image/source_row cross-validation
-static-plus-motion incremental score as the primary readout
+source-trial grouped cross-validation when multiple crops can share a source trial
+static-mean-plus-motion incremental score as the primary readout
 fixed/shared ridge alpha for primary family contrasts
 Brownian and rotated controls as large-scale/generic-motion guardrails
 scale IDs in the corrected rel_0p25x / rel_0p5x / rel_1x convention
 ```
+
+## 2026-06-30 Audit Update
+
+The local branch inherited two issues from the earlier aggregate-analysis
+period and should not promote the older positive table as a current result.
+
+1. The clean `n=128` local cache used `decode_group_mode=image`. In the fixed
+   manifest, only `98` unique `(session, trial_idx)` source-trial groups are
+   present; `50/128` windows belong to repeated source-trial groups, with up to
+   `4` crops from one source trial. The promoted re-score must therefore use
+   `decode_group_mode=source_trial`.
+
+2. The runner's old `delta_mean` incremental rows used
+   `delta_mean__static__static` as the static baseline. That array is exactly
+   zero. Those rows are motion-delta-only sensitivity rows, not the aggregate
+   feature-information contract
+
+   ```text
+   D([R_static_mean(I_i), R_delta_mean(I_i, tau)], phi(I_i))
+   - D(R_static_mean(I_i), phi(I_i)).
+   ```
+
+The runner has been patched so future local runs use `source_trial` grouping by
+default and map motion summaries to the static `mean` baseline. The existing
+cache was also re-scored without rerendering:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_gabor_pyramid_rel025_0p5_1_seed7_v1/
+    local_delta_mean_info_source_trial_mean_sample_b200_20260630/
+```
+
+This corrected posthoc preserves the local matched-unpaired estimator:
+`matched_unpaired_empirical` is the mean over K sample decoders, not a decoder
+fit to the averaged response vector. It also reports the aggregate-compatible
+diagonal Gaussian information increment in bits.
+
+Corrected actual-paired minus matched-unpaired rows:
+
+```text
+gabor k=4,   0.25x: -0.013 bits, CI [-0.320, +0.210]
+gabor k=4,   1x:    +0.035 bits, CI [-0.170, +0.265]
+gabor k=8,   0.25x: -0.004 bits, CI [-0.234, +0.199]
+gabor k=8,   1x:    +0.001 bits, CI [-0.573, +0.510]
+
+pyramid k=4, 0.25x: +0.055 bits, CI [-0.187, +0.220]
+pyramid k=4, 1x:    -0.144 bits, CI [-0.413, +0.140]
+pyramid k=8, 0.25x: +0.221 bits, CI [-0.303, +0.558]
+pyramid k=8, 1x:    -0.165 bits, CI [-0.617, +0.337]
+```
+
+Conclusion: under the corrected local contract, the exact actual trace does
+not reliably beat matched empirical trace swaps. Some actual-paired rows still
+show positive motion information over the stabilized static baseline, but the
+matched-unpaired rows often do too. The local result should therefore be framed
+as a diagnostic sensitivity analysis, not as evidence for image-specific trace
+matching.
 
 The output contract should also match the aggregate runner wherever possible:
 
@@ -244,11 +301,13 @@ Do not collapse readouts unless explicitly labeled.
 
 ## Decoder And Scoring
 
-Use grouped cross-validation by image/window:
+Use grouped cross-validation by source trial for promoted results:
 
 ```text
-decode_group_mode = image or source_row
-all rows from the same image/window stay in the same fold
+primary: decode_group_mode = source_trial
+diagnostic: decode_group_mode = image
+sensitivity: decode_group_mode = session
+all rows from the same session/trial stay in the same fold
 ```
 
 Primary score:
@@ -312,7 +371,7 @@ latents = gabor_local_field k=4, pyramid_local_field k=8
 summary = temporal_pca
 families = actual_paired, matched_unpaired, rotated_actual_90,
   ou_matched, edge_axis, edge_orthogonal
-CV = grouped by image/source_row
+CV = grouped by source_trial
 trace bank = strict drift-only
 alpha = fixed/shared or nested with identical folds
 ```
@@ -445,8 +504,8 @@ outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
   backimage_local_pairing_Iz_revisit_clean_fixedmanifest_sampledK32_gabor_pyramid_rel025_1_seed7_v1
 ```
 
-Both runs used the same fixed `128`-image manifest, the full strict filtered
-trace pool (`3013` trace-bank rows), sampled matched-unpaired controls
+Both older runs used the same fixed `128`-image manifest, the full strict
+filtered trace pool (`3013` trace-bank rows), sampled matched-unpaired controls
 (`K_unpaired=32`), grouped-by-image decoding, the canonical `756`-unit twin, and
 scales `0.25x` and `1x`. Motion QC was clean: `0` same-trial matched controls,
 `0` clipping, and median effective/requested RMS `1.0` for every
@@ -467,7 +526,8 @@ Do not use `decode_contrasts.csv` as the local-pairing headline because its
 matched-unpaired condition decodes the averaged K-trace response vector. The
 local-pairing contrast uses mean-over-sample gains.
 
-Clean actual-paired minus matched-unpaired result, seed 7:
+Older image-grouped, zero-static-baseline actual-paired minus
+matched-unpaired result, seed 7:
 
 ```text
 delta_mean, gabor k=4,   0.25x: +9.95, CI [+0.73, +20.62]
@@ -481,12 +541,13 @@ delta_mean, pyramid k=8, 0.25x: +6.09, CI [+1.51, +10.53]
 delta_mean, pyramid k=8, 1x:    +3.79, CI [+1.46, +6.28]
 ```
 
-This is the current positive local result:
+This older positive table is now diagnostic only:
 
 ```text
 Actual local fixation traces beat matched empirical trace swaps for
-motion-induced feature-response deltas, and this survives in both Gabor and
-pyramid local-field features.
+motion-induced feature-response deltas under the old motion-delta-only,
+image-grouped contract. This is not the promoted aggregate-compatible local
+information result.
 ```
 
 The result does not yet support a broad temporal-code claim. For

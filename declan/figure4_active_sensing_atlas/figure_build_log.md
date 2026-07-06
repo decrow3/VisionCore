@@ -907,7 +907,7 @@ Read:
 ```text
 Panel C now reports zeroed-eye feature recovery cosine 0.765, 0.668, and
 0.576 across 0.5x, 1x, and 2x; compact-subspace recovery 0.877, 0.877, and
-0.871; and known-eye ceiling 0.927, 0.936, and 0.949. This is the option 5
+0.871; and known-trace control 0.927, 0.936, and 0.949. This is the option 5
 main-panel read, not the averaged compact-source line or the joint-decoding
 compact-removal audit.
 ```
@@ -1018,7 +1018,7 @@ zeroed eye = 0.765, 0.668, 0.576 at 0.5x, 1x, 2x.
 compact-only = 0.850, 0.838, 0.826.
 compact-removed = 0.759, 0.635, 0.537.
 full joint / compact-addback = 0.872, 0.872, 0.871.
-known-eye ceiling = 0.927, 0.936, 0.949.
+known-trace control = 0.927, 0.936, 0.949.
 
 Validation: compact-addback reconstructs full responses with max error
 3.47e-18, and full/zero/known summaries match the prior feature-posterior

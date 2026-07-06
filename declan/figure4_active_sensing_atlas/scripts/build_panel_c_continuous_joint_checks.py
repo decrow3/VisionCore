@@ -464,7 +464,7 @@ def _plot_overall_accuracy(overall: pd.DataFrame) -> None:
         )
     known_ceiling = overall[overall["observer"].eq("known_accuracy")]["accuracy"].max()
     if np.isfinite(known_ceiling):
-        ax.axhline(known_ceiling, color=COLORS["known"], lw=1.3, linestyle="--", label="known-eye ceiling")
+        ax.axhline(known_ceiling, color=COLORS["known"], lw=1.3, linestyle="--", label="known-trace control")
     ax.set_title("Continuous joint observer: full-cache accuracy")
     ax.set_ylabel("image identification accuracy")
     ax.set_xticks(x)
@@ -575,7 +575,7 @@ def _plot_headline_by_scale(by_scale: pd.DataFrame) -> None:
         lw=1.3,
         color=COLORS["known"],
         linestyle="--",
-        label="known-eye ceiling",
+        label="known-trace control",
     )
     ax.set_title("Headline no-anchor continuous estimator by motion scale")
     ax.set_ylabel("image identification accuracy")
@@ -684,11 +684,11 @@ Inputs are the full-cache continuous-joint analyzer outputs under:
 Headline full-cache result at likelihood scale 1.0:
 
 ```text
-known-eye ceiling:                      {known:.3f}
+known-trace control:                    {known:.3f}
 zero-eye accuracy:                       {zero:.3f}
 finite catalog joint:                    {joint:.3f}
 active no-anchor continuous, k=10:       {headline:.3f}
-remaining gap to known-eye ceiling:      {known - headline:.3f}
+remaining gap to known-trace control:    {known - headline:.3f}
 ```
 
 The active headline is the no-anchor known-start AR(1) profile. Catalog-residual

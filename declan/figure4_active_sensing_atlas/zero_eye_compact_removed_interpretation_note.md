@@ -94,7 +94,10 @@ table.
 Use `latent-eye joint observer` or `hidden-eye joint observer` when the intended
 meaning is a decoder without the measured eye trace.
 
-Use `known-eye ceiling` when the decoder is given the true eye trajectory.
+Use `known-trace control` when the candidate observer is given the true eye
+trajectory in the deterministic table. Reserve `known-pose ceiling` for a
+validated image-conditioned forward/rendering observer, not for the compact
+linear residual diagnostics.
 
 Avoid saying that `compact_removed` does worse than "zero-eye information"
 unless the text immediately defines zero-eye as the static-reference response

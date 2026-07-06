@@ -203,8 +203,9 @@ interface, but the nested residual version fixes the red flag. True-tau
 residual beats the fair augmented 0x baseline (`+0.0440`, CI
 `[+0.0276, +0.0610]`) and is indistinguishable from augmented compact-only
 (`-0.0012`, CI `[-0.0183, +0.0154]`). Estimated `tau_hat` residual also beats
-the fair augmented 0x baseline (`+0.0196`, CI `[+0.0029, +0.0374]`) while
-remaining below the true-eye ceiling.
+the fair augmented 0x baseline (`+0.0196`, CI `[+0.0029, +0.0374]`). Treat
+these as recorded-tau residual diagnostics, not as a physical known-pose
+ceiling.
 
 The same residual output now has a paired along/across posthoc summary:
 
@@ -343,19 +344,19 @@ diagnostic, not the promoted 4C replacement. It uses a 32D whitened
 response basis, cross-fitted by source image. On the full 768-table cache:
 
 ```text
-known eye feature cosine:              0.1261
+known-trace feature cosine:            0.1261
 hidden-eye tau-nuisance feature cosine: 0.1036
 zero-eye model on motion:              0.0471
 0x stabilized feature cosine:          0.1860
 
-known - hidden:                        +0.0225
+known-trace - hidden:                  +0.0225
 hidden - zero-eye model:               +0.0565
-known motion - 0x stabilized:          -0.0599
+known-trace motion - 0x stabilized:    -0.0599
 hidden motion - 0x stabilized:         -0.0824
 ```
 
 Interpretation: the continuous `z` posterior shows a real hidden-eye gain over
-the zero-eye model and keeps the expected known-eye ceiling above hidden-eye.
+the zero-eye model and keeps the deterministic known-trace control above hidden-eye.
 It does not yet reproduce the candidate-posterior result that measured motion
 beats the stabilized counterfactual. The likely next implementation step is a
 forward model that jointly profiles or marginalizes `(z, tau)`, rather than
@@ -395,7 +396,7 @@ feature compact-mechanism cache and compares matched rows:
 1x motion, eye hidden: full_exact
 ```
 
-At the 1x scale, the oracle known-eye comparison is strongly above the 0x
+At the 1x scale, the deterministic known-trace comparison is strongly above the 0x
 stabilized counterfactual:
 
 ```text
@@ -403,16 +404,17 @@ stabilized counterfactual:
 1x motion, eye hidden feature cosine: 0.8721
 1x motion, eye known feature cosine:  0.9358
 
-oracle 1x gain over 0x:              0.2680
+known-trace 1x gain over 0x:         0.2680
 hidden-eye 1x gain over 0x:          0.2043
 latent-eye penalty:                  0.0637
 ```
 
 This answers the representation question more directly than the no-start joint
-observer: with the eye trace supplied, the moving 1x response carries more
-recoverable local image-feature information than the stabilized 0x response.
-The hidden-eye joint decoder then asks how much of that advantage survives when
-eye position is latent, and it preserves most of the oracle gain in this cache.
+observer: with the eye trace supplied in the deterministic table, the moving
+1x response carries more recoverable local image-feature structure than the
+stabilized 0x response. The hidden-eye joint decoder then asks how much of that
+advantage survives when eye position is latent, and it preserves most of the
+known-trace gain in this cache.
 The diagnostic builder is:
 
 ```text
@@ -799,7 +801,7 @@ catalog-residual continuous, all anchors:            0.798
 catalog-residual continuous, top-2 anchor log-mean:  0.841
 catalog-residual continuous, tuned top-2 log-mean:   0.845
 catalog-residual continuous, shrunk top-2 log-mean:  0.850
-remaining gap to known-eye ceiling:                  0.150
+remaining gap to known-trace control:                0.150
 ```
 
 A coarse-to-fine version of the same catalog-residual diagnostic is also implemented.
@@ -893,7 +895,7 @@ observer/run                         image acc  posterior feature cosine  MAP fe
 zero-eye baseline                    0.445      0.826                     0.790
 finite joint catalog                 0.770      0.927                     0.946
 best single catalog trajectory       0.784      0.927                     0.949
-known-eye ceiling                    1.000      0.959                     1.000
+known-trace control                  1.000      0.959                     1.000
 
 no-anchor AR(1) continuous           0.561      0.871                     0.853
 no-anchor residual CTF continuous    0.562      0.870                     0.853

@@ -159,6 +159,24 @@ def _available_scale_ids(responses: dict[str, np.ndarray], families: list[str], 
     return sorted(scales, key=lambda s: (len(s), s))
 
 
+def _decode_groups_from_images(images: pd.DataFrame, mode: str) -> np.ndarray:
+    mode = str(mode)
+    if mode == "image":
+        return images["image_index"].to_numpy(dtype=int)
+    if mode == "source_trial":
+        missing = sorted({"session", "trial_idx"}.difference(images.columns))
+        if missing:
+            raise ValueError(f"source_trial decode grouping requires columns {missing}")
+        return (
+            images["session"].astype(str)
+            + "::trial_"
+            + images["trial_idx"].astype(int).astype(str)
+        ).to_numpy()
+    if mode == "session":
+        return images["session"].to_numpy()
+    raise ValueError(f"Unknown decode_group_mode={mode!r}")
+
+
 def _session_bootstrap_delta(
     left: np.ndarray,
     right: np.ndarray,
@@ -347,11 +365,17 @@ def _information_point_estimates(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _ci_from_bootstrap(values: np.ndarray, point: float) -> tuple[float, float]:
+    """Return a bootstrap-spread interval centered on the observed point estimate."""
     values = np.asarray(values, dtype=np.float64)
     values = values[np.isfinite(values)]
     if values.size <= 1:
         return float(point), float(point)
-    lo, hi = np.nanpercentile(values, [2.5, 97.5])
+    centered = values - float(np.nanmedian(values))
+    lo_delta, hi_delta = np.nanpercentile(centered, [2.5, 97.5])
+    lo = float(point) + float(lo_delta)
+    hi = float(point) + float(hi_delta)
+    if lo > hi:
+        lo, hi = hi, lo
     return float(lo), float(hi)
 
 
@@ -624,7 +648,7 @@ def _decode_pipeline_information_bootstrap(
         "incremental_gain_info_full_bits_per_dim": point["incremental_gain_info_full_bits_per_dim"],
         "info_full_per_dim_ci95_low": full_per_dim_lo,
         "info_full_per_dim_ci95_high": full_per_dim_hi,
-        "information_ci_method": "decode_pipeline_group_bootstrap",
+        "information_ci_method": "decode_pipeline_group_bootstrap_point_centered",
         "ridge_alpha_matched_all_folds": bool(point["ridge_alpha_matched_all_folds"]),
         "n_information_folds": int(point["n_information_folds"]),
         "n_information_bootstrap_success": int(np.sum(np.isfinite(diag_boot))),
@@ -709,7 +733,7 @@ def _decode_pipeline_information_contrast_bootstrap(
         "incremental_gain_delta_info_full_bits": point_full,
         "info_full_ci95_low": full_lo,
         "info_full_ci95_high": full_hi,
-        "information_ci_method": "decode_pipeline_group_bootstrap",
+        "information_ci_method": "decode_pipeline_group_bootstrap_point_centered",
         "ridge_alpha_matched_all_folds": bool(
             point_lhs["ridge_alpha_matched_all_folds"] and point_rhs["ridge_alpha_matched_all_folds"]
         ),
@@ -769,9 +793,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--inner-folds", type=int, default=3)
     parser.add_argument(
         "--decode-group-mode",
-        choices=("image", "session"),
+        choices=("image", "source_trial", "session"),
         default="image",
-        help="CV grouping for decoding. Use image for the pathfinder; session is stricter by recording session.",
+        help=(
+            "CV grouping for decoding. image keeps each selected window/source row in one fold; "
+            "source_trial groups all windows from the same session/trial; session is stricter by recording session."
+        ),
     )
     parser.add_argument("--n-bootstrap", type=int, default=5000)
     parser.add_argument(
@@ -806,7 +833,7 @@ def run(args: argparse.Namespace) -> Path:
 
     images = pd.read_csv(run_dir / "analysis_images.csv")
     sessions = images["session"].to_numpy()
-    decode_groups = images["image_index"].to_numpy(dtype=int) if str(args.decode_group_mode) == "image" else sessions
+    decode_groups = _decode_groups_from_images(images, str(args.decode_group_mode))
     latents = _filter_latents(_load_npz(run_dir / "latent_feature_arrays.npz"), _parse_list(args.latent_names))
     responses = _load_npz(run_dir / "response_summary_arrays.npz")
     summaries = _parse_list(args.summaries)
@@ -1100,7 +1127,7 @@ def run(args: argparse.Namespace) -> Path:
                 "full_covariance_formula": "0.5 * (logdet(cov_static) - logdet(cov_condition)) / log(2)",
                 "full_covariance_method": "ledoit_wolf" if LedoitWolf is not None else "unavailable",
                 "ci_method": (
-                    "decode_pipeline_group_bootstrap"
+                    "decode_pipeline_group_bootstrap_point_centered"
                     if str(args.information_ci_mode) == "decode_bootstrap"
                     else "outer_fold_weighted_bootstrap"
                 ),

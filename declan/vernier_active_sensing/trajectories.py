@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
+import re
 from typing import Any
 
 import numpy as np
@@ -122,6 +123,32 @@ def condition_trace(
         out = np.broadcast_to(mean, eye.shape).copy()
         out[:, 1] = eye[:, 1]
         return out.astype(np.float32), {"condition_family": "axis", "axis": "vertical"}
+    anisotropic = _anisotropic_real_condition(condition)
+    if anisotropic is not None:
+        family, across_scale, along_scale = anisotropic
+        scaled = _anisotropic_scaled_trace(eye, across_scale=across_scale, along_scale=along_scale, mean=mean)
+        if family == "real_aniso":
+            return scaled, {
+                "condition_family": "anisotropic_scaled",
+                "across_scale": float(across_scale),
+                "along_scale": float(along_scale),
+                "axis_convention": "vertical_vernier_across_x_along_y",
+            }
+        idx = np.arange(scaled.shape[0])
+        rng.shuffle(idx)
+        return scaled[idx].astype(np.float32, copy=True), {
+            "condition_family": "cloud" if family == "aniso_phase_cloud" else "trajectory_control",
+            "phase_source": (
+                "same_anisotropic_scaled_positions_shuffled"
+                if family == "aniso_phase_cloud"
+                else "same_anisotropic_scaled_order_shuffled"
+            ),
+            "paired_phase_set": family == "aniso_phase_cloud",
+            "across_scale": float(across_scale),
+            "along_scale": float(along_scale),
+            "axis_convention": "vertical_vernier_across_x_along_y",
+            "scale_matched_to": "real_aniso",
+        }
     matched_scale = _scale_matched_condition(condition)
     if matched_scale is not None:
         family, s = matched_scale
@@ -188,6 +215,47 @@ def _scaled_trace(trace: np.ndarray, scale: float, *, mean: np.ndarray | None = 
     eye = np.asarray(trace, dtype=np.float32)
     center = np.mean(eye, axis=0, keepdims=True).astype(np.float32) if mean is None else np.asarray(mean, dtype=np.float32)
     return (center + (eye - center) * float(scale)).astype(np.float32)
+
+
+def _anisotropic_scaled_trace(
+    trace: np.ndarray,
+    *,
+    across_scale: float,
+    along_scale: float,
+    mean: np.ndarray | None = None,
+) -> np.ndarray:
+    """Scale a vertical-Vernier trace independently along across/along axes.
+
+    For the canonical vertical Vernier stimulus, across-contour motion is the
+    horizontal/x component and along-contour motion is the vertical/y component.
+    """
+    eye = np.asarray(trace, dtype=np.float32)
+    center = np.mean(eye, axis=0, keepdims=True).astype(np.float32) if mean is None else np.asarray(mean, dtype=np.float32)
+    out = center + (eye - center) * np.asarray([[float(across_scale), float(along_scale)]], dtype=np.float32)
+    return out.astype(np.float32)
+
+
+def _parse_scale_token(token: str) -> float:
+    return float(str(token).replace("p", "."))
+
+
+def _anisotropic_real_condition(condition: str) -> tuple[str, float, float] | None:
+    patterns = (
+        ("real_aniso", r"^real_aniso_across_([0-9]+(?:[p.][0-9]+)?)_along_([0-9]+(?:[p.][0-9]+)?)$"),
+        (
+            "aniso_phase_cloud",
+            r"^(?:static_phase_cloud_matched_aniso|aniso_phase_cloud)_across_([0-9]+(?:[p.][0-9]+)?)_along_([0-9]+(?:[p.][0-9]+)?)$",
+        ),
+        (
+            "aniso_order_shuffled",
+            r"^(?:order_shuffled_aniso|aniso_order_shuffled)_across_([0-9]+(?:[p.][0-9]+)?)_along_([0-9]+(?:[p.][0-9]+)?)$",
+        ),
+    )
+    for family, pattern in patterns:
+        match = re.fullmatch(pattern, str(condition))
+        if match is not None:
+            return family, _parse_scale_token(match.group(1)), _parse_scale_token(match.group(2))
+    return None
 
 
 def _scale_matched_condition(condition: str) -> tuple[str, float] | None:

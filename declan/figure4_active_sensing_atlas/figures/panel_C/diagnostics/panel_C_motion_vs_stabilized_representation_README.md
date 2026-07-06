@@ -3,10 +3,11 @@
 Question: does the V1 twin population represent the image-feature target
 better with measured 1x motion than with the 0x stabilized counterfactual?
 
-The clean oracle comparison is `known_eye - zero_static`. `known_eye`
-uses the measured trajectory, so it removes latent eye-position
-uncertainty from the representation question. `full_exact` keeps the
-eye trace hidden and is included as the joint-decoder comparison.
+The deterministic known-trace comparison is `known_eye - zero_static`.
+`known_eye` uses the measured trajectory in the candidate observer, so it
+removes latent eye-position uncertainty inside this table. It is a
+known-trace control, not an independent response target. `full_exact` keeps
+the eye trace hidden and is included as the joint-decoder comparison.
 
 At the 1x scale:
 
@@ -15,16 +16,16 @@ At the 1x scale:
 1x motion, eye hidden feature cosine: 0.8721
 1x motion, eye known feature cosine:  0.9358
 
-oracle 1x gain over 0x:              0.2680
+known-trace 1x gain over 0x:         0.2680
 hidden-eye 1x gain over 0x:          0.2043
 latent-eye penalty:                  0.0637
 ```
 
-Interpretation: the oracle known-eye comparison supports the claim that
-the moving 1x response carries more recoverable local image-feature
-information than the stabilized 0x counterfactual. The smaller full-joint
-gap shows how much of that representational advantage remains when eye
-position is hidden.
+Interpretation: the known-trace control supports the claim that the
+deterministic moving 1x table contains more recoverable local image-feature
+structure than the stabilized 0x counterfactual. The smaller full-joint gap
+shows how much of that representational advantage remains when eye position
+is hidden.
 
 Outputs:
 

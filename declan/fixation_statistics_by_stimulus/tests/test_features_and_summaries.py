@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 from declan.fixation_statistics_by_stimulus.classifier import classify_stimulus_from_windows
 from declan.fixation_statistics_by_stimulus.extraction import _speed_threshold_mad_valid_pairs
@@ -16,6 +17,10 @@ from declan.fixation_statistics_by_stimulus.run_backimage_twin_drift_geometry im
     _trace_xy_to_twin_helper_order,
 )
 from declan.fixation_statistics_by_stimulus.summaries import paired_metric_contrasts, summarize_events, summarize_windows
+from declan.fixation_statistics_by_stimulus.summarize_backimage_aggregate_incremental_motion import (
+    _ci_from_bootstrap,
+    _decode_groups_from_images,
+)
 
 
 def test_fixation_window_features_reports_dispersion_and_steps() -> None:
@@ -80,6 +85,31 @@ def test_paired_metric_contrasts_pairs_by_session_and_phase() -> None:
     assert len(contrasts) == 1
     assert contrasts[0]["n_sessions"] == 2
     assert np.isclose(contrasts[0]["mean_diff"], 0.75)
+
+
+def test_decode_groups_can_use_strict_source_trial_keys() -> None:
+    images = pd.DataFrame(
+        {
+            "image_index": [0, 1, 2, 3],
+            "session": ["s1", "s1", "s1", "s2"],
+            "trial_idx": [10, 10, 11, 10],
+        }
+    )
+
+    image_groups = _decode_groups_from_images(images, "image")
+    trial_groups = _decode_groups_from_images(images, "source_trial")
+    session_groups = _decode_groups_from_images(images, "session")
+
+    assert image_groups.tolist() == [0, 1, 2, 3]
+    assert trial_groups.tolist() == ["s1::trial_10", "s1::trial_10", "s1::trial_11", "s2::trial_10"]
+    assert session_groups.tolist() == ["s1", "s1", "s1", "s2"]
+
+
+def test_decode_bootstrap_ci_is_centered_on_point_estimate() -> None:
+    lo, hi = _ci_from_bootstrap(np.asarray([0.9, 1.1, 2.0, 3.0]), point=-0.3)
+
+    assert lo <= -0.3 <= hi
+    assert hi > lo
 
 
 def test_speed_threshold_ignores_jumps_across_invalid_gaps() -> None:

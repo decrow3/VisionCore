@@ -1,6 +1,6 @@
 # declan Analysis Narrative
 
-Last curated: 2026-06-22.
+Last curated: 2026-06-30.
 
 This is the brief synthesis companion to `MANIFEST.md`. The manifest answers
 "where is it?" This file answers "what did we learn, what should we not claim,
@@ -40,14 +40,20 @@ active-sensing atlas, rather than a separate later active-sensing figure.
    mechanism over static response PCs, a universal eye-position map, or
    behavioral optimality.
 3. Current Figure 4 active-sensing panels are claim-specific:
-   - 4B: motion enhances feature encoding, but only under a known-eye /
-     exact-trajectory model assumption. The corrected static-mean power rerun
-     and all-readout audit support a readout split; pose-unaware readouts can
-     be costly, and OU remains audit-pending rather than a headline null.
+   - 4B: motion-rendered responses add feature information over the stabilized
+     baseline. The trajectory renders the response movie but is not an explicit
+     aggregate ridge-decoder input; the strict source-trial grouped cache is now
+     the primary estimate, with the image-group cache retained as the optimistic
+     provenance comparison. The same-axis pose-unaware hidden-sample proxy has
+     negative point estimates relative to static, and OU remains audit-pending
+     rather than a headline null.
    - 4C: compact subspace supports joint eye/image decoding, in the guarded
      sense that compact-only retains much of full joint feature recovery and
      compact removal collapses toward zero-eye. Static PCs remain a serious
-     specificity guardrail.
+     specificity guardrail. The joint decoder now has a completed
+     inherited-decoder audit gate: promoted calibration uses source-row-heldout
+     CV when available, supervised 4C feature decoders are source-row disjoint,
+     and cache interval integrity passes for the validated contrast files.
    - 4D: along-edge motion benefits model feature encoding in the scoped
      matched-static feature-posterior observer. Hard-negative controls prevent a
      universal along-edge policy claim.
@@ -62,6 +68,36 @@ active-sensing atlas, rather than a separate later active-sensing figure.
    FEM-related crossover, but later controls narrowed the mechanism to
    first-order spatial sampling in the mean-rate code near the model's
    resolution limit, not a temporal code or covariance-code migration story.
+
+## Recent Additions Since 2026-06-22
+
+- 4C now has a promoted continuous no-anchor feature-recovery observer, plus
+  candidate-free continuous feature-embedding diagnostics. The nonlinear MLP
+  and residual-tau branches show that compact moving responses contain
+  recoverable feature information above zero-eye and stabilized baselines, but
+  they are upper-bound diagnostics rather than downstream linear-readout
+  claims.
+- Static-response-PC controls have hardened the non-uniqueness caveat. The 4C
+  static-PC tests and one-session covariance-closure static-PC predictor run
+  show compact and static-PC bases are close contenders. The safe wording is
+  that eye movements push responses through a compact part of the ordinary
+  image-response manifold, not a unique translation-only channel.
+- 4D is more bounded. The newer known-axis posterior diagnostic favors
+  across-contour motion, the model-family check gives weak/mixed 1x along-edge
+  support with wide intervals, and the linear-Gaussian check is positive only
+  for some cosine readouts. Keep 4D as a scoped latent-eye prior result, not an
+  intrinsic known-eye along-edge optimality claim.
+- BackImage feature-family posthocs expand 4B support to Gabor/pyramid energy
+  and orientation-covariance targets, but several are point-estimate-only or
+  registered-target pilots. Treat them as supportive target-space/provenance
+  evidence, not new promoted claims.
+- A redundancy-resolved V1-twin population substrate now exists, with portable
+  loaders and validation scripts. It is useful for faster or cleaner reduced
+  population reruns, but current QC still shows some weak merges and
+  reconstruction loss; it is infrastructure, not a new scientific conclusion.
+- The Vernier walkthrough script and executed PDF are reproducibility aids. They
+  make the old Vernier analysis legible but do not reopen the E-optotype or
+  covariance-code interpretation.
 
 ## Current Main Claims
 
@@ -118,10 +154,11 @@ declan/figure4_active_sensing_atlas/4e_companion_behavior_geometry_bridge.md
 
 Do not retread the older panel ordering. The current mapping is:
 
-- 4B is the aggregate known-eye feature-encoding result, with local pairing as
-  a mechanistic companion.
-- 4C is the compact feature-posterior compact-only / compact-removed endpoint,
-  not only the older matched-static image-identity observer.
+- 4B is the aggregate motion-rendered feature-information result, with local
+  pairing as a mechanistic companion.
+- 4C is the continuous no-anchor feature-recovery observer plus compact
+  feature-posterior intervention, not only the older matched-static
+  image-identity observer.
 - 4D is the along/across model feature-posterior contrast, not merely the older
   edge-parallel preservation audit.
 - 4E is behavior following raw/local edge geometry, not model-objective
@@ -129,20 +166,26 @@ Do not retread the older panel ordering. The current mapping is:
 
 Recent results that should be represented in the companion docs:
 
-- 4B: the corrected static-mean n384 power rerun supports known-eye empirical
-  motion gains for the static-subtracted local bridge, while the pose-unaware
-  hidden-sample proxy can lose feature signal. Mean/readout absolute-gain
-  summaries, `delta_mean` local-pairing sensitivity, and temporal PCA/DCT
-  diagnostics should not be collapsed into one generic "motion helps" result.
+- 4B: the corrected n384 source-trial grouped information-axis posthoc supports
+  empirical motion gains for the static-subtracted local bridge, while the
+  same-axis pose-unaware hidden-sample proxy has negative point estimates.
+  Mean/readout absolute-gain summaries, `delta_mean`
+  local-pairing sensitivity, and temporal PCA/DCT diagnostics should not be
+  collapsed into one generic "motion helps" result.
 - 4B local: pairing and power-seed follow-ups make the strongest mechanistic
   point through local `I_z` sensitivity and `delta_mean`, not through every
   feature/readout combination.
-- 4C: the current endpoint is the feature-posterior compact-only /
-  compact-removed / compact-addback decomposition. Older matched-static
-  image-identity rescue is supporting history, not the primary panel claim.
+- 4C: the current endpoint combines the continuous no-anchor feature-recovery
+  observer with the feature-posterior compact-only / compact-removed /
+  compact-addback decomposition. Older matched-static image-identity rescue is
+  supporting history; newer continuous feature-embedding and MLP branches are
+  diagnostic/upper-bound support unless explicitly promoted in the companion.
+  The inherited-decoder audit now passes with no failures: the promoted
+  calibration gate is source-row-heldout feature cosine, while trial-id/table
+  splits are retained only as provenance context.
 - 4D: matched-static axis-conditioned feature posterior supports an along-edge
-  gain at the selected scale/readout; hard-negative controls and
-  edge-preservation analyses define the boundary.
+  gain at the selected scale/readout; known-axis, linear-Gaussian, model-family,
+  hard-negative, and edge-preservation analyses define the boundary.
 - 4E: raw/local edge geometry is the behavioral baseline to beat. Model
   objectives should be framed as possible mechanisms only if raw-edge residual
   gates pass.
@@ -292,7 +335,9 @@ Claims to avoid unless new evidence lands:
 - the E-optotype crossover is caused by a temporal code or covariance-code
   migration;
 - raw denoising or raw decoder performance is meaningful without matched nulls;
-- behavior follows a model objective beyond raw edge geometry.
+- behavior follows a model objective beyond raw edge geometry;
+- along-edge priors imply that known along-edge motion is intrinsically
+  feature-optimal.
 
 Current safe claims:
 
@@ -318,12 +363,18 @@ For current Figure 4 active-sensing:
 4. Treat `figure4_selected_v5.*` as the current provisional composite.
 5. Use `declan/active_sensing_movie_information/README.md` and related
    prescriptions only as folded-in support/control history for Figure 4.
+6. For 4C/4D post-2026-06-22 details, check the companion docs and diagnostics
+   under `declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/` and
+   `declan/figure4_active_sensing_atlas/figures/panel_D/diagnostics/`.
 
 For compact geometry / covariance closure:
 
 1. Read `declan/compact_retinal_translation_geometry/static_pc_control_adjudication_note.md`.
 2. Check `outputs/compact_retinal_translation_geometry/tables/acceptance_matrix.csv`.
 3. Keep covariance closure promoted; keep decoder bridges diagnostic.
+4. Treat redundancy-resolved population specs under
+   `outputs/redundancy_resolved_v1_twin/` as rerun infrastructure until a
+   downstream analysis explicitly validates the reduced population endpoint.
 
 For old E-optotype work:
 

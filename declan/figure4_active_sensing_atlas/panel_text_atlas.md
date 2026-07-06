@@ -137,10 +137,13 @@ scales. OU is no longer promoted here: its absolute gain falls below static,
 which is a trace-generation or analysis audit trigger rather than a clean
 negative-control result.
 
-Current 4B implementation promotes a recomputed information axis: diagonal
-Gaussian decoder lower-bound gain in bits over stabilized/static. The
-pose-unaware hidden-sample proxy remains archive/QC context until it has the
-same residual-covariance recompute.
+Current 4B implementation promotes a recomputed source-trial grouped
+information axis: diagonal Gaussian decoder lower-bound gain in bits over
+stabilized/static with point-centered decode-bootstrap CIs. The
+trajectory renders the response movie but is not an explicit aggregate
+ridge-decoder input. The pose-unaware hidden-sample proxy has the same
+source-trial grouped information-axis recompute and has negative point estimates
+across scales.
 ```
 
 Caveats and flags:
@@ -384,8 +387,8 @@ The strongest current main-figure spine is therefore:
 
 ```text
 A1/A2/A4: physical premise and canonical pipeline
-B3/B4: known-eye empirical drift adds feature-decodable structure; the
-  pose-unaware proxy exposes hidden-eye cost while OU stays audit-only
+B3/B4: motion-rendered empirical drift adds feature-decodable structure; the
+  same-axis pose-unaware proxy has negative point estimates while OU stays audit-only
 C2/C3: joint observer preserves feature information lost by zero-eye assumptions
 D1/D4: local geometry defines axes; edge-parallel motion preserves structure
 E2/E3: measured free-viewing FEM axes align with local image geometry
@@ -619,10 +622,10 @@ scale-prior artifact gives emitted mean feature cosine 0.9378,
 split-heldout feature gate 0.9371, and exact image accuracy 0.7083.
 Provenance lives in
 figures/panel_C/diagnostics/continuous_joint/continuous_joint_promoted_observer_manifest.json.
-The newest representation diagnostic separates the oracle representation claim
+The newest representation diagnostic separates the known-trace representation control
 from the latent-eye recovery claim: at 1x, 0x stabilized feature cosine is
-0.6678, hidden-eye joint motion is 0.8721, and known-eye motion is 0.9358.
-Thus measured motion gives an oracle gain of +0.2680 over the stabilized
+0.6678, hidden-eye joint motion is 0.8721, and known-trace motion is 0.9358.
+Thus measured motion gives a deterministic known-trace gain of +0.2680 over the stabilized
 counterfactual, and the hidden-eye joint observer preserves +0.2043 of that
 gain.
 The guarded affine-quadratic lead improves the split-swapped feature gate to
@@ -665,9 +668,11 @@ Flags: `F011`.
 Read:
 
 ```text
-Known-eye is the ceiling, zero-eye fails when motion matters, and joint-eye
-recovers substantial signal across candidate sets. For the promoted continuous
-observer, read this as feature recovery first and image identity second.
+Known-trace is the deterministic control, zero-eye fails when motion matters,
+and joint-eye recovers substantial signal across candidate sets. For the
+promoted continuous observer, read this as feature recovery first and image
+identity second; do not treat the known-trace row as an independent response
+target.
 ```
 
 Use: main.

@@ -34,14 +34,21 @@ try:
     from .summarize_backimage_aggregate_incremental_motion import (
         STATIC_SUMMARY_FOR_MOTION,
         _available_scale_ids,
+        _bootstrap_indices_by_group,
+        _ci_from_bootstrap,
         _decode,
+        _decode_groups_from_images,
         _filter_latents,
+        _information_fold_rows,
+        _information_point_estimates,
         _load_npz,
         _parse_float_list,
         _parse_int_list,
         _parse_list,
         _response_key,
         _session_bootstrap_delta,
+        _summarize_information_rows,
+        _validate_information_intervals,
         _write_csv,
         _write_json,
     )
@@ -49,14 +56,21 @@ except ImportError:  # pragma: no cover
     from declan.fixation_statistics_by_stimulus.summarize_backimage_aggregate_incremental_motion import (
         STATIC_SUMMARY_FOR_MOTION,
         _available_scale_ids,
+        _bootstrap_indices_by_group,
+        _ci_from_bootstrap,
         _decode,
+        _decode_groups_from_images,
         _filter_latents,
+        _information_fold_rows,
+        _information_point_estimates,
         _load_npz,
         _parse_float_list,
         _parse_int_list,
         _parse_list,
         _response_key,
         _session_bootstrap_delta,
+        _summarize_information_rows,
+        _validate_information_intervals,
         _write_csv,
         _write_json,
     )
@@ -116,7 +130,84 @@ def _scale_order(scale_id: str) -> tuple[int, str]:
     return (preferred.get(str(scale_id), 100), str(scale_id))
 
 
-def _compute_train_mean_test_samples_proxy(
+def _fold_residual_row(fold: int, test_idx: np.ndarray, residual: np.ndarray, *, alpha: float) -> dict[str, Any]:
+    residual = np.asarray(residual, dtype=np.float64)
+    return {
+        "fold": int(fold),
+        "test_idx": np.asarray(test_idx, dtype=np.int64),
+        "residual": residual,
+        "target_dim": int(residual.shape[1]),
+        "n_test": int(residual.shape[0]),
+        "alpha": float(alpha),
+    }
+
+
+def _subset_response_dict(responses: dict[str, np.ndarray], idx: np.ndarray, *, n_rows: int) -> dict[str, np.ndarray]:
+    out: dict[str, np.ndarray] = {}
+    for key, value in responses.items():
+        arr = np.asarray(value)
+        out[key] = arr[idx] if arr.ndim > 0 and arr.shape[0] == int(n_rows) else arr
+    return out
+
+
+def _summarize_info_with_decode_bootstrap(
+    info_rows: list[dict[str, Any]],
+    boot_points: list[dict[str, Any]],
+) -> dict[str, Any]:
+    point = _information_point_estimates(info_rows)
+
+    def ci(column: str) -> tuple[float, float, int]:
+        values = np.asarray([float(row.get(column, np.nan)) for row in boot_points], dtype=np.float64)
+        ok = np.isfinite(values)
+        lo, hi = _ci_from_bootstrap(values[ok], float(point[column]))
+        return lo, hi, int(np.sum(ok))
+
+    diag_lo, diag_hi, n_diag = ci("incremental_gain_info_diag_bits")
+    diag_per_dim_lo, diag_per_dim_hi, _ = ci("incremental_gain_info_diag_bits_per_dim")
+    full_lo, full_hi, _ = ci("incremental_gain_info_full_bits")
+    full_per_dim_lo, full_per_dim_hi, _ = ci("incremental_gain_info_full_bits_per_dim")
+    return {
+        "incremental_gain_info_diag_bits": point["incremental_gain_info_diag_bits"],
+        "info_diag_ci95_low": diag_lo,
+        "info_diag_ci95_high": diag_hi,
+        "incremental_gain_info_diag_bits_per_dim": point["incremental_gain_info_diag_bits_per_dim"],
+        "info_diag_per_dim_ci95_low": diag_per_dim_lo,
+        "info_diag_per_dim_ci95_high": diag_per_dim_hi,
+        "incremental_gain_info_full_bits": point["incremental_gain_info_full_bits"],
+        "info_full_ci95_low": full_lo,
+        "info_full_ci95_high": full_hi,
+        "incremental_gain_info_full_bits_per_dim": point["incremental_gain_info_full_bits_per_dim"],
+        "info_full_per_dim_ci95_low": full_per_dim_lo,
+        "info_full_per_dim_ci95_high": full_per_dim_hi,
+        "information_ci_method": "decode_pipeline_group_bootstrap_point_centered",
+        "ridge_alpha_matched_all_folds": bool(point["ridge_alpha_matched_all_folds"]),
+        "n_information_folds": int(point["n_information_folds"]),
+        "n_information_bootstrap_success": n_diag,
+    }
+
+
+def _attach_information_summaries(
+    rows: list[dict[str, Any]],
+    info_rows_by_key: dict[tuple[str, str], list[dict[str, Any]]],
+    *,
+    rng: np.random.Generator,
+    n_bootstrap: int,
+    information_ci_mode: str,
+    boot_points_by_key: dict[tuple[str, str], list[dict[str, Any]]] | None = None,
+) -> None:
+    for row in rows:
+        key = (str(row.get("observer", "")), str(row.get("scale_id", "")))
+        info_rows = info_rows_by_key.get(key, [])
+        if not info_rows:
+            continue
+        if str(information_ci_mode) == "decode_bootstrap":
+            summary = _summarize_info_with_decode_bootstrap(info_rows, (boot_points_by_key or {}).get(key, []))
+        else:
+            summary = _summarize_information_rows(info_rows, rng=rng, n_bootstrap=int(n_bootstrap))
+        row.update(summary)
+
+
+def _compute_train_mean_test_samples_proxy_once(
     *,
     X_static: np.ndarray,
     Z: np.ndarray,
@@ -135,7 +226,8 @@ def _compute_train_mean_test_samples_proxy(
     seed: int,
     n_bootstrap: int,
     rng: np.random.Generator,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    information_variance_floor: float,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[tuple[str, str], list[dict[str, Any]]]]:
     """Train on the known-eye mean response, test on hidden trajectory samples."""
 
     X_static = np.asarray(X_static, dtype=np.float64)
@@ -148,6 +240,11 @@ def _compute_train_mean_test_samples_proxy(
     known_scores = {scale_id: np.full(n_images, np.nan, dtype=np.float64) for scale_id in scale_ids}
     hidden_scores: dict[str, np.ndarray] = {}
     n_samples_by_scale: dict[str, int] = {}
+    static_folds: list[dict[str, Any]] = []
+    known_folds: dict[str, list[dict[str, Any]]] = {scale_id: [] for scale_id in scale_ids}
+    hidden_folds: dict[str, list[dict[str, Any]]] = {scale_id: [] for scale_id in scale_ids}
+    static_sample_folds: dict[str, list[dict[str, Any]]] = {scale_id: [] for scale_id in scale_ids}
+    known_sample_folds: dict[str, list[dict[str, Any]]] = {scale_id: [] for scale_id in scale_ids}
     for scale_id in scale_ids:
         samples = np.asarray(sample_responses[_response_key(summary, family, scale_id)], dtype=np.float64)
         if samples.ndim != 3:
@@ -155,7 +252,7 @@ def _compute_train_mean_test_samples_proxy(
         hidden_scores[scale_id] = np.full(samples.shape[:2], np.nan, dtype=np.float64)
         n_samples_by_scale[scale_id] = int(samples.shape[1])
 
-    for train_idx, test_idx in _split_outer(groups, int(outer_folds), int(seed)):
+    for fold, (train_idx, test_idx) in enumerate(_split_outer(groups, int(outer_folds), int(seed))):
         X_static_train, X_static_test, _ = _standardize_with(X_static[train_idx], X_static[test_idx])
         Z_train_raw, Z_test_raw, _ = _standardize_with(Z[train_idx], Z[test_idx])
         pca = PCA(n_components=k_eff, svd_solver="full")
@@ -165,7 +262,9 @@ def _compute_train_mean_test_samples_proxy(
         static_model = Ridge(alpha=float(alpha), fit_intercept=True)
         static_model.fit(X_static_train, y_train)
         static_pred = static_model.predict(X_static_test)
-        static_score[test_idx] = -np.mean((y_test - static_pred) ** 2, axis=1)
+        static_residual = np.asarray(y_test - static_pred, dtype=np.float64)
+        static_score[test_idx] = -np.mean(static_residual**2, axis=1)
+        static_folds.append(_fold_residual_row(fold, test_idx, static_residual, alpha=float(alpha)))
 
         for scale_id in scale_ids:
             X_mean = np.asarray(averaged_responses[_response_key(summary, family, scale_id)], dtype=np.float64)
@@ -179,7 +278,9 @@ def _compute_train_mean_test_samples_proxy(
             motion_model = Ridge(alpha=float(alpha), fit_intercept=True)
             motion_model.fit(X_aug_train_z, y_train)
             known_pred = motion_model.predict(X_aug_test_mean_z)
-            known_scores[scale_id][test_idx] = -np.mean((y_test - known_pred) ** 2, axis=1)
+            known_residual = np.asarray(y_test - known_pred, dtype=np.float64)
+            known_scores[scale_id][test_idx] = -np.mean(known_residual**2, axis=1)
+            known_folds[scale_id].append(_fold_residual_row(fold, test_idx, known_residual, alpha=float(alpha)))
 
             n_test = int(test_idx.size)
             n_samples = int(X_samples.shape[1])
@@ -187,7 +288,28 @@ def _compute_train_mean_test_samples_proxy(
             X_aug_samples = np.concatenate([X_static_rep, X_samples[test_idx]], axis=2).reshape(n_test * n_samples, -1)
             X_aug_samples_z = (X_aug_samples - aug_mean) / aug_sd
             sample_pred = motion_model.predict(X_aug_samples_z).reshape(n_test, n_samples, -1)
-            hidden_scores[scale_id][test_idx, :] = -np.mean((y_test[:, None, :] - sample_pred) ** 2, axis=2)
+            hidden_residual_3d = np.asarray(y_test[:, None, :] - sample_pred, dtype=np.float64)
+            hidden_scores[scale_id][test_idx, :] = -np.mean(hidden_residual_3d**2, axis=2)
+            flat_test_idx = (
+                np.repeat(np.asarray(test_idx, dtype=np.int64), n_samples) * int(n_samples)
+                + np.tile(np.arange(n_samples, dtype=np.int64), n_test)
+            )
+            hidden_residual = hidden_residual_3d.reshape(n_test * n_samples, -1)
+            static_sample_residual = np.repeat(static_residual[:, None, :], n_samples, axis=1).reshape(
+                n_test * n_samples,
+                -1,
+            )
+            known_sample_residual = np.repeat(known_residual[:, None, :], n_samples, axis=1).reshape(
+                n_test * n_samples,
+                -1,
+            )
+            hidden_folds[scale_id].append(_fold_residual_row(fold, flat_test_idx, hidden_residual, alpha=float(alpha)))
+            static_sample_folds[scale_id].append(
+                _fold_residual_row(fold, flat_test_idx, static_sample_residual, alpha=float(alpha))
+            )
+            known_sample_folds[scale_id].append(
+                _fold_residual_row(fold, flat_test_idx, known_sample_residual, alpha=float(alpha))
+            )
 
     rows: list[dict[str, Any]] = []
     decode_rows: list[dict[str, Any]] = [
@@ -289,6 +411,113 @@ def _compute_train_mean_test_samples_proxy(
                 },
             ]
         )
+    info_rows_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for scale_id in scale_ids:
+        common = {
+            "motion_summary": summary,
+            "family": family,
+            "scale_id": scale_id,
+            "latent": latent_name,
+            "k": int(k),
+            "variance_floor": float(information_variance_floor),
+        }
+        info_rows_by_key[("known_eye_train_mean_test_mean_proxy", scale_id)] = _information_fold_rows(
+            condition_result={"fold_residuals": known_folds[scale_id]},
+            baseline_result={"fold_residuals": static_folds},
+            **common,
+        )
+        info_rows_by_key[("pose_unaware_train_mean_test_hidden_samples", scale_id)] = _information_fold_rows(
+            condition_result={"fold_residuals": hidden_folds[scale_id]},
+            baseline_result={"fold_residuals": static_sample_folds[scale_id]},
+            **common,
+        )
+        info_rows_by_key[("hidden_sample_minus_known_eye_penalty", scale_id)] = _information_fold_rows(
+            condition_result={"fold_residuals": hidden_folds[scale_id]},
+            baseline_result={"fold_residuals": known_sample_folds[scale_id]},
+            **common,
+        )
+    return rows, decode_rows, info_rows_by_key
+
+
+def _compute_train_mean_test_samples_proxy(
+    *,
+    X_static: np.ndarray,
+    Z: np.ndarray,
+    sessions: np.ndarray,
+    groups: np.ndarray,
+    averaged_responses: dict[str, np.ndarray],
+    sample_responses: dict[str, np.ndarray],
+    summary: str,
+    static_summary: str,
+    family: str,
+    scale_ids: list[str],
+    latent_name: str,
+    k: int,
+    alpha: float,
+    outer_folds: int,
+    seed: int,
+    n_bootstrap: int,
+    rng: np.random.Generator,
+    information_variance_floor: float,
+    information_ci_mode: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    rows, decode_rows, info_rows_by_key = _compute_train_mean_test_samples_proxy_once(
+        X_static=X_static,
+        Z=Z,
+        sessions=sessions,
+        groups=groups,
+        averaged_responses=averaged_responses,
+        sample_responses=sample_responses,
+        summary=summary,
+        static_summary=static_summary,
+        family=family,
+        scale_ids=scale_ids,
+        latent_name=latent_name,
+        k=int(k),
+        alpha=float(alpha),
+        outer_folds=int(outer_folds),
+        seed=int(seed),
+        n_bootstrap=int(n_bootstrap),
+        rng=rng,
+        information_variance_floor=float(information_variance_floor),
+    )
+    boot_points_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {key: [] for key in info_rows_by_key}
+    if str(information_ci_mode) == "decode_bootstrap":
+        groups = np.asarray(groups)
+        for boot_idx in range(int(n_bootstrap)):
+            idx = _bootstrap_indices_by_group(groups, rng=rng)
+            if np.unique(groups[idx]).size < 2:
+                continue
+            _, _, boot_info_rows_by_key = _compute_train_mean_test_samples_proxy_once(
+                X_static=np.asarray(X_static)[idx],
+                Z=np.asarray(Z)[idx],
+                sessions=np.asarray(sessions)[idx],
+                groups=groups[idx],
+                averaged_responses=_subset_response_dict(averaged_responses, idx, n_rows=groups.size),
+                sample_responses=_subset_response_dict(sample_responses, idx, n_rows=groups.size),
+                summary=summary,
+                static_summary=static_summary,
+                family=family,
+                scale_ids=scale_ids,
+                latent_name=latent_name,
+                k=int(k),
+                alpha=float(alpha),
+                outer_folds=int(outer_folds),
+                seed=int(seed) + 30000 + int(boot_idx),
+                n_bootstrap=0,
+                rng=rng,
+                information_variance_floor=float(information_variance_floor),
+            )
+            for key, boot_info_rows in boot_info_rows_by_key.items():
+                boot_points_by_key.setdefault(key, []).append(_information_point_estimates(boot_info_rows))
+    _attach_information_summaries(
+        rows,
+        info_rows_by_key,
+        rng=rng,
+        n_bootstrap=int(n_bootstrap),
+        information_ci_mode=str(information_ci_mode),
+        boot_points_by_key=boot_points_by_key,
+    )
     return rows, decode_rows
 
 
@@ -348,8 +577,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fixed-ridge-alpha", type=float, default=10.0)
     parser.add_argument("--outer-folds", type=int, default=5)
     parser.add_argument("--inner-folds", type=int, default=3)
-    parser.add_argument("--decode-group-mode", choices=("image", "session"), default="image")
+    parser.add_argument("--decode-group-mode", choices=("image", "source_trial", "session"), default="image")
     parser.add_argument("--n-bootstrap", type=int, default=5000)
+    parser.add_argument(
+        "--information-variance-floor",
+        type=float,
+        default=1e-12,
+        help="Variance floor for residual covariance information increments.",
+    )
+    parser.add_argument(
+        "--information-ci-mode",
+        choices=("fold", "decode_bootstrap"),
+        default="fold",
+        help=(
+            "CI mode for pose-unaware information columns. `fold` bootstraps outer-fold scalar estimates; "
+            "`decode_bootstrap` resamples decode groups, refits the proxy decoder, and recenters CIs on the point."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=0)
     return parser
 
@@ -362,7 +606,7 @@ def run(args: argparse.Namespace) -> Path:
 
     images = pd.read_csv(run_dir / "analysis_images.csv")
     sessions = images["session"].to_numpy()
-    image_groups = images["image_index"].to_numpy(dtype=int) if str(args.decode_group_mode) == "image" else sessions
+    image_groups = _decode_groups_from_images(images, str(args.decode_group_mode))
     latents = _filter_latents(_load_npz(run_dir / "latent_feature_arrays.npz"), _parse_list(args.latent_names))
     averaged_responses = _load_npz(run_dir / "response_summary_arrays.npz")
     sample_responses = _load_npz(run_dir / "response_sample_summary_arrays.npz")
@@ -546,9 +790,12 @@ def run(args: argparse.Namespace) -> Path:
                         seed=int(args.seed),
                         n_bootstrap=int(args.n_bootstrap),
                         rng=rng,
+                        information_variance_floor=float(args.information_variance_floor),
+                        information_ci_mode=str(args.information_ci_mode),
                     )
                     proxy_rows.extend(rows)
                     proxy_decode_rows.extend(decodes)
+    _validate_information_intervals(proxy_rows, value_col="incremental_gain_info_diag_bits")
     _write_csv(out_dir / "pose_unaware_train_mean_test_samples_proxy.csv", proxy_rows)
     _write_csv(out_dir / "pose_unaware_train_mean_test_samples_decode_scores.csv", proxy_decode_rows)
     _write_proxy_plot(proxy_rows, out_dir)
@@ -570,6 +817,17 @@ def run(args: argparse.Namespace) -> Path:
             "decode_group_mode": str(args.decode_group_mode),
             "outer_folds": int(args.outer_folds),
             "n_bootstrap": int(args.n_bootstrap),
+            "information_axis": {
+                "headline": "diagonal_gaussian_variational_bound_increment_bits",
+                "diag_formula": "0.5 * sum_j log(var_static_or_known_j / var_condition_j) / log(2)",
+                "ci_mode": str(args.information_ci_mode),
+                "ci_method": (
+                    "decode_pipeline_group_bootstrap_point_centered"
+                    if str(args.information_ci_mode) == "decode_bootstrap"
+                    else "outer_fold_weighted_bootstrap"
+                ),
+                "variance_floor": float(args.information_variance_floor),
+            },
             "seed": int(args.seed),
         },
     )

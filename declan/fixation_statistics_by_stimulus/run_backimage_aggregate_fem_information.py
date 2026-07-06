@@ -1260,6 +1260,24 @@ def _stack_condition_targets(
     return out
 
 
+def _decode_groups_from_images(images: pd.DataFrame, mode: str) -> np.ndarray:
+    mode = str(mode)
+    if mode == "image":
+        return images["image_index"].to_numpy(dtype=int)
+    if mode == "source_trial":
+        missing = sorted({"session", "trial_idx"}.difference(images.columns))
+        if missing:
+            raise ValueError(f"source_trial decode grouping requires columns {missing}")
+        return (
+            images["session"].astype(str)
+            + "::trial_"
+            + images["trial_idx"].astype(int).astype(str)
+        ).to_numpy()
+    if mode == "session":
+        return images["session"].to_numpy()
+    raise ValueError(f"Unknown decode_group_mode={mode!r}")
+
+
 def _bootstrap_condition_delta(
     per_image_a: np.ndarray,
     per_image_b: np.ndarray,
@@ -1543,7 +1561,9 @@ def _decode_rows_shared_target_basis(
                     alpha = fixed_alpha
                     model = Ridge(alpha=float(alpha), fit_intercept=True)
                     model.fit(X_train_raw, Y_train)
-                    Y_pred = model.predict(X_test)
+                    Y_pred = np.asarray(model.predict(X_test), dtype=np.float64)
+                    if Y_pred.ndim == 1:
+                        Y_pred = Y_pred[:, None]
                     pred_by_condition[condition_key][test_idx] = Y_pred
                     target_by_condition_pc[condition_key][test_idx] = Y_test
                     fold_r2s_by_condition[condition_key].append(_mean_r2(Y_test, Y_pred))
@@ -1809,10 +1829,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--inner-folds", type=int, default=3)
     parser.add_argument(
         "--decode-group-mode",
-        choices=("image", "session"),
+        choices=("image", "source_trial", "session"),
         default="image",
         help=(
             "CV grouping for feature decoding. image keeps each image/source row in one fold; "
+            "source_trial groups all windows from the same session/trial; "
             "session is stricter across sessions. Response arrays are already image-averaged."
         ),
     )
@@ -2500,11 +2521,7 @@ def run(args: argparse.Namespace) -> Path:
         )
 
     sessions = image_df["session"].to_numpy()
-    decode_groups = (
-        image_df["image_index"].to_numpy(dtype=int)
-        if str(args.decode_group_mode) == "image"
-        else sessions
-    )
+    decode_groups = _decode_groups_from_images(image_df, str(args.decode_group_mode))
     all_decode_rows: list[dict[str, Any]] = []
     all_per_image: dict[tuple[str, str, str, str, int], np.ndarray] = {}
     for summary in summary_names:

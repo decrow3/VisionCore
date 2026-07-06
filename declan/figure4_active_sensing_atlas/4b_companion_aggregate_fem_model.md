@@ -10,10 +10,13 @@ Motion enhances feature encoding.
 ```
 
 This is the result Panel 4B is there to show if the evidence supports it. In
-the current figure the claim is explicitly conditional: motion enhances the
-feature-encoding readout when the model is given the exact retinal trajectory,
-while a pose-unaware proxy shows that the same motion can become costly when
-eye position is hidden. Everything below is organized to decide how strongly
+the current figure the claim is explicitly scoped: recorded trajectories are
+used to render V1-twin response movies, and aggregate ridge readouts then test
+whether the static-plus-motion response summaries carry more feature evidence
+than stabilized/static responses. The trajectory is part of response rendering,
+not an explicit aggregate ridge input. A same-axis pose-unaware hidden-sample
+proxy tests the hidden-trajectory cost, while a full covariance-aware pose-blind
+observer remains future work. Everything below is organized to decide how strongly
 that panel claim can be made: the motivation, estimator choice, assumptions,
 methods, results, controls, and caveats are all evidence for or against this
 sentence.
@@ -23,31 +26,32 @@ sentence.
 Figure 4B is there to show one result:
 
 ```text
-Motion enhances feature encoding, but only when eye position is known.
+Motion-rendered responses carry additional feature evidence over static
+responses.
 ```
 
-This is the organizing claim for the panel and for this companion. "Motion
-enhances feature encoding" refers to the known-eye / exact-trajectory result:
-the model is handed the retinal trajectory when rendering the response movie,
-and the motion summary improves decoding of local image features relative to the
-static response at the larger motion scales. "But only when eye position is
-known" refers to the hidden-pose contrast: when the decoder is not given the eye
-position or trajectory, the same motion becomes a nuisance source and the
-pose-unaware proxy falls below the static baseline.
+This is the organizing claim for the panel and for this companion. "Motion-
+rendered responses" means that recorded or control trajectories are used to
+render the response movie from the same image; the aggregate ridge decoder then
+receives response summaries, not the trajectory itself. The current promoted
+readout is a diagonal Gaussian decoder-information increment over the stabilized
+baseline, expressed in bits, rather than the legacy negative-MSE axis.
 
-That framing helps rather than hurts the story. Panel B is the pose-known /
-exact-trajectory upper bound: retinal motion can expose feature-decodable
-structure when retinal pose is available. The pose-unaware trace makes the
-condition explicit rather than burying it. Panel C then asks the separate
-latent-eye question: whether an observer can recover some known-eye benefit
-without being given the true trajectory.
+That framing helps rather than hurts the story. Panel B is a trajectory-
+conditioned rendering analysis: retinal motion can expose feature-decodable
+structure in the response movie without making the aggregate decoder a
+trajectory-aware observer. The pose-unaware trace remains valuable as a
+separate hidden-pose diagnostic, and it is now recomputed on the same
+source-trial grouped information axis as the promoted trace. Panel C then asks
+the separate latent-eye question: whether an observer can recover feature
+evidence without being given the true trajectory.
 
 Everything below is included to support, qualify, or protect that result:
 
 - Motivation: why motion should be tested as a feature-encoding operation rather
   than treated only as nuisance displacement.
-- Decisions and assumptions: why the current panel is known-eye, drift-scoped,
-  and targeted to coarse local pyramid features.
+- Decisions and assumptions: why the current panel is trajectory-conditioned,
+  drift-scoped, and targeted to coarse local pyramid features.
 - Methods and results: how the decoding score, target, source traces, and
   current production values instantiate the claim.
 - Controls and caveats: why generic motion, hidden pose, OU behavior, readout
@@ -85,7 +89,7 @@ covariance. This is the mathematical reason a below-zero pose-unaware trace
 would not undermine 4B: it would show that the same motion can be useful when
 pose is known and costly when pose is hidden. It is also a warning about axes:
 this covariance-aware Fisher/readout penalty is not identical to the current 4B
-incremental negative-MSE score unless we explicitly build a 4B posthoc that
+decoder-information axis unless we explicitly build a 4B posthoc that
 implements the same latent-pose or covariance-penalty assumption.
 
 The current 4B production surface is drift-scoped. The n384 power rerun used a
@@ -97,7 +101,8 @@ out of scope for the current 4B claim; the separate covariance-aware Figure 5
 work is where fixation versus microsaccade windows were explicitly compared.
 
 This companion keeps the older motivation and pilot lineage because it explains
-why the current modest, known-eye, drift-only claim is the right one:
+why the current modest, trajectory-conditioned, drift-only claim is the right
+one:
 
 - The original aggregate plan reframed the local `I_z` axis screen into an
   ensemble question about empirical FEM statistics over natural images.
@@ -111,25 +116,27 @@ why the current modest, known-eye, drift-only claim is the right one:
 
 ## Summary
 
-The aggregate FEM model supports the Panel B claim that motion enhances feature
-encoding, but only when eye position is known. It asks whether the distribution
-of biological-like fixational motion adds feature-decodable structure to
-V1-twin responses beyond the static image response. The simplifying assumption
-it breaks is that a single static response is the relevant sensory
-representation during fixation. In these analyses the input is a retinal movie,
-and the response summary can carry information about image features through the
-interaction of image structure and eye trajectory. It is not a hidden-eye
-decoder: the eye trajectory is known to the rendering/model side of the
-analysis.
+The aggregate FEM model supports the Panel B claim that motion-rendered
+responses carry more feature evidence than stabilized/static responses. It asks
+whether the distribution of biological-like fixational motion adds feature-
+decodable structure to V1-twin responses beyond the static image response. The
+simplifying assumption it breaks is that a single static response is the
+relevant sensory representation during fixation. In these analyses the V1-twin
+input is a retinal movie, and the response summary can carry information about
+image features through the interaction of image structure and eye trajectory. It
+is not a hidden-eye decoder and not an aggregate decoder that is handed the
+trajectory: the eye trajectory is used to render the response movie.
 
 A pose-unaware extension would be a new observer assumption, not a relabeling of
 the existing temporal-PCA guardrail. It would either marginalize the trajectory,
 `p(y | I) = integral p(y | I, tau) p(tau) d tau`, or add the movement-induced
-covariance term `Sigma_FEM(D)` to the readout noise. The current panel has the
-known-eye upper-bound interpretation; the pose-unaware line would be a companion
-contrast showing the cost of withholding the trajectory.
+covariance term `Sigma_FEM(D)` to the readout noise. The current panel has a
+trajectory-conditioned rendering interpretation; the pose-unaware line is a
+same-axis companion contrast showing the cost of withholding the trajectory
+sample. A full covariance-aware pose-blind observer remains a separate future
+analysis.
 
-The supported claim is distributional, readout-scoped, and eye-position
+The supported claim is distributional, readout-scoped, and response-rendering
 conditional. After the 2026-06-21 static-baseline correction, mean and
 `delta_mean` are the absolute feature-gain candidates, while temporal PCA/DCT
 variants are order-sensitive empirical-vs-control diagnostics. The model does
@@ -140,13 +147,13 @@ microsaccade windows.
 ## Motivation
 
 The motivation is to test whether fixational motion can be a feature-encoding
-operation when the sensory system knows where the eye is. If FEMs were only
-nuisance displacement, then adding a motion summary to a static response should
-either do nothing useful or behave like generic motion energy. The aggregate
-model turns that into a controlled comparison. It holds the image set and V1
-twin fixed, draws trajectories from empirical and matched control families, and
-asks whether known-eye response movies improve recovery of local image features
-under grouped-by-image cross-validation.
+operation in rendered response movies. If FEMs were only nuisance displacement,
+then adding a motion summary to a static response should either do nothing
+useful or behave like generic motion energy. The aggregate model turns that
+into a controlled comparison. It holds the image set and V1 twin fixed, draws
+trajectories from empirical and matched control families, and asks whether
+motion-rendered response summaries improve recovery of local image features
+under grouped cross-validation.
 
 This is the ensemble-level companion to the local pairing and joint-posterior
 models. It answers "does the biological-like trajectory distribution create
@@ -159,7 +166,7 @@ Shared notation:
 
 ```text
 I: image or image window
-tau: known eye trajectory used to render the retinal movie
+tau: eye trajectory used to render the retinal movie
 y = f_theta(I, tau): response movie from the V1 twin
 phi(I): image feature target
 s(y): response summary
@@ -193,8 +200,9 @@ G(F, a; phi, s) =
 ```
 
 where `F` is a trajectory family, `a` is the relative RMS scale, and `CV_D` is a
-grouped-by-image ridge decoding score reported as incremental negative-MSE
-gain. Family specificity is measured by:
+grouped ridge decoding score reported for the promoted panel as a diagonal
+Gaussian decoder-information increment in bits. Family specificity is measured
+by:
 
 ```text
 C(F1, F2, a; phi, s) = G(F1, a; phi, s) - G(F2, a; phi, s)
@@ -235,20 +243,28 @@ main panel, this is the `pyramid_local_field` target with `k = 16`. It is built
 from local oriented pyramid coefficients and includes signed real/imaginary
 components plus magnitude. It is not a full image reconstruction target.
 
-The decoder is trained with grouped-by-image cross-validation. In plain terms,
-all examples from a held-out image stay out of the training set when that image
-is tested. This is the main protection against the decoder simply memorizing
-image identity. The score is the improvement in negative mean-squared error
-when the motion response summary is added to the static response summary. A
-positive value means the motion response summary helped recover the image
-feature target.
+The decoder is trained with grouped cross-validation. The historical default is
+grouped by rendered image window, so all examples from a held-out image window
+stay out of the training set when that window is tested. Because several crops
+can share a source trial, the promoted run also has a strict
+`source_trial`-grouped cache. That stricter grouping materially changed the
+scale curve, so the source-trial grouped value is now the primary result and
+the image-group result is retained as optimistic provenance context.
 
-The main known-eye comparison uses the exact trajectory used to render each
-response movie. This is why the result is called known-eye or exact-trajectory.
-The pose-unaware proxy is a separate check: it trains on image-mean motion
-summaries but tests on individual hidden trajectory samples without telling the
-decoder which trajectory generated them. This proxy is not a full Bayesian
-observer, but it shows the cost of hiding eye position in the same score units.
+The promoted score is the diagonal Gaussian decoder-information increment in
+bits when the motion response summary is added to the static response summary.
+A positive value means the motion response summary helped recover the image
+feature target. Legacy negative-MSE summaries remain archive/QC context and
+should not be mixed with the information-axis panel.
+
+The main comparison uses trajectories to render each response movie and then
+decodes from aggregate response summaries. This is why the result should be
+called trajectory-conditioned or motion-rendered, not an exact-trajectory ridge
+decoder. The pose-unaware proxy is a separate check: it trains on image-mean
+motion summaries but tests on individual hidden trajectory samples without
+telling the decoder which trajectory generated them. This proxy is not a full
+Bayesian observer, but it is now commensurate with the promoted
+decoder-information units.
 
 The motion controls are rendered and scored the same way. Empirical traces are
 compared with Brownian, rotated, and OU-like trace families. Brownian asks
@@ -272,7 +288,7 @@ The implemented adjudication keeps the downstream endpoint fixed:
 target: pyramid_local_field image feature target
 decoder: grouped-by-image ridge decoder
 folds and ridge policy: same as the aggregate 4B decoder
-score: held-out feature prediction / negative-MSE gain
+score: held-out feature prediction / decoder-information increment
 ```
 
 Only the input representation changes:
@@ -350,8 +366,8 @@ continues to report local oriented energy even when signed components cancel.
 The scientific question is therefore:
 
 ```text
-Given the known retinal trajectory, how well can the V1-twin response summary
-recover a coarse map of local oriented image structure, including both
+Given a trajectory-rendered response movie, how well can the V1-twin response
+summary recover a coarse map of local oriented image structure, including both
 phase-sensitive signed components and phase-insensitive magnitude?
 ```
 
@@ -364,17 +380,16 @@ nor as evidence that the full image is reconstructable.
 
 ## Assumptions
 
-A0. The central interpretation is conditional: motion enhances feature encoding
-only under a known-eye / exact-trajectory rendering and decoding assumption.
-Hidden eye position is a different observer problem and is represented here by
-the pose-unaware proxy.
+A0. The central interpretation is trajectory-conditioned rendering: motion is
+used to generate the response movie, and the aggregate ridge decoder reads only
+the resulting static-plus-motion response summaries.
 
 A1. The V1 twin response movie is a meaningful proxy for the response changes
-that structured retinal image motion would induce in the analyzed population
-when the retinal trajectory is known.
+that structured retinal image motion would induce in the analyzed population.
 
-A2. Grouped-by-image cross-validation prevents the decoder from using the same
-image identity in train and test.
+A2. Grouped-by-image cross-validation prevents exact image-window reuse in train
+and test, but crops can still share a source trial. Strict source-trial grouping
+is therefore a required robustness check before promotion.
 
 A3. The feature targets `gabor_local_field` and `pyramid_local_field` capture
 image structure that is relevant to the local retinal movie, even though they
@@ -393,12 +408,12 @@ events are excluded by the production filter; a microsaccade-specific extension
 would require a separate stratified run.
 
 A7. The current 4B pose-unaware line is a hidden-sample proxy: train the
-static-plus-motion decoder on the known-eye image-mean motion summary and test
-held-out images on individual trajectory samples without the trajectory label.
-It is useful for showing hidden-pose cost in the same `-MSE` units, but it is
-not the old covariance-aware Fisher observer. A true covariance-aware
-pose-unaware 4B calculation still needs per-trace or raw-response covariance
-and should be labeled separately.
+static-plus-motion decoder on the image-mean motion summary and test held-out
+images on individual trajectory samples without the trajectory label. It is
+useful for showing hidden-pose cost and is now on the promoted
+decoder-information axis. It is still not the old covariance-aware Fisher
+observer. A true covariance-aware pose-unaware 4B calculation still needs
+per-trace or raw-response covariance and should be labeled separately.
 
 A8. The `pyramid_local_field` target keeps coarse signed phase-sensitive
 structure, but not full within-block phase layout. Signed coefficient averaging
@@ -408,9 +423,10 @@ the target rather than an energy-only assumption.
 ## Controls
 
 The controls are organized around the same top-line claim. They ask whether the
-known-eye gain is really a motion-driven feature-encoding benefit, whether it is
-specific to empirical drift-like motion rather than generic displacement, and
-whether the benefit depends on eye position being known.
+motion-rendered gain is really a response-summary feature-encoding benefit,
+whether it is specific to empirical drift-like motion rather than generic
+displacement, and whether hidden pose changes the sign or magnitude of the
+effect.
 
 Static baseline:
 
@@ -453,17 +469,18 @@ family/scale rows have median effective/requested RMS 1.0 and clipped fraction
 
 ## Existing Evidence
 
-The current evidence has two linked pieces: a known-eye gain trace above static
-at larger motion scales, and a pose-unaware proxy below static when eye position
-is hidden. Together they motivate the figure title rather than two independent
-claims.
+The current evidence has two linked pieces: a source-trial grouped motion-
+rendered information-gain trace above static across the tested motion scales,
+and a same-axis pose-unaware hidden-sample proxy with negative point estimates
+when the trajectory sample is hidden. The promoted figure now uses only
+same-axis decoder-information rows.
 
 Primary production-candidate source:
 
 ```text
 outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
   backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1/
-    incremental_staticmean_plus_motion_tworeadout_v2/
+    incremental_staticmean_plus_motion_info_decode_bootstrap_b50_validated_20260630/
 outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
   backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1/
     incremental_staticmean_plus_motion_allreadouts_v1/readout_atlas_figures/
@@ -478,18 +495,54 @@ canonical 756-unit V1 twin
 K = 8 trace samples per image/family/scale
 families = empirical, OU, Brownian, rotated
 scales = 0.25x, 0.5x, 1x, 1.5x, 2x
-CV grouped by image
-known-eye rendering: yes
+CV grouped by strict source trial for the promoted cache
+trajectory-conditioned rendering: yes
 source trace policy: drift-only source pool, no microsaccade condition
-displayed main trace set: known-eye empirical, Brownian, rotated, plus
-  pose-unaware empirical hidden-sample proxy
+displayed main trace set: motion-rendered empirical, Brownian, rotated, pose-unaware empirical hidden-sample proxy
+pose-unaware empirical hidden-sample proxy: same-axis source-trial grouped information proxy
 OU display policy: audit-only until the trace/readout behavior is resolved
 ```
 
-Corrected primary-scale read:
+Strict source-trial grouped primary information-axis read:
 
 ```text
-pyramid_local_field k16 delta_mean, n=384:
+pyramid_local_field k16 delta_mean, n=384, information gain bits:
+  empirical - static_mean:
+    0.25x +1.09 CI [+0.22, +2.36]
+    0.5x  +1.15 CI [+0.25, +1.74]
+    1x    +0.98 CI [+0.33, +1.84]
+    1.5x  +0.69 CI [-0.01, +1.60]
+    2x    +0.72 CI [+0.07, +1.53]
+```
+
+Same-axis pose-unaware hidden-sample proxy:
+
+```text
+pyramid_local_field k16 delta_mean, n=384, information gain bits:
+  pose-unaware hidden-sample - static_mean:
+    0.25x -0.53 CI [-1.41, +0.36]
+    0.5x  -0.40 CI [-1.22, +0.57]
+    1x    -0.60 CI [-1.38, +0.34]
+    1.5x  -0.62 CI [-1.44, +0.35]
+    2x    -0.49 CI [-1.44, +0.35]
+```
+
+Image-grouped comparison, retained as optimistic provenance context:
+
+```text
+pyramid_local_field k16 delta_mean, n=384, information gain bits:
+  empirical - static_mean:
+    0.25x -0.28 CI [-1.21, +0.99]
+    0.5x  +0.26 CI [-0.62, +0.97]
+    1x    +0.90 CI [+0.10, +1.62]
+    1.5x  +0.98 CI [+0.32, +1.49]
+    2x    +0.98 CI [+0.42, +1.71]
+```
+
+Legacy corrected negative-MSE lineage read, not the promoted information axis:
+
+```text
+pyramid_local_field k16 delta_mean, n=384, legacy `-MSE` units:
   empirical - static_mean:
     0.25x -0.65 CI [-2.17, +0.93]
     0.5x  +0.16 CI [-1.35, +1.77]
@@ -546,7 +599,7 @@ audit now support a role split:
 mean: strongest absolute aggregate candidate under nested alpha
 delta_mean: static-subtracted motion-induced/local-pairing bridge
 temporal PCA/DCT: order-sensitive empirical-vs-control diagnostics
-pose-unaware hidden-sample proxy: companion trace showing hidden-pose cost
+pose-unaware hidden-sample proxy: same-axis companion trace showing hidden-sample cost
 OU: audit-pending and removed from the main 4B trace set
 ```
 
@@ -570,14 +623,20 @@ Current handling:
 
 ```text
 Show static gain and control contrasts together.
-Add the pose-unaware empirical hidden-sample proxy as a distinct below-zero
-trace, labeled as a proxy rather than a full covariance-aware observer.
+Keep the pose-unaware empirical hidden-sample proxy visible as a same-axis
+hidden-sample cost trace.
 Keep the Brownian/rotated narrowing visible.
 Keep OU out of the main trace set and route it to the audit/supplement because
 its below-static temporal behavior can reflect trace-generation or analysis
 mismatch.
-Call the score feature-decodable structure or a decoding proxy.
-State the known-eye condition in the panel title/caption.
+Call the score a decoder-information feature-evidence increment.
+State that the trajectory renders the response movie and is not an explicit
+aggregate ridge input.
+Require point estimates and point-centered decode-bootstrap CIs to come from the
+same validated cache; fail the panel build if any information point estimate
+lies outside its reported CI.
+Use strict source-trial grouping as the promoted split; report the image-group
+cache as the optimistic/provenance comparison.
 State that the current run is drift-only; microsaccades require a separate
 stratified analysis.
 Do not label the negative temporal-PCA static-mean guardrail as pose-unaware; it
@@ -590,11 +649,10 @@ observer from the older notes.
 Supported:
 
 ```text
-Motion enhances feature encoding, but only when eye position is known: in the
-cleaned aggregate BackImage analysis, empirical drift-like motion can add
-feature-decodable response structure beyond static V1-twin responses when the
-V1 twin is given the exact retinal trajectory, while the current pose-unaware
-proxy is below static.
+In the cleaned aggregate BackImage analysis, empirical drift-like trajectories
+render V1-twin response movies whose static-plus-motion summaries carry more
+diagonal Gaussian decoder information about local pyramid features than the
+stabilized/static baseline.
 ```
 
 Not yet supported:
@@ -609,10 +667,11 @@ This result applies to microsaccade windows.
 
 ## Production Rerun Implications
 
-Production figures and captions should keep the full sentence visible: motion
-enhances feature encoding, but only when eye position is known. The plotted
-trace set, caption, and supplement routing should make the known-eye assumption
-and hidden-pose cost explicit.
+Production figures and captions should keep the scope visible: trajectories
+render the response movie; they are not an explicit aggregate ridge-decoder
+input. The plotted trace set, caption, and supplement routing should separate
+the same-axis hidden-sample proxy from a still-future full covariance-aware
+pose-blind observer.
 
 The final production panel should use the completed power-rerun surface:
 
@@ -623,10 +682,18 @@ order-sensitive diagnostics: pyramid_local_field k16 temporal_pca / temporal_dct
 output target:
 outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
   backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1
-corrected posthoc:
+primary corrected posthoc:
 outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
   backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1/
-    incremental_staticmean_plus_motion_tworeadout_v2/
+    incremental_staticmean_plus_motion_info_decode_bootstrap_b50_source_trial_validated_20260630/
+image-group provenance comparison:
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1/
+    incremental_staticmean_plus_motion_info_decode_bootstrap_b50_validated_20260630/
+same-axis pose-unaware proxy:
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
+  backimage_aggregate_fem_information_pose_unaware_production_n384_empirical_k8_seed0/
+    pose_unaware_staticmean_plus_motion_info_source_trial_b50_20260630/
 all-readout audit:
 outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
   backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1/
@@ -636,13 +703,14 @@ outputs/fixation_statistics_by_stimulus_all_sessions_after_review/
 The production figure pack should report:
 
 ```text
-known-eye / exact-trajectory rendering assumption
+trajectory-conditioned response-rendering assumption
 split convention
+strict source-trial grouping primary result plus image-group comparison
 trace source policy, including drift-only source filtering
 effective/requested RMS and clipping
-empirical gain over static
+empirical information gain over static
 empirical-minus-Brownian/rotated contrasts
-pose-unaware empirical hidden-sample proxy trace
+same-axis pose-unaware empirical hidden-sample proxy
 absolute gain guardrail showing when generic motion catches up
 OU contrast only as an audit-pending temporal diagnostic, not in the main
 displayed trace set

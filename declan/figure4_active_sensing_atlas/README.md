@@ -125,7 +125,7 @@ retinal motion is treated as part of the inference problem rather than as noise.
   - `figures/panel_C/` contains the cache-only Panel C subpanels and source
     value tables. `figures/panel_C/promotion_candidates/` contains the current
     single-panel 4C promotion candidates; the current composite uses feature
-    recovery option 5, the zero-eye / compact-subspace / known-eye ceiling
+    recovery option 5, the zero-eye / compact-subspace / known-trace control
     panel, with image-identity and compact-removal audits kept as context.
   - `figures/panel_D/` contains the cache-only Panel D subpanels and source
     value tables. `figures/panel_D/promotion_candidates/` contains the current

@@ -12,11 +12,13 @@ Draft legend:
 
 Figure 4. Small fixational eye movements turn a static natural image into an
 informative retinal movie. (A) A recorded eye trace samples different retinal
-views of the same image. (B) In the V1 twin, recorded drift produces corrected
-delta-mean feature-response gain when the eye trace is known, whereas the
-pose-unaware empirical proxy falls below static; OU controls are held out of the
-main trace set pending the trace/readout audit. (C) Zero-eye
-feature recovery falls as motion scale grows, compact-subspace inference
+views of the same image. (B) In motion-rendered V1-twin responses, recorded
+drift increases source-trial grouped diagonal Gaussian decoder information for
+local pyramid features relative to the stabilized baseline. The trajectory
+renders the response movie but is not an explicit aggregate ridge-decoder input;
+the same-axis pose-unaware hidden-sample proxy has negative point estimates
+relative to the static baseline.
+(C) Zero-eye feature recovery falls as motion scale grows, compact-subspace inference
 remains stable without being given the eye trace, and compact removal collapses
 recovery back toward the zero-eye curve. (D)
 An example natural-image edge shows the along/across axes; in the matched-static

@@ -51,6 +51,36 @@ exact-vs-approximate known-trajectory residual scores, and
 Vernier decision margins. Use those diagnostics to choose a history length
 before running or implementing an expensive trajectory-marginalized observer.
 
+## Reusable synthetic trajectory priors
+
+Artificial FEM priors live in `declan.vernier_active_sensing.synthetic_trajectory_priors`
+and are stimulus-agnostic: pass source eye traces in degrees and receive newly
+sampled traces plus metadata. The current recommended comparison prior is the
+empirical confined-step scale mixture, which fits a continuous distribution of
+anti-persistent, spatially confined dynamics from real fixation snippets and
+then samples fresh traces.
+
+```python
+from declan.vernier_active_sensing import (
+    generate_synthetic_trajectory_prior,
+    recommended_empirical_confined_config,
+)
+
+result = generate_synthetic_trajectory_prior(
+    source_traces_deg,
+    n_traces=256,
+    n_frames=60,
+    seed=0,
+    config=recommended_empirical_confined_config(kappa_weight_power=0.5),
+)
+synthetic_traces_deg = result.traces_deg
+prior_metadata = result.metadata
+```
+
+Use this prior when a decoder or figure needs a non-catalog artificial FEM
+comparison matched to real fixation scale, step amplitude, and anti-persistent
+confinement.
+
 ## Joint geometry observer smoke
 
 ```bash

@@ -353,13 +353,17 @@ def _score_group(
         raise ValueError("Expected exactly one true candidate per observer group")
     true_pos = int(np.flatnonzero(true_mask)[0])
     pred_pos = int(np.nanargmax(scores)) if scores.size else -1
+    true_candidate_id = str(ordered.loc[true_pos, "candidate_id"])
+    pred_candidate_id = str(ordered.loc[pred_pos, "candidate_id"]) if pred_pos >= 0 else ""
     base = {col: ordered[col].iloc[0] for col in _group_columns(ordered)}
     base.update(
         {
             "true_candidate_index_local": true_pos,
             "pred_candidate_index_local": pred_pos,
-            "true_candidate_id": str(ordered.loc[true_pos, "candidate_id"]),
-            "pred_candidate_id": str(ordered.loc[pred_pos, "candidate_id"]) if pred_pos >= 0 else "",
+            "true_candidate_id": true_candidate_id,
+            "pred_candidate_id": pred_candidate_id,
+            "true_source_row": _source_row_from_candidate_id(true_candidate_id),
+            "pred_source_row": _source_row_from_candidate_id(pred_candidate_id) if pred_candidate_id else -1,
             "image_correct": bool(pred_pos == true_pos),
             "true_rank": rank_desc(scores, true_pos),
             "true_margin": true_margin(scores, true_pos),
@@ -487,8 +491,12 @@ def _vectorized_mode_rows(
     base["score_column"] = str(score_column)
     base["true_candidate_index_local"] = true_pos
     base["pred_candidate_index_local"] = pred_pos
-    base["true_candidate_id"] = candidate_ids[group_index, true_pos]
-    base["pred_candidate_id"] = candidate_ids[group_index, pred_pos]
+    true_candidate_ids = candidate_ids[group_index, true_pos]
+    pred_candidate_ids = candidate_ids[group_index, pred_pos]
+    base["true_candidate_id"] = true_candidate_ids
+    base["pred_candidate_id"] = pred_candidate_ids
+    base["true_source_row"] = [_source_row_from_candidate_id(value) for value in true_candidate_ids]
+    base["pred_source_row"] = [_source_row_from_candidate_id(value) for value in pred_candidate_ids]
     base["image_correct"] = pred_pos == true_pos
     base["true_rank"] = 1 + np.sum(scores > true_scores[:, None], axis=1)
     base["true_margin"] = true_scores - best_competitor
@@ -823,6 +831,13 @@ def _best_temperature(rows: pd.DataFrame) -> float:
     return float(grouped.iloc[0]["posterior_temperature"])
 
 
+def _source_row_twofold(values: pd.Series) -> pd.Series:
+    sources = pd.to_numeric(values, errors="raise").astype(int)
+    unique = sorted({int(value) for value in sources.tolist()})
+    fold_by_source = {source: int(index % 2) for index, source in enumerate(unique)}
+    return sources.map(fold_by_source).astype(int)
+
+
 def _compute_temperature_cv(sweep: pd.DataFrame) -> pd.DataFrame:
     rows = sweep[
         sweep["latent"].eq(PRIMARY_LATENT)
@@ -833,6 +848,8 @@ def _compute_temperature_cv(sweep: pd.DataFrame) -> pd.DataFrame:
     split_specs = {"table_index": rows["table_index"].astype(int) % 2}
     if "trial_id" in rows.columns:
         split_specs["trial_id"] = rows["trial_id"].astype(int) % 2
+    if "true_source_row" in rows.columns:
+        split_specs["source_row"] = _source_row_twofold(rows["true_source_row"])
     for split_key, split_values in split_specs.items():
         split_rows = rows.copy()
         split_rows["split"] = split_values
@@ -926,7 +943,7 @@ def _compute_temperature_cv(sweep: pd.DataFrame) -> pd.DataFrame:
                             "n_eval": int(np.sum(weights)),
                         }
                     )
-                if split_key == "trial_id" and "prior_family" in eval_rows.columns:
+                if split_key in {"trial_id", "source_row"} and "prior_family" in eval_rows.columns:
                     slice_rows = []
                     for (scale, prior_family), slice_eval in eval_rows.groupby(
                         ["prior_scale", "prior_family"],
@@ -1056,9 +1073,10 @@ def _plot_temperature_cv(cv_summary: pd.DataFrame) -> None:
         "noanchor_quadratic_scale_conditioned_iter160": "quadratic scale 160",
         "catalog_residual_top2_shrink": "catalog residual",
     }
+    preferred_split = "source_row" if cv_summary["split_key"].eq("source_row").any() else "trial_id"
     rows = cv_summary[
         cv_summary["run_slug"].isin(chosen)
-        & cv_summary["split_key"].eq("trial_id")
+        & cv_summary["split_key"].eq(preferred_split)
         & cv_summary["calibration_mode"].isin(["global", "scale_specific"])
     ].copy()
     if rows.empty:
@@ -1079,7 +1097,8 @@ def _plot_temperature_cv(cv_summary: pd.DataFrame) -> None:
     ax.bar(x + width, scale_rows["eval_mean_feature_cosine"], width=width, color="#8a5ca8", label="scale temp")
     ax.set_xticks(x, [labels.get(slug, slug) for slug in chosen], rotation=20, ha="right")
     ax.set_ylabel("heldout mean feature cosine")
-    ax.set_title("Trial-disjoint posterior-temperature calibration")
+    split_label = "source-row-disjoint" if preferred_split == "source_row" else "trial-disjoint"
+    ax.set_title(f"{split_label.capitalize()} posterior-temperature calibration")
     ax.set_ylim(0.82, 0.99)
     ax.legend(frameon=False)
     _clean_axis(ax)
@@ -1091,9 +1110,10 @@ def _plot_temperature_cv(cv_summary: pd.DataFrame) -> None:
 def _summarize_quadratic_slice_cv(cv_rows: pd.DataFrame) -> pd.DataFrame:
     if cv_rows.empty or "prior_family" not in cv_rows.columns:
         return pd.DataFrame()
+    preferred_split = "source_row" if cv_rows["split_key"].eq("source_row").any() else "trial_id"
     rows = cv_rows[
         cv_rows["run_slug"].eq("noanchor_quadratic_poisson")
-        & cv_rows["split_key"].eq("trial_id")
+        & cv_rows["split_key"].eq(preferred_split)
         & cv_rows["calibration_mode"].eq("scale_family_specific")
         & ~cv_rows["prior_scale"].astype(str).eq("all")
     ].copy()

@@ -72,7 +72,7 @@ DISPLAY = {
         "zorder": 7,
     },
     "known_eye": {
-        "label": "known-eye ceiling",
+        "label": "known-trace control",
         "color": INK,
         "linestyle": ":",
         "marker": "o",

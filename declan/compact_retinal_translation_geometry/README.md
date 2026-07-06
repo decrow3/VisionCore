@@ -110,6 +110,38 @@ The current audit runner consumes the promoted metric-validation tables when
 present. Recorded displacement decoding remains not-run until the required
 repeat-pair response/eye-position objects are available.
 
+For the proposed local feature-derivative mechanism test, see
+`local_derivative_channel_analysis_plan.md`.
+
+## Local Derivative Channel Analysis
+
+To test whether the compact channel carries signed local image-feature
+derivatives beyond fold-disjoint static-response PCs, run:
+
+```bash
+uv run python -m declan.compact_retinal_translation_geometry.run_local_derivative_channel_analysis
+```
+
+This consumes `outputs/twin_feature_tangent_structure_prod_v2/tangent_maps/twin_tangent_maps.pkl`,
+recomputes signed Gabor, phase-vector, bandpass, energy, and raw-pixel-grid
+feature derivatives from the cached histories, and writes the plan-facing
+tables under
+`outputs/compact_retinal_translation_geometry/local_derivative_channel_v1/`.
+
+Useful smoke-test overrides:
+
+```bash
+uv run python -m declan.compact_retinal_translation_geometry.run_local_derivative_channel_analysis \
+  --target-families raw_pixel_grid,phase_vector \
+  --k-list 2,5,10 \
+  --n-random 1 \
+  --n-unit-shuffle 1 \
+  --n-bootstrap 50 \
+  --ridge-selection middle \
+  --no-run-feature-recovery-utility \
+  --out-root outputs/compact_retinal_translation_geometry/local_derivative_channel_smoke
+```
+
 ## Chart-Swap Diagnostics
 
 For the chart-swap branch, use the diagnostic atlas to compare split variants
@@ -148,3 +180,19 @@ writes paired clustered-bootstrap contrasts under
 For the interpretation relative to older global/PC1, random, unit-shuffle,
 gain, prior, chart-swap, and compact-removal controls, see
 `static_pc_control_adjudication_note.md`.
+
+## RR100 Compact Geometry Comparison
+
+To check whether the RR100 movie-medoid twin preserves the compact translation
+geometry from the full 756-channel twin, run:
+
+```bash
+uv run python -m declan.compact_retinal_translation_geometry.run_rr100_compact_geometry_comparison
+```
+
+This projects the cached full-twin tangent maps through the saved RR100
+membership transform, compares RR100-native tangent PCs against full tangent
+PCs restricted through that same transform, and adds static-response,
+random-basis, and fold-disjoint random 100-channel subset controls.  Outputs are
+written under
+`outputs/compact_retinal_translation_geometry/rr100_compact_geometry_comparison_v1/`.

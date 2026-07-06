@@ -1051,6 +1051,16 @@ def _standardize_train_test(train: np.ndarray, test: np.ndarray) -> tuple[np.nda
 
 
 def _mean_r2(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    y_true = np.asarray(y_true, dtype=np.float64)
+    y_pred = np.asarray(y_pred, dtype=np.float64)
+    if y_true.ndim == 1:
+        y_true = y_true[:, None]
+    if y_pred.ndim == 1:
+        y_pred = y_pred[:, None]
+    if y_pred.shape != y_true.shape and y_pred.size == y_true.size:
+        y_pred = y_pred.reshape(y_true.shape)
+    if y_pred.shape != y_true.shape:
+        raise ValueError(f"R2 shape mismatch: y_true={y_true.shape}, y_pred={y_pred.shape}")
     ss_res = np.sum((y_true - y_pred) ** 2, axis=0)
     centered = y_true - np.mean(y_true, axis=0, keepdims=True)
     ss_tot = np.sum(centered * centered, axis=0)
@@ -1145,7 +1155,9 @@ def _cross_validated_decode(
             raise ValueError(f"Unknown alpha_mode={alpha_mode!r}")
         model = Ridge(alpha=alpha, fit_intercept=True)
         model.fit(X_train_raw, Y_train)
-        Y_pred = model.predict(X_test)
+        Y_pred = np.asarray(model.predict(X_test), dtype=np.float64)
+        if Y_pred.ndim == 1:
+            Y_pred = Y_pred[:, None]
         fold_r2s.append(_mean_r2(Y_test, Y_pred))
         pred[test_idx] = Y_pred
         target[test_idx] = Y_test

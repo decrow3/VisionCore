@@ -111,11 +111,11 @@ as a strong claim about the promoted 4C estimator.
 Historical image-identity full-cache result at likelihood scale 1.0:
 
 ```text
-known-eye ceiling:                      1.000
+known-trace control:                    1.000
 zero-eye accuracy:                       0.445
 finite catalog joint:                    0.770
 known-start continuous, k=10:            0.561
-remaining gap to known-eye ceiling:      0.439
+remaining gap to known-trace control:    0.439
 ```
 
 This older image-identity headline is the no-anchor known-start AR(1) profile.

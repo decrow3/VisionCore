@@ -45,15 +45,16 @@ B_GAIN_CSV = (
     / "outputs"
     / "fixation_statistics_by_stimulus_all_sessions_after_review"
     / "backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1"
-    / "incremental_staticmean_plus_motion_tworeadout_v2"
+    / "incremental_staticmean_plus_motion_info_decode_bootstrap_b50_source_trial_validated_20260630"
     / "incremental_gain_vs_static.csv"
 )
+PANEL_B_REQUIRED_INFORMATION_CI_METHOD = "decode_pipeline_group_bootstrap_point_centered"
 B_POSE_UNAWARE_CSV = (
     REPO_ROOT
     / "outputs"
     / "fixation_statistics_by_stimulus_all_sessions_after_review"
     / "backimage_aggregate_fem_information_pose_unaware_production_n384_empirical_k8_seed0"
-    / "pose_unaware_staticmean_plus_motion_delta_v1"
+    / "pose_unaware_staticmean_plus_motion_info_source_trial_b50_20260630"
     / "pose_unaware_train_mean_test_samples_proxy.csv"
 )
 C_POSTERIOR_CSV = (
@@ -329,13 +330,28 @@ def _plot_b(ax: plt.Axes) -> pd.DataFrame:
     ].copy()
     pose["scale"] = pose["scale_id"].map(_scale_value)
     pose["family"] = "pose_unaware"
+    y_col = "incremental_gain_info_diag_bits"
+    lo_col = "info_diag_ci95_low"
+    hi_col = "info_diag_ci95_high"
+    required = {y_col, lo_col, hi_col, "information_ci_method"}
+    missing = sorted(required.difference(block.columns))
+    if missing:
+        raise ValueError(f"Panel B selected composite requires information-axis columns; missing {missing}")
+    if set(block["information_ci_method"].dropna().astype(str)) != {PANEL_B_REQUIRED_INFORMATION_CI_METHOD}:
+        raise ValueError("Panel B selected composite requires point-centered decode-bootstrap information provenance")
+    pose_has_matching_info = required.issubset(pose.columns) and set(
+        pose["information_ci_method"].dropna().astype(str)
+    ) == {PANEL_B_REQUIRED_INFORMATION_CI_METHOD}
     styles = {
-        "empirical": ("known-eye drift", BLUE, "o", 2.1, 1.0, "-"),
+        "empirical": ("recorded drift", BLUE, "o", 2.1, 1.0, "-"),
         "pose_unaware": ("pose-unaware", RED, "v", 1.8, 0.95, "--"),
         "brownian": ("random drift", GRAY, "s", 1.5, 0.78),
         "rotated": ("rotated drift", PURPLE, "^", 1.5, 0.78),
     }
-    for family in ["empirical", "pose_unaware", "brownian", "rotated"]:
+    families_to_plot = ["empirical", "brownian", "rotated"]
+    if pose_has_matching_info:
+        families_to_plot.insert(1, "pose_unaware")
+    for family in families_to_plot:
         style = styles[family]
         if len(style) == 6:
             label, color, marker, lw, alpha, linestyle = style
@@ -344,9 +360,9 @@ def _plot_b(ax: plt.Axes) -> pd.DataFrame:
             linestyle = "-"
         data = pose.sort_values("scale") if family == "pose_unaware" else block[block["family"] == family].sort_values("scale")
         x = data["scale"].to_numpy(dtype=float)
-        y = data["incremental_gain_neg_mse"].to_numpy(dtype=float)
-        lo = data["ci95_low"].to_numpy(dtype=float)
-        hi = data["ci95_high"].to_numpy(dtype=float)
+        y = data[y_col].to_numpy(dtype=float)
+        lo = data[lo_col].to_numpy(dtype=float)
+        hi = data[hi_col].to_numpy(dtype=float)
         ax.errorbar(
             x,
             y,
@@ -362,28 +378,37 @@ def _plot_b(ax: plt.Axes) -> pd.DataFrame:
             zorder=3 if family == "empirical" else 2,
         )
     ax.axhline(0, color=INK, lw=0.8)
-    scales = sorted(set(block["scale"].unique()).union(set(pose["scale"].unique())))
+    scales = sorted(set(block["scale"].unique()).union(set(pose["scale"].unique()) if pose_has_matching_info else set()))
     ax.set_xticks(scales, [_scale_label(v) for v in scales])
     ax.set_xlabel("motion scale")
-    ax.set_ylabel("delta-mean gain over static mean (-MSE)")
-    ax.set_ylim(-7.6, 4.2)
-    ax.legend(frameon=False, loc="lower right", borderaxespad=0.0)
+    ax.set_ylabel("feature information gain over stabilized (bits)")
+    lo_values = block[lo_col].to_numpy(dtype=float)
+    hi_values = block[hi_col].to_numpy(dtype=float)
+    pad = max(0.15, 0.12 * float(np.nanmax(hi_values) - np.nanmin(lo_values)))
+    ax.set_ylim(float(np.nanmin([0.0, np.nanmin(lo_values)]) - pad), float(np.nanmax(hi_values) + pad))
+    legend = ax.legend(frameon=True, loc="lower right", borderaxespad=0.0)
+    legend.get_frame().set_facecolor("white")
+    legend.get_frame().set_edgecolor("none")
+    legend.get_frame().set_alpha(0.86)
     _clean_axis(ax)
     _panel_header(
         ax,
         "B",
-        "Motion enhances feature encoding",
-        "but only when eye position is known",
+        "Motion-rendered responses add feature information",
+        "trajectory renders the response, not the ridge input",
     )
     family_order = {"empirical": 0, "pose_unaware": 1, "brownian": 2, "rotated": 3}
-    values = pd.concat(
-        [
-            block.assign(observer="known_eye_static_plus_motion"),
-            pose.assign(observer="pose_unaware_train_mean_test_hidden_samples"),
-        ],
-        ignore_index=True,
-        sort=False,
-    )
+    value_parts = [block.assign(observer="motion_rendered_static_plus_motion", plotted_metric="info_diag_bits")]
+    if pose_has_matching_info:
+        value_parts.append(pose.assign(observer="pose_unaware_train_mean_test_hidden_samples", plotted_metric="info_diag_bits"))
+    else:
+        value_parts.append(
+            pose.assign(
+                observer="pose_unaware_train_mean_test_hidden_samples",
+                plotted_metric="not_plotted_missing_information_recompute",
+            )
+        )
+    values = pd.concat(value_parts, ignore_index=True, sort=False)
     return (
         values.assign(_family_order=values["family"].map(family_order))
         .sort_values(["scale", "_family_order"])
@@ -648,7 +673,7 @@ def _write_manifest(path: Path) -> None:
         ("A", "One image becomes a retinal movie", A_PNG.relative_to(ATLAS).as_posix()),
         (
             "B",
-            "Motion enhances feature encoding",
+            "Motion-rendered responses add feature information",
             f"{B_GAIN_CSV.relative_to(REPO_ROOT).as_posix()}; "
             f"{B_POSE_UNAWARE_CSV.relative_to(REPO_ROOT).as_posix()}",
         ),
@@ -673,21 +698,22 @@ def _write_caption(path: Path) -> None:
 Status: design-first provisional draft, 2026-06-21.
 
 This version redraws the quantitative panels for the composite instead of
-pasting standalone promotion-candidate PNGs. The analysis choices are A3,
-B n384 k16 corrected delta-mean feature readout, C5 feature-posterior
-recovery, D matched-static along-edge feature recovery, and E3A
-image-coherence behavior bridge.
+pasting standalone promotion-candidate PNGs. The analysis choices are A3, B
+n384 k16 source-trial grouped diagonal decoder-information delta-mean feature
+readout, C5 feature-posterior recovery, D matched-static along-edge feature
+recovery, and E3A image-coherence behavior bridge.
 
 Draft legend:
 
 Figure 4. Small fixational eye movements turn a static natural image into an
 informative retinal movie. (A) A recorded eye trace samples different retinal
-views of the same image. (B) When the exact eye trajectory is known to the
-model, recorded drift produces corrected delta-mean feature-response gain
-relative to the static mean baseline; when the same empirical motion is treated
-as hidden pose, the pose-unaware proxy falls below static. OU controls are held
-out of the main trace set pending the dedicated trace/readout audit. (C) That feature
-encoding remains recoverable when the
+views of the same image. (B) In motion-rendered V1-twin responses, recorded
+drift increases source-trial grouped diagonal Gaussian decoder information for
+local pyramid features relative to the stabilized baseline. The trajectory
+renders the response movie but is not an explicit aggregate ridge-decoder input;
+the same-axis pose-unaware hidden-sample proxy has negative point estimates
+relative to the static baseline.
+(C) Feature encoding remains recoverable when the
 observer must infer features without being given the eye trace; removing the
 compact subspace collapses recovery toward the zero-eye curve. (D) In the
 matched-static hidden-eye feature decoder, an example natural-image edge shows

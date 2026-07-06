@@ -44,7 +44,7 @@ POWER_RERUN_DIR = Path(
             / "outputs"
             / "fixation_statistics_by_stimulus_all_sessions_after_review"
             / "backimage_aggregate_fem_information_n384_pyramid_k16_tworeadout_rel025-2_power_seed0_k8_v1"
-            / "incremental_staticmean_plus_motion_info_decode_bootstrap_fullshape_b50"
+            / "incremental_staticmean_plus_motion_info_decode_bootstrap_b50_source_trial_validated_20260630"
         ),
     )
 )
@@ -53,7 +53,7 @@ POSE_UNAWARE_DIR = (
     / "outputs"
     / "fixation_statistics_by_stimulus_all_sessions_after_review"
     / "backimage_aggregate_fem_information_pose_unaware_production_n384_empirical_k8_seed0"
-    / "pose_unaware_staticmean_plus_motion_delta_v1"
+    / "pose_unaware_staticmean_plus_motion_info_source_trial_b50_20260630"
 )
 
 
@@ -82,6 +82,7 @@ INFO_GAIN_COL = "incremental_gain_info_diag_bits"
 INFO_CONTRAST_COL = "incremental_gain_delta_info_diag_bits"
 INFO_LO_COL = "info_diag_ci95_low"
 INFO_HI_COL = "info_diag_ci95_high"
+REQUIRED_INFORMATION_CI_METHOD = "decode_pipeline_group_bootstrap_point_centered"
 LEGACY_GAIN_COL = "incremental_gain_neg_mse"
 LEGACY_CONTRAST_COL = "incremental_gain_delta_neg_mse"
 LEGACY_LO_COL = "ci95_low"
@@ -238,9 +239,9 @@ def _require_decode_bootstrap_information(df: pd.DataFrame) -> None:
     if "information_ci_method" not in df.columns:
         raise ValueError("Panel 4B information tables must include `information_ci_method` provenance")
     methods = set(df["information_ci_method"].dropna().astype(str))
-    if methods != {"decode_pipeline_group_bootstrap"}:
+    if methods != {REQUIRED_INFORMATION_CI_METHOD}:
         raise ValueError(
-            "Panel 4B promoted information axis requires decode-bootstrap CIs; "
+            "Panel 4B promoted information axis requires point-centered decode-bootstrap CIs; "
             f"found information_ci_method={sorted(methods)}"
         )
     if "n_information_bootstrap_success" in df.columns:
@@ -441,7 +442,7 @@ def _build_power_rerun_absolute_gain() -> tuple[Path, pd.DataFrame]:
             y_col=y_col,
             lo_col=lo_col,
             hi_col=hi_col,
-            label="known-eye drift" if family == "empirical" else MOTION_LABELS[family],
+            label="recorded drift" if family == "empirical" else MOTION_LABELS[family],
             color=COLORS[family],
             marker=marker,
         )
@@ -480,7 +481,7 @@ def _build_power_rerun_absolute_gain() -> tuple[Path, pd.DataFrame]:
 
     values = pd.concat(
         [
-            gain_block.assign(candidate_metric="power_rerun_absolute_gain_known_eye", plotted_metric=metric),
+            gain_block.assign(candidate_metric="power_rerun_absolute_gain_motion_rendered", plotted_metric=metric),
             pose_block.assign(
                 candidate_metric="pose_unaware_hidden_samples_proxy",
                 plotted_metric=(metric if pose_plotted else "not_plotted_missing_information_recompute"),
@@ -639,7 +640,7 @@ def _write_readme(paths: list[Path], sheet: Path) -> None:
         "",
         "## Recommendation",
         "",
-        "Candidate 3 is the promoted information-axis target after the incremental static-plus-motion summaries are recomputed. The plotted quantity is diagonal Gaussian decoder information gain over the stabilized/static baseline in bits. The pose-unaware hidden-sample proxy is not plotted unless it has matching information columns.",
+        "Candidate 3 is the promoted strict source-trial grouped information-axis target after the incremental static-plus-motion summaries are recomputed. The plotted quantity is diagonal Gaussian decoder information gain over the stabilized/static baseline in bits, with point-centered decode-bootstrap CIs. The pose-unaware hidden-sample proxy is now plotted on the same information axis.",
         "",
         "## Files",
         "",
@@ -666,6 +667,11 @@ def build() -> None:
     paths: list[Path] = []
     value_rows: list[pd.DataFrame] = []
     for candidate in CANDIDATES:
+        if candidate.slug in {
+            "4B_candidate_1_gain_over_static_audited",
+            "4B_candidate_2_empirical_minus_controls",
+        } and not ALLOW_LEGACY_MSE_FALLBACK:
+            continue
         if candidate.slug == "4B_candidate_2_empirical_minus_controls":
             path, values = _build_control_contrasts_no_ou()
             value_rows.append(values.assign(candidate=candidate.slug))

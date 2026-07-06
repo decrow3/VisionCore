@@ -144,7 +144,13 @@ def _best_rows(cv_summary: pd.DataFrame, *, calibration_mode: str) -> pd.DataFra
     if cv_summary.empty:
         return cv_summary
     rows = cv_summary.copy()
-    preferred_split = "trial_id" if rows["split_key"].eq("trial_id").any() else "table_index"
+    preferred_split = (
+        "source_row"
+        if rows["split_key"].eq("source_row").any()
+        else "trial_id"
+        if rows["split_key"].eq("trial_id").any()
+        else "table_index"
+    )
     rows = rows[rows["split_key"].eq(preferred_split)].copy()
     if calibration_mode != "best":
         rows = rows[rows["calibration_mode"].eq(calibration_mode)].copy()
@@ -161,7 +167,13 @@ def _model_selection_rows(cv_rows: pd.DataFrame, *, calibration_mode: str) -> pd
     if cv_rows.empty:
         return pd.DataFrame()
     rows = cv_rows.copy()
-    split_key = "trial_id" if rows["split_key"].eq("trial_id").any() else "table_index"
+    split_key = (
+        "source_row"
+        if rows["split_key"].eq("source_row").any()
+        else "trial_id"
+        if rows["split_key"].eq("trial_id").any()
+        else "table_index"
+    )
     rows = rows[
         rows["split_key"].eq(split_key)
         & rows["calibration_mode"].eq(calibration_mode)

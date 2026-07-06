@@ -69,13 +69,13 @@ OPTIONS = (
     Option(
         "4C_option_2_compact_sources_explicit",
         "Compact sources explicit",
-        "Shows zero-eye, compact source A, compact source B, and known-eye ceiling on the same recovery axis.",
+        "Shows zero-eye, compact source A, compact source B, and the known-trace control on the same recovery axis.",
         "Honest but busier; both compact sources are useful here, so this should not be read as a single-source result.",
     ),
     Option(
         "4C_option_3_observer_scale_heatmap",
         "Observer-by-scale heatmap",
-        "Compactly shows zero-eye degrading while compact-subspace priors sit near the known-eye ceiling.",
+        "Compactly shows zero-eye degrading while compact-subspace priors sit near the known-trace control.",
         "Most diagnostic; less immediately graph-like than a line panel.",
     ),
     Option(
@@ -87,7 +87,7 @@ OPTIONS = (
     Option(
         "4C_option_5_compact_subspace_rescue",
         "Compact subspace rescue",
-        "The least busy compact-subspace panel: zero-eye recovery falls, compact-subspace recovery stays near 0.87, known eye is the ceiling.",
+        "The least busy compact-subspace panel: zero-eye recovery falls, compact-subspace recovery stays near 0.87, known trace is the control.",
         "Omits the second compact-source comparator; use only if surrounding materials carry the component check.",
     ),
     Option(

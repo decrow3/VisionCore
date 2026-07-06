@@ -235,7 +235,7 @@ hard negatives n128, pyramid_local_field PCA k=8, compact k=10:
     1.0x = 0.872
     2.0x = 0.871
 
-  known-eye ceiling:
+  known-trace control:
     0.5x = 0.927
     1.0x = 0.936
     2.0x = 0.949
@@ -257,7 +257,7 @@ Selection note:
 
 ```text
 The promoted C panel now uses the feature-space compact-removal audit:
-zeroed-eye, compact subspace, compact removed, and known-eye ceiling. Both
+zeroed-eye, compact subspace, compact removed, and known-trace control. Both
 compact-source priors are retained in the result table/report; the main panel
 plots their mean for the compact-only and compact-removed curves.
 ```

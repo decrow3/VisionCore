@@ -30,7 +30,7 @@ OUT_DIR = v4.OUT_DIR
 
 COMPACT_HEADERS = {
     "A": ("One image becomes a retinal movie", "recorded eye drift samples different views of the same scene"),
-    "B": ("Motion enhances feature encoding", "but only when eye position is known"),
+    "B": ("Motion adds feature evidence", "trajectory renders response, not decoder input"),
     "C": ("Compact subspace supports\njoint eye/image decoding", "compact removal collapses hidden-eye recovery"),
     "D": ("Along-edge motion benefits\nmodel feature encoding", "matched-static hidden-eye decoder"),
     "E": ("Real drift follows clear edges", "alignment strengthens with edge coherence"),
@@ -92,7 +92,7 @@ def _write_manifest(path: Path) -> None:
         ("A", "One image becomes a retinal movie", v4.A_PNG.relative_to(v4.ATLAS).as_posix()),
         (
             "B",
-            "Motion enhances feature encoding",
+            "Motion adds feature evidence",
             f"{v4.B_GAIN_CSV.relative_to(v4.REPO_ROOT).as_posix()}; "
             f"{v4.B_POSE_UNAWARE_CSV.relative_to(v4.REPO_ROOT).as_posix()}",
         ),
@@ -130,11 +130,13 @@ Draft legend:
 
 Figure 4. Small fixational eye movements turn a static natural image into an
 informative retinal movie. (A) A recorded eye trace samples different retinal
-views of the same image. (B) In the V1 twin, recorded drift produces corrected
-delta-mean feature-response gain when the eye trace is known, whereas the
-pose-unaware empirical proxy falls below static; OU controls are held out of the
-main trace set pending the trace/readout audit. (C) Zero-eye
-feature recovery falls as motion scale grows, compact-subspace inference
+views of the same image. (B) In motion-rendered V1-twin responses, recorded
+drift increases source-trial grouped diagonal Gaussian decoder information for
+local pyramid features relative to the stabilized baseline. The trajectory
+renders the response movie but is not an explicit aggregate ridge-decoder input;
+the same-axis pose-unaware hidden-sample proxy has negative point estimates
+relative to the static baseline.
+(C) Zero-eye feature recovery falls as motion scale grows, compact-subspace inference
 remains stable without being given the eye trace, and compact removal collapses
 recovery back toward the zero-eye curve. (D)
 An example natural-image edge shows the along/across axes; in the matched-static

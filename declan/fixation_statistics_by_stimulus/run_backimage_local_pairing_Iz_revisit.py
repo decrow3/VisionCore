@@ -105,6 +105,15 @@ DEFAULT_OUT_DIR = Path(
     "backimage_local_pairing_Iz_revisit"
 )
 
+STATIC_SUMMARY_FOR_LOCAL_MOTION = {
+    "temporal_pca": "mean",
+    "temporal_delta_pca": "mean",
+    "temporal_dct": "mean",
+    "temporal_dct_delta": "mean",
+    "mean": "mean",
+    "delta_mean": "mean",
+}
+
 
 @dataclass(frozen=True)
 class LocalPairingConfig:
@@ -147,6 +156,24 @@ class LocalPairingConfig:
 
 def _progress(message: str) -> None:
     print(f"[backimage-local-pairing-Iz] {message}", flush=True)
+
+
+def _decode_groups_from_local_images(images: pd.DataFrame, mode: str) -> np.ndarray:
+    mode = str(mode)
+    if mode == "image":
+        return images["image_index"].to_numpy(dtype=int)
+    if mode == "source_trial":
+        missing = sorted({"session", "trial_idx"}.difference(images.columns))
+        if missing:
+            raise ValueError(f"source_trial decode grouping requires columns {missing}")
+        return (
+            images["session"].astype(str)
+            + "::trial_"
+            + images["trial_idx"].astype(int).astype(str)
+        ).to_numpy()
+    if mode == "session":
+        return images["session"].to_numpy()
+    raise ValueError(f"Unknown decode_group_mode={mode!r}")
 
 
 def _axis_trace(axis_deg: float, rms_radius_deg: float, n_timepoints: int) -> np.ndarray:
@@ -357,7 +384,10 @@ def _run_local_incremental_decoding(
 
     for summary in summary_names:
         feature_by_condition = feature_by_condition_by_summary[summary]
-        X_static = feature_by_condition[("static", "static")]
+        static_summary = STATIC_SUMMARY_FOR_LOCAL_MOTION.get(summary, summary)
+        if static_summary not in feature_by_condition_by_summary:
+            raise ValueError(f"Missing static summary {static_summary!r} for motion summary {summary!r}")
+        X_static = feature_by_condition_by_summary[static_summary][("static", "static")]
         for latent_name, Z in latent_arrays.items():
             for k in pca_k_list:
                 static_result = _decode_fixed(X_static, Z, groups, k=int(k), args=args)
@@ -365,6 +395,7 @@ def _run_local_incremental_decoding(
                 decode_rows.append(
                     {
                         "motion_summary": summary,
+                        "static_summary": static_summary,
                         "model": "static_only",
                         "family": "static",
                         "scale_id": "static",
@@ -399,6 +430,7 @@ def _run_local_incremental_decoding(
                                 decode_rows.append(
                                     {
                                         "motion_summary": summary,
+                                        "static_summary": static_summary,
                                         "model": "static_plus_motion_sample",
                                         "family": sample_key[0],
                                         "parent_family": family,
@@ -451,6 +483,7 @@ def _run_local_incremental_decoding(
                         decode_rows.append(
                             {
                                 "motion_summary": summary,
+                                "static_summary": static_summary,
                                 "model": "static_plus_motion",
                                 "family": family,
                                 "scale_id": scale_id,
@@ -567,7 +600,16 @@ def build_parser() -> argparse.ArgumentParser:
             "actual_paired_empirical:static"
         ),
     )
-    parser.add_argument("--decode-group-mode", choices=("image", "session"), default="image")
+    parser.add_argument(
+        "--decode-group-mode",
+        choices=("image", "source_trial", "session"),
+        default="source_trial",
+        help=(
+            "CV grouping for feature decoding. source_trial groups all windows from the same "
+            "session/trial; image keeps each selected crop/source row in one fold; session is "
+            "stricter across recording sessions."
+        ),
+    )
     parser.add_argument("--reliable-image-coherence-min", type=float, default=0.20)
     parser.add_argument("--reliable-drift-anisotropy-min", type=float, default=0.20)
     parser.add_argument("--min-duration-s", type=float, default=0.10)
@@ -1091,7 +1133,12 @@ def run(args: argparse.Namespace) -> Path:
     np.savez_compressed(out_dir / "response_summary_arrays.npz", temporal_basis=basis, temporal_dct_basis=dct_basis, **summary_arrays)
 
     sessions = image_df["session"].to_numpy()
-    decode_groups = image_df["image_index"].to_numpy(dtype=int) if str(args.decode_group_mode) == "image" else sessions
+    decode_groups = _decode_groups_from_local_images(image_df, str(args.decode_group_mode))
+    if str(args.decode_group_mode) == "source_trial" and np.unique(decode_groups).size < 2:
+        raise ValueError(
+            "--decode-group-mode source_trial requires at least two source trials after filtering; "
+            "otherwise the shared decoder cannot form grouped folds."
+        )
     if str(args.decode_group_mode) == "session" and np.unique(sessions).size < 2:
         raise ValueError(
             "--decode-group-mode session requires at least two sessions after filtering; "

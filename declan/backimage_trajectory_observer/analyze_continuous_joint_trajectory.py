@@ -12,6 +12,7 @@ import argparse
 import csv
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,11 @@ from scipy.optimize import minimize
 try:
     from .likelihood import logmeanexp, poisson_expected_count_loglik, posterior_from_log_scores, rank_desc, true_margin
     from .observer import score_image_identity_score_vectors
+    from declan.vernier_active_sensing.synthetic_trajectory_priors import (
+        SyntheticTrajectoryPriorConfig,
+        generate_synthetic_trajectory_prior,
+        recommended_empirical_confined_config,
+    )
 except ImportError:  # pragma: no cover - script-mode fallback
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from declan.backimage_trajectory_observer.likelihood import (
@@ -32,6 +38,30 @@ except ImportError:  # pragma: no cover - script-mode fallback
         true_margin,
     )
     from declan.backimage_trajectory_observer.observer import score_image_identity_score_vectors
+    from declan.vernier_active_sensing.synthetic_trajectory_priors import (
+        SyntheticTrajectoryPriorConfig,
+        generate_synthetic_trajectory_prior,
+        recommended_empirical_confined_config,
+    )
+
+
+@dataclass(frozen=True)
+class ConfinedStepProcessPrior:
+    """Gaussian confined-step trajectory prior in degree coordinates."""
+
+    init_mean: np.ndarray
+    init_cov: np.ndarray
+    init_inv: np.ndarray
+    init_step_mean: np.ndarray
+    init_step_cov: np.ndarray
+    init_step_inv: np.ndarray
+    transition_beta: float
+    position_spring_kappa: float
+    innovation_mean: np.ndarray
+    innovation_cov: np.ndarray
+    innovation_inv: np.ndarray
+    process_cov_scale: float
+    metadata: dict[str, Any]
 
 
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -501,6 +531,136 @@ def kalman_filter_log_likelihood(
     }
 
 
+def _add_path_gaussian_factor(
+    precision: np.ndarray,
+    linear: np.ndarray,
+    const: float,
+    *,
+    terms: list[tuple[slice, float]],
+    mean: np.ndarray,
+    inv_cov: np.ndarray,
+) -> float:
+    target = np.asarray(mean, dtype=np.float64)
+    weight = np.asarray(inv_cov, dtype=np.float64)
+    if target.shape != (2,) or weight.shape != (2, 2):
+        raise ValueError("path Gaussian factors require 2D mean and 2x2 inverse covariance")
+    wm = weight @ target
+    for sl_i, coef_i in terms:
+        linear[sl_i] += float(coef_i) * wm
+        for sl_j, coef_j in terms:
+            precision[sl_i, sl_j] += float(coef_i) * float(coef_j) * weight
+    return const + float(target @ wm)
+
+
+def _add_confined_step_prior_to_profile(
+    precision: np.ndarray,
+    linear: np.ndarray,
+    const: float,
+    *,
+    t_count: int,
+    prior: ConfinedStepProcessPrior,
+    initial_mean: np.ndarray | None,
+    initial_cov: np.ndarray | None,
+) -> float:
+    init_target = prior.init_mean if initial_mean is None else np.asarray(initial_mean, dtype=np.float64)
+    if init_target.shape != (2,):
+        raise ValueError(f"initial_mean must be (2,), got {init_target.shape}")
+    if initial_cov is None:
+        init_inv = prior.init_inv
+    else:
+        cov = np.asarray(initial_cov, dtype=np.float64)
+        if cov.shape != (2, 2):
+            raise ValueError(f"initial_cov must be (2,2), got {cov.shape}")
+        cov = 0.5 * (cov + cov.T)
+        if not np.isfinite(cov).all() or np.min(np.linalg.eigvalsh(cov)) <= 0.0:
+            raise ValueError("initial_cov must be positive definite")
+        init_inv = np.linalg.inv(cov)
+    const = _add_path_gaussian_factor(
+        precision,
+        linear,
+        const,
+        terms=[(slice(0, 2), 1.0)],
+        mean=init_target,
+        inv_cov=init_inv,
+    )
+    if int(t_count) <= 1:
+        return const
+    const = _add_path_gaussian_factor(
+        precision,
+        linear,
+        const,
+        terms=[(slice(0, 2), -1.0), (slice(2, 4), 1.0)],
+        mean=prior.init_step_mean,
+        inv_cov=prior.init_step_inv,
+    )
+    beta = float(prior.transition_beta)
+    kappa = float(prior.position_spring_kappa)
+    middle_coeff = -1.0 - beta + kappa
+    for time_index in range(2, int(t_count)):
+        prevprev = slice(2 * (time_index - 2), 2 * (time_index - 2) + 2)
+        prev = slice(2 * (time_index - 1), 2 * (time_index - 1) + 2)
+        cur = slice(2 * time_index, 2 * time_index + 2)
+        const = _add_path_gaussian_factor(
+            precision,
+            linear,
+            const,
+            terms=[(prevprev, beta), (prev, middle_coeff), (cur, 1.0)],
+            mean=prior.innovation_mean,
+            inv_cov=prior.innovation_inv,
+        )
+    return const
+
+
+def _confined_step_prior_energy_and_grad(
+    tau: np.ndarray,
+    prior: ConfinedStepProcessPrior,
+    *,
+    initial_mean: np.ndarray | None = None,
+    initial_cov: np.ndarray | None = None,
+) -> tuple[float, np.ndarray]:
+    pose = np.asarray(tau, dtype=np.float64)
+    if pose.ndim != 2 or pose.shape[1] != 2:
+        raise ValueError(f"tau must be (time,2), got {pose.shape}")
+    grad = np.zeros_like(pose)
+    init_target = prior.init_mean if initial_mean is None else np.asarray(initial_mean, dtype=np.float64)
+    if init_target.shape != (2,):
+        raise ValueError(f"initial_mean must be (2,), got {init_target.shape}")
+    if initial_cov is None:
+        init_inv = prior.init_inv
+    else:
+        cov = np.asarray(initial_cov, dtype=np.float64)
+        if cov.shape != (2, 2):
+            raise ValueError(f"initial_cov must be (2,2), got {cov.shape}")
+        cov = 0.5 * (cov + cov.T)
+        if not np.isfinite(cov).all() or np.min(np.linalg.eigvalsh(cov)) <= 0.0:
+            raise ValueError("initial_cov must be positive definite")
+        init_inv = np.linalg.inv(cov)
+    init_resid = pose[0] - init_target
+    init_q = init_inv @ init_resid
+    energy = 0.5 * float(init_resid @ init_q)
+    grad[0] += init_q
+    if pose.shape[0] <= 1:
+        return energy, grad
+
+    steps = pose[1:] - pose[:-1]
+    init_step_resid = steps[0] - prior.init_step_mean
+    init_step_q = prior.init_step_inv @ init_step_resid
+    energy += 0.5 * float(init_step_resid @ init_step_q)
+    grad[1] += init_step_q
+    grad[0] -= init_step_q
+    if pose.shape[0] > 2:
+        beta = float(prior.transition_beta)
+        kappa = float(prior.position_spring_kappa)
+        resid = steps[1:] - (beta * steps[:-1] - kappa * pose[1:-1]) - prior.innovation_mean[None, :]
+        q = resid @ prior.innovation_inv.T
+        energy += 0.5 * float(np.sum(resid * q))
+        middle_coeff = -1.0 - beta + kappa
+        grad[2:] += q
+        grad[1:-1] += middle_coeff * q
+        grad[:-2] += beta * q
+    return energy, grad
+
+
 def ar1_profile_log_score(
     z_obs: np.ndarray,
     observation_matrix: np.ndarray,
@@ -513,6 +673,7 @@ def ar1_profile_log_score(
     initial_cov: np.ndarray | None = None,
     initial_mean: np.ndarray | None = None,
     prior_mean: np.ndarray | None = None,
+    confined_step_prior: ConfinedStepProcessPrior | None = None,
 ) -> dict[str, np.ndarray | float]:
     """Return profile score after optimizing the full latent AR(1) path.
 
@@ -595,38 +756,48 @@ def ar1_profile_log_score(
         linear[sl] += h_t.T @ r_inv @ z[time_index]
         const += float(z[time_index] @ r_inv @ z[time_index])
 
-    if initial_cov is not None:
-        p0_cov = np.asarray(initial_cov, dtype=np.float64)
-        if p0_cov.shape != (2, 2):
-            raise ValueError(f"initial_cov must be (2,2), got {p0_cov.shape}")
-        p0_cov = 0.5 * (p0_cov + p0_cov.T)
-        if not np.isfinite(p0_cov).all() or np.min(np.linalg.eigvalsh(p0_cov)) <= 0.0:
-            raise ValueError("initial_cov must be positive definite")
-    else:
-        p0 = (
-            float(initial_var)
-            if initial_var is not None
-            else q / max(1e-9, 1.0 - a * a)
+    if confined_step_prior is not None:
+        const = _add_confined_step_prior_to_profile(
+            precision,
+            linear,
+            const,
+            t_count=t_count,
+            prior=confined_step_prior,
+            initial_mean=initial_mean,
+            initial_cov=initial_cov,
         )
-        if not np.isfinite(p0) or p0 <= 0.0:
-            raise ValueError("initial_var must be positive and finite")
-        p0_cov = np.eye(2, dtype=np.float64) * p0
-    p0_inv = np.linalg.inv(p0_cov)
-    eye2 = np.eye(2, dtype=np.float64)
-    precision[0:2, 0:2] += p0_inv
-    linear[0:2] += p0_inv @ initial_prior_mean
-    const += float(initial_prior_mean @ p0_inv @ initial_prior_mean)
-    for time_index in range(1, t_count):
-        prev = slice(2 * (time_index - 1), 2 * (time_index - 1) + 2)
-        cur = slice(2 * time_index, 2 * time_index + 2)
-        prior_step_mean = mean_path[time_index] - a * mean_path[time_index - 1]
-        precision[prev, prev] += (a * a) * q_inv_mat
-        precision[cur, cur] += q_inv_mat
-        precision[prev, cur] += -a * q_inv_mat
-        precision[cur, prev] += -a * q_inv_mat
-        linear[prev] += -a * (q_inv_mat @ prior_step_mean)
-        linear[cur] += q_inv_mat @ prior_step_mean
-        const += float(prior_step_mean @ q_inv_mat @ prior_step_mean)
+    else:
+        if initial_cov is not None:
+            p0_cov = np.asarray(initial_cov, dtype=np.float64)
+            if p0_cov.shape != (2, 2):
+                raise ValueError(f"initial_cov must be (2,2), got {p0_cov.shape}")
+            p0_cov = 0.5 * (p0_cov + p0_cov.T)
+            if not np.isfinite(p0_cov).all() or np.min(np.linalg.eigvalsh(p0_cov)) <= 0.0:
+                raise ValueError("initial_cov must be positive definite")
+        else:
+            p0 = (
+                float(initial_var)
+                if initial_var is not None
+                else q / max(1e-9, 1.0 - a * a)
+            )
+            if not np.isfinite(p0) or p0 <= 0.0:
+                raise ValueError("initial_var must be positive and finite")
+            p0_cov = np.eye(2, dtype=np.float64) * p0
+        p0_inv = np.linalg.inv(p0_cov)
+        precision[0:2, 0:2] += p0_inv
+        linear[0:2] += p0_inv @ initial_prior_mean
+        const += float(initial_prior_mean @ p0_inv @ initial_prior_mean)
+        for time_index in range(1, t_count):
+            prev = slice(2 * (time_index - 1), 2 * (time_index - 1) + 2)
+            cur = slice(2 * time_index, 2 * time_index + 2)
+            prior_step_mean = mean_path[time_index] - a * mean_path[time_index - 1]
+            precision[prev, prev] += (a * a) * q_inv_mat
+            precision[cur, cur] += q_inv_mat
+            precision[prev, cur] += -a * q_inv_mat
+            precision[cur, prev] += -a * q_inv_mat
+            linear[prev] += -a * (q_inv_mat @ prior_step_mean)
+            linear[cur] += q_inv_mat @ prior_step_mean
+            const += float(prior_step_mean @ q_inv_mat @ prior_step_mean)
 
     ridge = 1e-10 * np.eye(state_dim, dtype=np.float64)
     state = np.linalg.solve(precision + ridge, linear)
@@ -899,6 +1070,7 @@ def _quadratic_profile_objective_and_grad(
     initial_mean: np.ndarray | None,
     initial_var: float,
     initial_cov: np.ndarray | None = None,
+    confined_step_prior: ConfinedStepProcessPrior | None = None,
     intercept_scale: float = 1.0,
 ) -> tuple[float, np.ndarray]:
     tau = np.asarray(flat_path, dtype=np.float64).reshape(-1, 2)
@@ -924,42 +1096,52 @@ def _quadratic_profile_objective_and_grad(
     grad[:, 0] = np.sum(err * d_pred_dx, axis=1) / r
     grad[:, 1] = np.sum(err * d_pred_dy, axis=1) / r
 
-    initial_target = np.zeros(2, dtype=np.float64) if initial_mean is None else np.asarray(initial_mean, dtype=np.float64)
-    diff0 = tau[0] - initial_target
-    if initial_cov is None:
-        p0 = max(float(initial_var), 1e-12)
-        p0_inv = np.eye(2, dtype=np.float64) / p0
+    if confined_step_prior is not None:
+        prior_value, prior_grad = _confined_step_prior_energy_and_grad(
+            tau,
+            confined_step_prior,
+            initial_mean=initial_mean,
+            initial_cov=initial_cov,
+        )
+        value += float(prior_value)
+        grad += prior_grad
     else:
-        p0_cov = np.asarray(initial_cov, dtype=np.float64)
-        if p0_cov.shape != (2, 2):
-            raise ValueError(f"initial_cov must be (2,2), got {p0_cov.shape}")
-        p0_cov = 0.5 * (p0_cov + p0_cov.T)
-        if not np.isfinite(p0_cov).all() or np.min(np.linalg.eigvalsh(p0_cov)) <= 0.0:
-            raise ValueError("initial_cov must be positive definite")
-        p0_inv = np.linalg.inv(p0_cov)
-    value += 0.5 * float(diff0 @ p0_inv @ diff0)
-    grad[0] += p0_inv @ diff0
+        initial_target = np.zeros(2, dtype=np.float64) if initial_mean is None else np.asarray(initial_mean, dtype=np.float64)
+        diff0 = tau[0] - initial_target
+        if initial_cov is None:
+            p0 = max(float(initial_var), 1e-12)
+            p0_inv = np.eye(2, dtype=np.float64) / p0
+        else:
+            p0_cov = np.asarray(initial_cov, dtype=np.float64)
+            if p0_cov.shape != (2, 2):
+                raise ValueError(f"initial_cov must be (2,2), got {p0_cov.shape}")
+            p0_cov = 0.5 * (p0_cov + p0_cov.T)
+            if not np.isfinite(p0_cov).all() or np.min(np.linalg.eigvalsh(p0_cov)) <= 0.0:
+                raise ValueError("initial_cov must be positive definite")
+            p0_inv = np.linalg.inv(p0_cov)
+        value += 0.5 * float(diff0 @ p0_inv @ diff0)
+        grad[0] += p0_inv @ diff0
 
-    if process_cov is None:
-        q = max(float(process_var), 1e-12)
-        q_inv = np.eye(2, dtype=np.float64) / q
-    else:
-        q_cov = np.asarray(process_cov, dtype=np.float64)
-        if q_cov.shape != (2, 2):
-            raise ValueError(f"process_cov must be (2,2), got {q_cov.shape}")
-        q_cov = 0.5 * (q_cov + q_cov.T)
-        if not np.isfinite(q_cov).all():
-            raise ValueError("process_cov contains non-finite values")
-        if np.min(np.linalg.eigvalsh(q_cov)) <= 0.0:
-            raise ValueError("process_cov must be positive definite")
-        q_inv = np.linalg.inv(q_cov)
-    a = float(alpha)
-    if tau.shape[0] > 1:
-        step = tau[1:] - a * tau[:-1]
-        q_step = step @ q_inv
-        value += 0.5 * float(np.sum(step * q_step))
-        grad[1:] += q_step
-        grad[:-1] += -a * q_step
+        if process_cov is None:
+            q = max(float(process_var), 1e-12)
+            q_inv = np.eye(2, dtype=np.float64) / q
+        else:
+            q_cov = np.asarray(process_cov, dtype=np.float64)
+            if q_cov.shape != (2, 2):
+                raise ValueError(f"process_cov must be (2,2), got {q_cov.shape}")
+            q_cov = 0.5 * (q_cov + q_cov.T)
+            if not np.isfinite(q_cov).all():
+                raise ValueError("process_cov contains non-finite values")
+            if np.min(np.linalg.eigvalsh(q_cov)) <= 0.0:
+                raise ValueError("process_cov must be positive definite")
+            q_inv = np.linalg.inv(q_cov)
+        a = float(alpha)
+        if tau.shape[0] > 1:
+            step = tau[1:] - a * tau[:-1]
+            q_step = step @ q_inv
+            value += 0.5 * float(np.sum(step * q_step))
+            grad[1:] += q_step
+            grad[:-1] += -a * q_step
     return value, grad.reshape(-1)
 
 
@@ -975,6 +1157,7 @@ def quadratic_profile_log_score(
     initial_mean: np.ndarray | None = None,
     initial_var: float = 1e-4,
     initial_cov: np.ndarray | None = None,
+    confined_step_prior: ConfinedStepProcessPrior | None = None,
     max_iter: int = 80,
     quadratic_scales: list[float] | None = None,
     observation_scales: list[float] | None = None,
@@ -1006,6 +1189,7 @@ def quadratic_profile_log_score(
                     initial_mean=initial_mean,
                     initial_var=float(initial_var),
                     initial_cov=initial_cov,
+                    confined_step_prior=confined_step_prior,
                     intercept_scale=float(intercept_scale),
                 ),
                 current,
@@ -1027,6 +1211,7 @@ def quadratic_profile_log_score(
             initial_mean=initial_mean,
             initial_var=float(initial_var),
             initial_cov=initial_cov,
+            confined_step_prior=confined_step_prior,
             intercept_scale=float(intercept_scale),
         )
         final_result = stage_results[-1]
@@ -1330,6 +1515,144 @@ def _matched_brownian_covariances(trajectory_samples: np.ndarray, *, floor: floa
     return process_cov, initial_cov
 
 
+def _regularized_covariance_2d(values: np.ndarray, *, floor: float = 1e-6) -> np.ndarray:
+    arr = np.asarray(values, dtype=np.float64).reshape(-1, 2)
+    floor_val = max(float(floor), 1e-12)
+    if arr.shape[0] < 2:
+        cov = np.eye(2, dtype=np.float64) * floor_val
+    else:
+        cov = np.asarray(np.cov(arr, rowvar=False), dtype=np.float64)
+        if cov.shape == ():
+            cov = np.eye(2, dtype=np.float64) * float(cov)
+        cov = cov.reshape(2, 2)
+    cov = 0.5 * (cov + cov.T)
+    if not np.isfinite(cov).all():
+        cov = np.eye(2, dtype=np.float64) * floor_val
+    eigvals = np.linalg.eigvalsh(cov)
+    min_eig = float(np.min(eigvals)) if eigvals.size else 0.0
+    if not np.isfinite(min_eig) or min_eig < floor_val:
+        cov = cov + (floor_val - min_eig if np.isfinite(min_eig) else floor_val) * np.eye(2, dtype=np.float64)
+    return 0.5 * (cov + cov.T)
+
+
+def _fit_confined_step_process_prior(
+    trajectory_samples: np.ndarray,
+    *,
+    floor: float = 1e-6,
+    process_cov_scale: float = 1.0,
+    metadata: dict[str, Any] | None = None,
+) -> ConfinedStepProcessPrior:
+    samples = np.asarray(trajectory_samples, dtype=np.float64)
+    if samples.ndim != 3 or samples.shape[2] != 2:
+        raise ValueError(f"trajectory_samples must be (n, time, 2), got {samples.shape}")
+    if not np.isfinite(samples).all():
+        raise ValueError("trajectory_samples contains non-finite values")
+    if samples.shape[0] <= 0:
+        raise ValueError("At least one trajectory sample is required")
+    scale = float(process_cov_scale)
+    if not np.isfinite(scale) or scale <= 0.0:
+        raise ValueError("process_cov_scale must be positive and finite")
+    init = samples[:, 0, :]
+    steps_by_trace = np.diff(samples, axis=1)
+    steps = steps_by_trace.reshape(-1, 2) if steps_by_trace.size else np.zeros((samples.shape[0], 2), dtype=np.float64)
+    if samples.shape[1] >= 3:
+        prev_step = steps_by_trace[:, :-1, :]
+        next_step = steps_by_trace[:, 1:, :]
+        prev_pose = samples[:, 1:-1, :]
+        design = np.column_stack([prev_step.reshape(-1), -prev_pose.reshape(-1)])
+        target = next_step.reshape(-1)
+        good = np.isfinite(design).all(axis=1) & np.isfinite(target)
+        if int(np.sum(good)) >= 2:
+            coef, *_ = np.linalg.lstsq(design[good], target[good], rcond=None)
+            beta = float(np.clip(coef[0], -0.98, 0.98))
+            kappa = float(max(coef[1], 0.0))
+            residual = next_step - (beta * prev_step - kappa * prev_pose)
+            innovation = residual.reshape(-1, 2)
+        else:
+            beta = 0.0
+            kappa = 0.0
+            innovation = steps
+    else:
+        beta = 0.0
+        kappa = 0.0
+        innovation = steps
+    init_step = steps_by_trace[:, 0, :] if steps_by_trace.shape[1] > 0 else np.zeros((samples.shape[0], 2), dtype=np.float64)
+    init_cov = _regularized_covariance_2d(init, floor=float(floor)) * scale
+    init_step_cov = _regularized_covariance_2d(init_step, floor=float(floor)) * scale
+    innovation_cov = _regularized_covariance_2d(innovation, floor=float(floor)) * scale
+    meta = dict(metadata or {})
+    meta.update(
+        {
+            "fit_confined_beta": float(beta),
+            "fit_confined_kappa": float(kappa),
+            "fit_confined_n_samples": int(samples.shape[0]),
+        }
+    )
+    return ConfinedStepProcessPrior(
+        init_mean=np.mean(init, axis=0),
+        init_cov=init_cov,
+        init_inv=np.linalg.inv(init_cov),
+        init_step_mean=np.mean(init_step, axis=0),
+        init_step_cov=init_step_cov,
+        init_step_inv=np.linalg.inv(init_step_cov),
+        transition_beta=float(beta),
+        position_spring_kappa=float(kappa),
+        innovation_mean=np.mean(innovation, axis=0),
+        innovation_cov=innovation_cov,
+        innovation_inv=np.linalg.inv(innovation_cov),
+        process_cov_scale=scale,
+        metadata=meta,
+    )
+
+
+def _synthetic_empirical_confined_process_prior(
+    source_samples: np.ndarray,
+    *,
+    n_traces: int,
+    n_frames: int,
+    seed: int,
+    kappa_weight_power: float,
+    covariance_floor: float,
+    process_cov_scale: float,
+) -> tuple[ConfinedStepProcessPrior, np.ndarray]:
+    n_synthetic = int(n_traces)
+    if n_synthetic <= 0:
+        raise ValueError("--synthetic-prior-samples must be positive for synthetic_empirical_confined")
+    cfg: SyntheticTrajectoryPriorConfig = recommended_empirical_confined_config(
+        kappa_weight_power=float(kappa_weight_power),
+        covariance_mode="full_empirical",
+        center_mode="zero_mean",
+    )
+    synthetic_result = generate_synthetic_trajectory_prior(
+        np.asarray(source_samples, dtype=np.float64),
+        n_traces=n_synthetic,
+        n_frames=int(n_frames),
+        seed=int(seed),
+        config=cfg,
+    )
+    synthetic_samples = np.asarray(synthetic_result.traces_deg, dtype=np.float64)
+    metadata = {
+        "synthetic_prior_source_model": str(synthetic_result.metadata.get("process_model", "")),
+        "synthetic_prior_kappa_weight_power": float(kappa_weight_power),
+        "synthetic_prior_empirical_param_count": int(
+            synthetic_result.metadata.get("empirical_confined_param_count", 0)
+        ),
+        "synthetic_prior_sampled_kappa_median": float(
+            synthetic_result.metadata.get("sampled_confined_kappa_median", float("nan"))
+        ),
+        "synthetic_prior_sampled_beta_median": float(
+            synthetic_result.metadata.get("sampled_confined_beta_median", float("nan"))
+        ),
+    }
+    prior = _fit_confined_step_process_prior(
+        synthetic_samples,
+        floor=float(covariance_floor),
+        process_cov_scale=float(process_cov_scale),
+        metadata=metadata,
+    )
+    return prior, synthetic_samples
+
+
 def _trajectory_sample_covariance(
     samples: np.ndarray,
     *,
@@ -1522,6 +1845,9 @@ def score_continuous_joint_score_vectors(
     trajectory_process_model: str = "ar1",
     brownian_cov_floor: float = 1e-6,
     brownian_cov_scale: float = 1.0,
+    synthetic_prior_samples: int = 512,
+    synthetic_prior_kappa_weight_power: float = 0.5,
+    synthetic_prior_seed: int = 0,
     catalog_gaussian_smoothing_sigma: float = 0.0,
     catalog_gaussian_cov_floor: float = 1e-6,
     catalog_gaussian_shrinkage: float = 0.25,
@@ -1618,11 +1944,21 @@ def score_continuous_joint_score_vectors(
     if not np.isfinite(initial_position_var) or initial_position_var <= 0.0:
         raise ValueError("trajectory_initial_position_var must be positive and finite")
     process_model = str(trajectory_process_model)
-    if process_model not in {"ar1", "matched_brownian", "catalog_gaussian"}:
-        raise ValueError("trajectory_process_model must be 'ar1', 'matched_brownian', or 'catalog_gaussian'")
+    if process_model not in {"ar1", "matched_brownian", "catalog_gaussian", "synthetic_empirical_confined"}:
+        raise ValueError(
+            "trajectory_process_model must be 'ar1', 'matched_brownian', "
+            "'catalog_gaussian', or 'synthetic_empirical_confined'"
+        )
     brownian_scale = float(brownian_cov_scale)
     if not np.isfinite(brownian_scale) or brownian_scale <= 0.0:
         raise ValueError("brownian_cov_scale must be positive and finite")
+    n_synthetic_prior_samples = int(synthetic_prior_samples)
+    if process_model == "synthetic_empirical_confined" and n_synthetic_prior_samples <= 0:
+        raise ValueError("--synthetic-prior-samples must be positive for synthetic_empirical_confined")
+    synthetic_kappa_power = float(synthetic_prior_kappa_weight_power)
+    if not np.isfinite(synthetic_kappa_power):
+        raise ValueError("synthetic_prior_kappa_weight_power must be finite")
+    synthetic_seed_base = int(synthetic_prior_seed)
     catalog_gaussian_sigma = float(catalog_gaussian_smoothing_sigma)
     if not np.isfinite(catalog_gaussian_sigma) or catalog_gaussian_sigma < 0.0:
         raise ValueError("catalog_gaussian_smoothing_sigma must be finite and non-negative")
@@ -1699,6 +2035,12 @@ def score_continuous_joint_score_vectors(
     anchor_logmean_scores = np.full(n_candidates, np.nan, dtype=np.float64)
     anchor_score_gaps = np.full(n_candidates, np.nan, dtype=np.float64)
     anchor_aggregate_counts = np.zeros(n_candidates, dtype=np.int64)
+    synthetic_prior_empirical_param_counts = np.full(n_candidates, -1, dtype=np.int64)
+    synthetic_prior_sampled_beta_medians = np.full(n_candidates, np.nan, dtype=np.float64)
+    synthetic_prior_sampled_kappa_medians = np.full(n_candidates, np.nan, dtype=np.float64)
+    synthetic_prior_fit_betas = np.full(n_candidates, np.nan, dtype=np.float64)
+    synthetic_prior_fit_kappas = np.full(n_candidates, np.nan, dtype=np.float64)
+    synthetic_prior_source_models = np.asarray(["" for _ in range(n_candidates)], dtype=object)
     extra_fit_rows: list[dict[str, Any]] = []
     xy = _trajectory_xy_by_candidate(trajectory_xy, n_candidates=n_candidates, n_trajectories=n_traj, n_time=n_time)
     for candidate_index in range(n_candidates):
@@ -1823,6 +2165,7 @@ def score_continuous_joint_score_vectors(
         candidate_alpha = float(alpha)
         candidate_process_cov = None
         candidate_initial_cov = None
+        candidate_confined_step_prior = None
         candidate_prior_samples = _heldout_catalog_samples(xy[candidate_index], true_trajectory_index)
         if process_model == "matched_brownian":
             candidate_alpha = 1.0
@@ -1832,6 +2175,41 @@ def score_continuous_joint_score_vectors(
             )
             candidate_process_cov = candidate_process_cov * brownian_scale
             candidate_initial_cov = candidate_initial_cov * brownian_scale
+        elif process_model == "synthetic_empirical_confined":
+            candidate_alpha = 1.0
+            candidate_seed = (
+                synthetic_seed_base
+                + 104_729 * int(candidate_index + 1)
+                + 271_828 * int(max(true_trajectory_index or 0, 0) + 1)
+            )
+            candidate_confined_step_prior, synthetic_samples = _synthetic_empirical_confined_process_prior(
+                candidate_prior_samples,
+                n_traces=n_synthetic_prior_samples,
+                n_frames=n_time,
+                seed=int(candidate_seed),
+                kappa_weight_power=synthetic_kappa_power,
+                covariance_floor=float(brownian_cov_floor),
+                process_cov_scale=brownian_scale,
+            )
+            candidate_process_cov, candidate_initial_cov = _matched_brownian_covariances(
+                synthetic_samples,
+                floor=float(brownian_cov_floor),
+            )
+            candidate_process_cov = candidate_process_cov * brownian_scale
+            candidate_initial_cov = candidate_initial_cov * brownian_scale
+            meta = candidate_confined_step_prior.metadata
+            synthetic_prior_source_models[candidate_index] = str(meta.get("synthetic_prior_source_model", ""))
+            synthetic_prior_empirical_param_counts[candidate_index] = int(
+                meta.get("synthetic_prior_empirical_param_count", -1)
+            )
+            synthetic_prior_sampled_beta_medians[candidate_index] = float(
+                meta.get("synthetic_prior_sampled_beta_median", float("nan"))
+            )
+            synthetic_prior_sampled_kappa_medians[candidate_index] = float(
+                meta.get("synthetic_prior_sampled_kappa_median", float("nan"))
+            )
+            synthetic_prior_fit_betas[candidate_index] = float(meta.get("fit_confined_beta", float("nan")))
+            synthetic_prior_fit_kappas[candidate_index] = float(meta.get("fit_confined_kappa", float("nan")))
         if candidate_initial_cov_override is not None:
             candidate_initial_cov = candidate_initial_cov_override
         if mode == "kalman_marginal":
@@ -1870,6 +2248,7 @@ def score_continuous_joint_score_vectors(
                     initial_cov=candidate_initial_cov,
                     initial_mean=candidate_initial_mean,
                     prior_mean=candidate_prior_mean,
+                    confined_step_prior=candidate_confined_step_prior,
                 )
             scores[candidate_index] = float(p_out["profile_score"]) * float(likelihood_scale)
             filtered[candidate_index] = np.asarray(p_out["map_means"], dtype=np.float64)
@@ -1897,6 +2276,7 @@ def score_continuous_joint_score_vectors(
                     initial_cov=candidate_initial_cov,
                     initial_mean=candidate_initial_mean,
                     prior_mean=candidate_prior_mean,
+                    confined_step_prior=candidate_confined_step_prior,
                 )
             tau_hat = np.asarray(p_out["map_means"], dtype=np.float64)
             filtered[candidate_index] = tau_hat
@@ -1926,6 +2306,7 @@ def score_continuous_joint_score_vectors(
                 initial_cov=candidate_initial_cov,
                 initial_mean=candidate_initial_mean,
                 prior_mean=candidate_prior_mean,
+                confined_step_prior=candidate_confined_step_prior,
             )
             starts = [
                 np.asarray(linear_out["map_means"], dtype=np.float64),
@@ -1947,6 +2328,7 @@ def score_continuous_joint_score_vectors(
                 initial_mean=candidate_initial_mean,
                 initial_var=initial_position_var,
                 initial_cov=candidate_initial_cov,
+                confined_step_prior=candidate_confined_step_prior,
                 max_iter=quad_max_iter,
                 quadratic_scales=quad_scales,
                 observation_scales=quad_obs_scales,
@@ -2130,6 +2512,15 @@ def score_continuous_joint_score_vectors(
         "trajectory_process_model": process_model,
         "brownian_cov_floor": float(brownian_cov_floor),
         "brownian_cov_scale": brownian_scale,
+        "synthetic_prior_samples": int(n_synthetic_prior_samples),
+        "synthetic_prior_kappa_weight_power": synthetic_kappa_power,
+        "synthetic_prior_seed": int(synthetic_seed_base),
+        "synthetic_prior_source_models": synthetic_prior_source_models,
+        "synthetic_prior_empirical_param_counts": synthetic_prior_empirical_param_counts,
+        "synthetic_prior_sampled_beta_medians": synthetic_prior_sampled_beta_medians,
+        "synthetic_prior_sampled_kappa_medians": synthetic_prior_sampled_kappa_medians,
+        "synthetic_prior_fit_betas": synthetic_prior_fit_betas,
+        "synthetic_prior_fit_kappas": synthetic_prior_fit_kappas,
         "catalog_gaussian_smoothing_sigma": catalog_gaussian_sigma,
         "catalog_gaussian_cov_floor": catalog_gaussian_floor,
         "catalog_gaussian_shrinkage": catalog_gaussian_shrink,
@@ -2390,7 +2781,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--trajectory-process-model",
-        choices=("ar1", "matched_brownian", "catalog_gaussian"),
+        choices=("ar1", "matched_brownian", "catalog_gaussian", "synthetic_empirical_confined"),
         default="ar1",
         help="No-anchor trajectory process prior for profile modes.",
     )
@@ -2409,6 +2800,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional comma-separated scale:multiplier overrides for matched-Brownian covariance scale.",
     )
+    parser.add_argument("--synthetic-prior-samples", type=int, default=512)
+    parser.add_argument("--synthetic-prior-kappa-weight-power", type=float, default=0.5)
+    parser.add_argument("--synthetic-prior-seed", type=int, default=0)
     parser.add_argument(
         "--catalog-gaussian-smoothing-sigma",
         type=float,
@@ -2580,13 +2974,20 @@ def analyze(args: argparse.Namespace) -> Path:
             float(value),
             name=f"continuous_posterior_temperature_by_scale[{scale:g}]",
         )
-    allowed_process_models = {"ar1", "matched_brownian", "catalog_gaussian"}
+    allowed_process_models = {"ar1", "matched_brownian", "catalog_gaussian", "synthetic_empirical_confined"}
     for scale, value in trajectory_process_model_by_scale.items():
         if str(value) not in allowed_process_models:
             raise ValueError(
                 f"trajectory_process_model_by_scale for scale {scale:g} must be one of "
                 f"{sorted(allowed_process_models)}, got {value!r}"
             )
+    uses_synthetic_prior = str(args.trajectory_process_model) == "synthetic_empirical_confined" or any(
+        str(value) == "synthetic_empirical_confined" for value in trajectory_process_model_by_scale.values()
+    )
+    if uses_synthetic_prior and int(args.synthetic_prior_samples) <= 0:
+        raise ValueError("--synthetic-prior-samples must be positive for synthetic_empirical_confined")
+    if not np.isfinite(float(args.synthetic_prior_kappa_weight_power)):
+        raise ValueError("--synthetic-prior-kappa-weight-power must be finite")
     for scale, value in brownian_cov_scale_by_scale.items():
         brownian_cov_scale_by_scale[scale] = _validate_positive_float(
             float(value),
@@ -2681,6 +3082,9 @@ def analyze(args: argparse.Namespace) -> Path:
                 trajectory_process_model=str(trajectory_process_model_for_table),
                 brownian_cov_floor=float(args.brownian_cov_floor),
                 brownian_cov_scale=float(brownian_cov_scale_for_table),
+                synthetic_prior_samples=int(args.synthetic_prior_samples),
+                synthetic_prior_kappa_weight_power=float(args.synthetic_prior_kappa_weight_power),
+                synthetic_prior_seed=int(args.synthetic_prior_seed) + 1_000_003 * int(table_index - 1),
                 catalog_gaussian_smoothing_sigma=float(args.catalog_gaussian_smoothing_sigma),
                 catalog_gaussian_cov_floor=float(args.catalog_gaussian_cov_floor),
                 catalog_gaussian_shrinkage=float(args.catalog_gaussian_shrinkage),
@@ -2738,6 +3142,9 @@ def analyze(args: argparse.Namespace) -> Path:
                 "brownian_cov_scale": float(brownian_cov_scale_for_table),
                 "brownian_cov_scale_default": float(args.brownian_cov_scale),
                 "brownian_cov_scale_by_scale": str(args.brownian_cov_scale_by_scale),
+                "synthetic_prior_samples": int(args.synthetic_prior_samples),
+                "synthetic_prior_kappa_weight_power": float(args.synthetic_prior_kappa_weight_power),
+                "synthetic_prior_seed": int(args.synthetic_prior_seed),
                 "catalog_gaussian_smoothing_sigma": float(args.catalog_gaussian_smoothing_sigma),
                 "catalog_gaussian_cov_floor": float(args.catalog_gaussian_cov_floor),
                 "catalog_gaussian_shrinkage": float(args.catalog_gaussian_shrinkage),
@@ -2772,6 +3179,24 @@ def analyze(args: argparse.Namespace) -> Path:
             row["continuous_joint_minus_zero_true_score"] = float(vectors["continuous_joint_minus_zero_true_score"])
             row["continuous_joint_score_corr_with_zero"] = float(vectors["continuous_joint_score_corr_with_zero"])
             true_anchor_idx = int(true_idx)
+            row["synthetic_prior_true_source_model"] = str(
+                np.asarray(vectors["synthetic_prior_source_models"], dtype=object)[true_anchor_idx]
+            )
+            row["synthetic_prior_true_empirical_param_count"] = int(
+                np.asarray(vectors["synthetic_prior_empirical_param_counts"], dtype=np.int64)[true_anchor_idx]
+            )
+            row["synthetic_prior_true_sampled_beta_median"] = float(
+                np.asarray(vectors["synthetic_prior_sampled_beta_medians"], dtype=np.float64)[true_anchor_idx]
+            )
+            row["synthetic_prior_true_sampled_kappa_median"] = float(
+                np.asarray(vectors["synthetic_prior_sampled_kappa_medians"], dtype=np.float64)[true_anchor_idx]
+            )
+            row["synthetic_prior_true_fit_beta"] = float(
+                np.asarray(vectors["synthetic_prior_fit_betas"], dtype=np.float64)[true_anchor_idx]
+            )
+            row["synthetic_prior_true_fit_kappa"] = float(
+                np.asarray(vectors["synthetic_prior_fit_kappas"], dtype=np.float64)[true_anchor_idx]
+            )
             if str(args.continuous_score_mode) == "catalog_residual_profile":
                 row["catalog_residual_true_best_anchor_index"] = int(
                     np.asarray(vectors["catalog_residual_best_anchor_indices"], dtype=np.int64)[true_anchor_idx]
@@ -2815,6 +3240,48 @@ def analyze(args: argparse.Namespace) -> Path:
                             "candidate_score_raw": float(scores[int(candidate_index)]),
                             "candidate_posterior": float(posterior[int(candidate_index)]),
                             "feature_source": "not_provided_candidate_posterior_only",
+                            "synthetic_prior_source_model": (
+                                str(np.asarray(vectors["synthetic_prior_source_models"], dtype=object)[candidate_index])
+                                if mode == "continuous_joint"
+                                else ""
+                            ),
+                            "synthetic_prior_empirical_param_count": (
+                                int(
+                                    np.asarray(vectors["synthetic_prior_empirical_param_counts"], dtype=np.int64)[
+                                        candidate_index
+                                    ]
+                                )
+                                if mode == "continuous_joint"
+                                else -1
+                            ),
+                            "synthetic_prior_sampled_beta_median": (
+                                float(
+                                    np.asarray(vectors["synthetic_prior_sampled_beta_medians"], dtype=np.float64)[
+                                        candidate_index
+                                    ]
+                                )
+                                if mode == "continuous_joint"
+                                else float("nan")
+                            ),
+                            "synthetic_prior_sampled_kappa_median": (
+                                float(
+                                    np.asarray(vectors["synthetic_prior_sampled_kappa_medians"], dtype=np.float64)[
+                                        candidate_index
+                                    ]
+                                )
+                                if mode == "continuous_joint"
+                                else float("nan")
+                            ),
+                            "synthetic_prior_fit_beta": (
+                                float(np.asarray(vectors["synthetic_prior_fit_betas"], dtype=np.float64)[candidate_index])
+                                if mode == "continuous_joint"
+                                else float("nan")
+                            ),
+                            "synthetic_prior_fit_kappa": (
+                                float(np.asarray(vectors["synthetic_prior_fit_kappas"], dtype=np.float64)[candidate_index])
+                                if mode == "continuous_joint"
+                                else float("nan")
+                            ),
                             "catalog_residual_best_anchor_index": (
                                 int(np.asarray(vectors["catalog_residual_best_anchor_indices"], dtype=np.int64)[candidate_index])
                                 if mode == "continuous_joint"
@@ -2929,6 +3396,12 @@ def analyze(args: argparse.Namespace) -> Path:
             "brownian_cov_floor": float(args.brownian_cov_floor),
             "brownian_cov_scale": float(args.brownian_cov_scale),
             "brownian_cov_scale_by_scale": brownian_cov_scale_by_scale,
+            "synthetic_prior_samples": int(args.synthetic_prior_samples),
+            "synthetic_prior_kappa_weight_power": float(args.synthetic_prior_kappa_weight_power),
+            "synthetic_prior_seed": int(args.synthetic_prior_seed),
+            "synthetic_empirical_confined_description": (
+                "synthetic_empirical_confined uses an empirically calibrated synthetic FEM prior"
+            ),
             "catalog_gaussian_smoothing_sigma": float(args.catalog_gaussian_smoothing_sigma),
             "catalog_gaussian_cov_floor": float(args.catalog_gaussian_cov_floor),
             "catalog_gaussian_shrinkage": float(args.catalog_gaussian_shrinkage),
@@ -2988,6 +3461,10 @@ def analyze(args: argparse.Namespace) -> Path:
         f"- Brownian covariance floor: {float(args.brownian_cov_floor):.6g}",
         f"- Brownian covariance scale: {float(args.brownian_cov_scale):.6g}",
         f"- Brownian covariance scale by scale: {brownian_cov_scale_by_scale if brownian_cov_scale_by_scale else 'none'}",
+        f"- Synthetic prior samples: {int(args.synthetic_prior_samples)}",
+        f"- Synthetic prior kappa weight power: {float(args.synthetic_prior_kappa_weight_power):.6g}",
+        f"- Synthetic prior seed: {int(args.synthetic_prior_seed)}",
+        "- Synthetic empirical confined wording: synthetic_empirical_confined uses an empirically calibrated synthetic FEM prior.",
         f"- Catalog Gaussian smoothing sigma: {float(args.catalog_gaussian_smoothing_sigma):.6g}",
         f"- Catalog Gaussian covariance floor: {float(args.catalog_gaussian_cov_floor):.6g}",
         f"- Catalog Gaussian covariance shrinkage: {float(args.catalog_gaussian_shrinkage):.6g}",

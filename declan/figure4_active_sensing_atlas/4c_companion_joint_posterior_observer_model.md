@@ -1,7 +1,7 @@
 # Companion: Joint Posterior / Trajectory-Table Observer Model
 
-Date: 2026-06-24
-Status: provisional methods/logic companion for Figure 4C
+Date: 2026-06-30
+Status: provisional methods/logic companion for Figure 4C; inherited-decoder audit complete with guarded interpretation
 
 ## Panel Claim Under Test
 
@@ -38,6 +38,78 @@ next branch:
 declan/figure4_active_sensing_atlas/archive/
 4c_candidate_posterior_snapshot_2026_06_24/
 ```
+
+## 2026-06-30 Inherited-Decoder Audit Gate
+
+The corrected aggregate and local feature-information audits found that several
+decoder branches inherited subtle but claim-changing issues: train/test grouping
+by image instead of source trial, mismatched static-versus-motion baseline
+contracts, non-commensurate metric axes, and stale cache outputs whose point
+estimates no longer matched their intervals. The joint decoder/observer branch
+must now be checked for the same failure class before any stronger 4C wording is
+promoted.
+
+Audit checklist:
+
+```text
+1. Split/provenance: verify that calibration, encoder fitting, target-space PCA,
+   posterior temperature selection, and final scoring are source-image/source-
+   trial disjoint where the claim requires held-out generalization. Any image-
+   grouped or candidate-table grouped result should be labeled as optimistic
+   provenance context.
+
+2. Baseline contract: verify that known-eye, zero-eye, hidden/joint-eye, 0x
+   stabilized, matched-static, compact-only, compact-removed, and static-PC
+   controls are scored against the intended baseline. Do not mix a motion
+   response baseline with a zero-motion/static response baseline unless the
+   row explicitly says so.
+
+3. Metric axis: keep 4C feature recovery/cosine/negative-MSE endpoints separate
+   from the 4B diagonal-information-in-bits axis. If a joint-decoder result is
+   compared with 4B, recompute or translate the comparison onto a same-axis
+   metric rather than mixing posterior feature recovery with information bits.
+
+4. Cache integrity: add the same validator pattern used for the aggregate
+   information posthoc: reported point estimates must lie inside their own CIs,
+   manifest paths and code versions must be written, and stale finite-cache
+   tables must not feed current promoted figures.
+
+5. Response-table leakage: audit whether response tables, trajectory catalogs,
+   hard negatives, compact/static-PC bases, and feature targets share source
+   images or source trials across training, calibration, and evaluation folds.
+
+6. Interpretation: require a before/after audit note. If the current 4C result
+   survives, report it as source-disjoint/provenance-validated. If it weakens,
+   keep 4C as a diagnostic observer story rather than a promoted mechanism
+   claim.
+```
+
+Implementation update: the inherited-decoder gate is now implemented and run.
+The reusable audit is:
+
+```text
+declan/figure4_active_sensing_atlas/scripts/audit_panel_c_joint_decoder_inherited_contracts.py
+```
+
+The current report is:
+
+```text
+declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/continuous_joint/
+inherited_decoder_audit_20260630/panel_c_joint_inherited_decoder_audit.csv
+```
+
+The audit has 17 PASS and 2 WARN checks, with no FAIL checks. The promoted
+posterior math is internally consistent, posterior mass sums to one, all
+validated feature-cosine contrast point estimates lie inside their own CIs, and
+the supervised continuous feature-embedding / tau-MLP diagnostics are
+source-row disjoint. The promoted calibration audit now includes `source_row`
+splits and selects best rows from that stricter source-row-heldout gate.
+
+The remaining warnings are provenance notes rather than blockers: a true source
+row can appear under multiple trial ids in the n=128 response-table cache, so
+source-row CV is stricter than trial-id CV; and one older axis-trace diagnostic
+has no CI columns for the cache-integrity validator to inspect. The already
+stated static-PC caveat remains the main scientific guardrail.
 
 ## Summary
 
@@ -78,8 +150,8 @@ continuous_joint_promoted_observer_manifest.json
 ```
 
 This continuous observer is the strongest current no-anchor feature-recovery
-readout: emitted posterior-weighted feature cosine `0.9378`, with split-heldout
-promotion gate `0.9371`, at image accuracy `0.7083`.
+readout: emitted posterior-weighted feature cosine `0.9378`, with
+source-row-heldout promotion gate `0.9371`, at image accuracy `0.7083`.
 That should be read as calibrated feature recovery, not as a hard image-ID
 improvement. The encoder/prior choice is conservative: keep the native
 scale-conditioned compact quadratic model, with a predeclared scale-specific
@@ -298,22 +370,22 @@ sign (`+0.00191`, CI `[-0.00668, +0.01086]`). The MLP result should therefore
 be treated as null/split-sensitive, even though the older known-axis posterior
 diagnostic is separately across-favoring.
 
-A separate representation diagnostic now answers a cleaner oracle question:
+A separate representation diagnostic now answers a cleaner known-trace control question:
 does the V1 twin represent local image features better with measured motion
 than with the 0x stabilized counterfactual? At the 1x scale, matched
 feature-posterior rows give `0.6678` for `zero_static`, `0.8721` for hidden-eye
-`full_exact`, and `0.9358` for `known_eye`. Thus the known-eye 1x response is
+`full_exact`, and `0.9358` for `known_eye`. Thus the known-trace 1x control is
 well above the stabilized counterfactual (`+0.2680` feature cosine), while the
 hidden-eye joint observer preserves most of that gain (`+0.2043`). This
-diagnostic supports a representation claim; the promoted no-start observer
-still supports the harder latent-eye recovery claim.
+diagnostic supports a representation claim inside the deterministic table; the
+promoted no-start observer still supports the harder latent-eye recovery claim.
 
 The clean separation is:
 
 ```text
 known_eye - zero_static:
-  oracle representation gain from measured motion over the stabilized
-  counterfactual.
+  deterministic known-trace gain from measured motion over the stabilized
+  counterfactual, not an independent response target.
 
 full_exact - zero_static:
   how much of that gain survives when eye position is hidden and inferred /
@@ -663,7 +735,7 @@ full joint / compact-addback feature recovery:
   1.0x = 0.872
   2.0x = 0.871
 
-known-eye ceiling:
+known-trace control:
   0.5x = 0.927
   1.0x = 0.936
   2.0x = 0.949
@@ -1016,13 +1088,174 @@ The run is reproducible via:
 MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python -m declan.figure4_active_sensing_atlas.scripts.run_panel_c_promoted_continuous_joint_observer
 MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python -m declan.figure4_active_sensing_atlas.scripts.verify_panel_c_promoted_continuous_joint_observer --expect-full
 MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python -m declan.figure4_active_sensing_atlas.scripts.audit_panel_c_continuous_joint_feature_calibration
+MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python -m declan.figure4_active_sensing_atlas.scripts.audit_panel_c_joint_decoder_inherited_contracts
 ```
 
 The audit command is the reusable gate for future encoder candidates: it
-selects posterior temperatures on one trial split and evaluates
-posterior-weighted feature cosine on the heldout split. A replacement encoder
-should beat this heldout feature-recovery gate, not merely improve hard image
-accuracy.
+selects posterior temperatures on held-out source rows when source identities
+are available, and evaluates posterior-weighted feature cosine on the heldout
+split. A replacement encoder should beat this source-row-heldout
+feature-recovery gate, not merely improve hard image accuracy.
+
+## Next Target: Linear Candidate-Free Synthetic-Prior Feature Observer
+
+Working decision, 2026-07-01: the desired next 4C variant is not the nonlinear
+MLP branch and not the finite candidate-image posterior endpoint. The intended
+observer contract is:
+
+```text
+observed response movie
+  -> infer continuous latent eye trace tau_hat
+     under compact response geometry and synthetic_empirical_confined prior
+  -> infer continuous feature embedding z_hat
+  -> score z_hat against the true image/window feature embedding
+```
+
+This should be a plug-in continuation of the current continuous quadratic
+observer and the earlier continuous feature-embedding reconstruction branch.
+It should use `synthetic_empirical_confined` only as an empirically calibrated
+synthetic FEM process prior: held-out training FEM traces calibrate the
+confined-step generator, new synthetic traces are sampled, and the continuous
+trajectory prior is fit to those generated traces. It should not be described
+as purely empirical traces or fully empirical replay.
+
+Important distinction from current artifacts:
+
+```text
+Promoted continuous-joint observer:
+  response -> continuous tau/image scores -> posterior over candidate images
+           -> posterior-weighted candidate feature vector
+
+Candidate-free linear feature embedding diagnostic:
+  response -> continuous feature embedding z_hat
+```
+
+The target is to combine the second endpoint with the first observer's
+continuous trajectory inference, using the synthetic empirical confined prior.
+The feature endpoint should be linear/linear-Gaussian, not MLP.
+
+Current catalog-like uses should be separated explicitly:
+
+1. Candidate-image posterior endpoint: should be removed for this variant.
+2. Trajectory-candidate selection/replay: should be removed for this variant.
+3. Aggregate trajectory statistics for the prior: allowed. This is the role of
+   `synthetic_empirical_confined`.
+4. Response-table samples used to fit the response-vs-displacement map: still
+   present in the cache-only implementation unless replaced by finite
+   difference or analytic compact derivatives. Label this as
+   response-table-calibrated if it remains.
+5. Supervised feature targets/source rows used to train and score the feature
+   embedding decoder: allowed, with source-row-disjoint folds.
+
+Implementation plan:
+
+1. Keep the current `synthetic_empirical_confined` process-prior option in
+   `analyze_continuous_joint_trajectory.py`, but treat it as a trajectory prior
+   provider rather than a candidate-feature endpoint.
+2. Add a linear candidate-free feature observer runner, probably as a sibling
+   of `build_panel_c_continuous_feature_embedding_reconstruction.py`, that can
+   read a continuous-joint run or invoke the continuous scorer to obtain
+   `tau_hat` under the synthetic prior.
+3. Use compact observed response features plus optional linear tau terms. Start
+   with the simplest nested linear-Gaussian design:
+
+   ```text
+   z ~ N(0, I)
+   response_compact | z, tau_hat ~ Gaussian linear model
+   z_hat = E[z | response_compact, tau_hat]
+   ```
+
+   Also include response-only and zero/static baselines under the same
+   source-row folds.
+4. Train only on source-row-disjoint response-bank rows. Do not score by
+   posterior averaging over candidate images. In the stricter implementation,
+   feature-decoder training rows are the observed response-table rows themselves,
+   not expanded cached prior-trajectory response rows.
+5. Emit trials, summary, contrasts, and manifest files with explicit provenance
+   columns:
+
+   ```text
+   feature_endpoint = continuous_embedding
+   trajectory_process_model = synthetic_empirical_confined
+   trajectory_prior_description = empirically_calibrated_synthetic_fem_prior
+   response_map_source = response_table_calibrated | finite_difference
+   decoder_family = linear_gaussian
+   uses_candidate_posterior_endpoint = false
+   uses_mlp = false
+   ```
+
+6. Compare against the promoted candidate-posterior observer on the same
+   source-row-heldout feature cosine gate, but report it as a different
+   endpoint: continuous feature embedding recovery, not candidate posterior
+   feature recovery.
+7. If the cache-only version is positive, the stricter follow-up is to replace
+   the response-table-calibrated response-vs-displacement map with
+   finite-difference or analytic compact derivatives. That would leave only
+   aggregate FEM statistics for the trajectory prior and supervised source rows
+   for feature-target fitting.
+
+Success criteria:
+
+```text
+Primary: source-row-heldout feature cosine above zero/static baselines.
+Secondary: match or approach the promoted candidate-posterior feature recovery.
+Guardrails: no MLP, no candidate-posterior endpoint, no empirical trace replay,
+and clear labeling of any response-table calibration that remains.
+```
+
+Implementation update, 2026-07-01:
+
+```text
+declan/figure4_active_sensing_atlas/scripts/build_panel_c_linear_synthetic_prior_feature_observer.py
+```
+
+This runner implements the cache-only version of the target contract. The
+post-review version no longer reads `filtered_state_means[true_candidate]`.
+It fits a pooled response-table displacement geometry, uses
+`synthetic_empirical_confined` as the full-path transition prior, and obtains a
+candidate-free `tau_hat` by MAP optimization. It then fits source-row-disjoint
+linear-Gaussian feature observers from observed response-table rows. Default
+modes are:
+
+```text
+response_only
+synthetic_tau_linear
+synthetic_tau_interactions
+zero_static
+```
+
+The optional `true_tau_linear`, `true_tau_interactions`, and
+`known_eye_response_only` modes are diagnostic controls, not the primary model.
+The output manifest and trials carry explicit provenance fields:
+
+```text
+uses_candidate_posterior_endpoint = false
+uses_nonlinear_mlp = false
+uses_trajectory_catalog_replay_endpoint = false
+uses_true_image_conditioned_tau_hat = false
+uses_response_table_trajectory_training_rows = false
+tau_hat_source = candidate_free_pooled_response_geometry_full_path_map
+observation_geometry_source = pooled_response_table_local_response_vs_displacement_map
+trajectory_prior_label = synthetic_empirical_confined uses an empirically calibrated synthetic FEM prior
+```
+
+Smoke checks passed:
+
+```text
+uv run python -m compileall declan/figure4_active_sensing_atlas/scripts/build_panel_c_linear_synthetic_prior_feature_observer.py
+
+uv run python -m declan.figure4_active_sensing_atlas.scripts.build_panel_c_linear_synthetic_prior_feature_observer \
+  --max-tables 6 --scales 2.0 --n-bootstrap 0 --synthetic-prior-samples 4 \
+  --quadratic-optimizer-max-iter 1 --feature-dim 1 --n-folds 2 \
+  --observer-modes response_only,synthetic_tau_linear,synthetic_tau_interactions,zero_static \
+  --out-dir /tmp/linear_synthetic_prior_feature_observer_smoke_fixed
+
+uv run python -m declan.figure4_active_sensing_atlas.scripts.build_panel_c_linear_synthetic_prior_feature_observer \
+  --max-tables 6 --scales 2.0 --n-bootstrap 0 --synthetic-prior-samples 4 \
+  --quadratic-optimizer-max-iter 1 --feature-dim 1 --n-folds 2 \
+  --observer-modes response_only,synthetic_tau_linear,synthetic_tau_interactions,true_tau_linear,true_tau_interactions,zero_static,known_eye_response_only \
+  --out-dir /tmp/linear_synthetic_prior_feature_observer_smoke_fixed_all_modes
+```
 
 The metric policy is now explicit: use heldout posterior-weighted feature
 cosine as the primary development task, and report exact image identity as the
@@ -1356,7 +1589,7 @@ endpoint.
 The final Figure 4C panel should preserve four contracts:
 
 ```text
-known-eye ceiling above latent-eye recovery
+known-trace control above latent-eye recovery
 compact-only near full joint recovery
 compact-removed near zero-eye recovery
 static-PC controls described as nearly matched, not just as minor guardrails
