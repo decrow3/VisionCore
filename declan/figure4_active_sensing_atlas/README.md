@@ -57,6 +57,15 @@ retinal motion is treated as part of the inference problem rather than as noise.
 - `4C_supplimental_true_joint_estimator_plan.md`
   - Practical supplement plan for a true continuous joint eye/image estimator
     and later Wu-style continuous feature/pixel reconstruction branches.
+- `endpoint_history_workhorse_files.md`
+  - Current map of the endpoint-history runner, plotting scripts, canonical
+    outputs, and interpretation anchors.
+- `endpoint_history_candidate_gate_status.md`
+  - Gate status for the endpoint-history observer, including n=64 pilot,
+    n=128 replication, alternate-history checks, and strict-ceiling caveats.
+- `endpoint_history_objective_completion_audit.md`
+  - Compact audit of whether the endpoint-history branch satisfies the current
+    motion/static, known/unknown, and joint/unknown objectives.
 - `archive/4c_candidate_posterior_snapshot_2026_06_24/`
   - Saved pre-feature-embedding 4C candidate-posterior companion and builder.
 - `4d_companion_along_edge_model_feature_encoding.md`
@@ -108,6 +117,17 @@ retinal motion is treated as part of the inference problem rather than as noise.
   - `scripts/build_panel_c_continuous_tau_mlp_feature_decoder.py`
     regenerates the hybrid continuous-tau / MLP feature decoder in
     `figures/panel_C/diagnostics/continuous_tau_mlp_feature_decoder_residual/`.
+  - `scripts/build_panel_c_endpoint_history_feature_readout.py` runs the
+    endpoint-aligned 32-frame history assay with terminal-response readout,
+    including empirical, OU, Brownian, and true edge-axis-conditioned histories.
+  - `scripts/plot_endpoint_history_main_results.py` regenerates the primary
+    endpoint-history gate figure from the canonical n=128 run.
+  - `scripts/plot_endpoint_history_family_comparisons.py` compares empirical,
+    OU, and Brownian endpoint-history families and their trajectory geometry.
+  - `scripts/plot_endpoint_history_axis_edge_comparison.py` compares true
+    edge-parallel and edge-orthogonal endpoint histories using the same score.
+  - `scripts/plot_endpoint_history_feature_dim_sweep.py` visualizes the
+    feature-dimension sweep used to select the current feature-dim 4 gate.
   - `scripts/export_panel_text_atlas_pdf.py` regenerates
     `panel_text_atlas.pdf` from the Markdown and local PNGs without external
     PDF dependencies.
@@ -151,23 +171,19 @@ retinal motion is treated as part of the inference problem rather than as noise.
    composite have been redrawn once from the corrected posthoc, but the
    all-readout Panel-B-style atlas and OU trace-control audit should be reviewed
    before any write-lock.
-3. Module C: BackImage feature-posterior observer shows that zero-eye feature
-   recovery degrades with motion scale, while latent-eye joint inference
-   remains stable without known eye position. The compact-removal/addback
-   branch is the promoted candidate-posterior mechanism result; a new
-   continuous feature-embedding branch now removes finite candidate selection at
-   test time and includes global/fold-local PCA target-space options. The
-   fold-local z-scored whitened option is the best Gaussian-prior variant so
-   far. Linear-Gaussian readouts still do not beat the 0x stabilized
-   counterfactual, but a Tejas-style nonlinear MLP upper-bound decoder does:
-   hidden/tau-nuisance moving response `0.3482` versus 0x stabilized `0.2819`.
-   The newer continuous-tau MLP hybrid keeps the candidate-free feature endpoint
-   and fixes the raw-tau red flag with a nested residual eye-trace decoder:
-   augmented compact-only hidden readout `0.3695`, true-tau residual `0.3683`,
-   estimated-`tau_hat` residual `0.3440`, and augmented 0x static `0.3243`.
-   A direct along/across response-movie version of this decoder does not show
-   a reliable along-contour advantage; the apparent sign is source-split
-   sensitive under the MLP.
+3. Module C: the current cleanest 4C branch is the endpoint-history feature
+   observer. All histories are endpoint-aligned, the readout uses only the
+   terminal response, and the target is the endpoint image feature. In the
+   canonical RR100 n=128 run, known-history and joint latent-history observers
+   are numerically identical and beat zero/unknown history, response-only
+   hidden history, and static history in pooled `R2_cv`; this supports
+   `known = joint > unknown/static`, not a strict `known > joint` ceiling. The
+   older compact-removal/addback and candidate-free continuous branches remain
+   important mechanism and guardrail analyses, especially for compact versus
+   static-PC specificity, but they are no longer the cleanest definition of
+   the basic endpoint-history observer problem. The true edge-parallel versus
+   edge-orthogonal endpoint-history control is directionally edge-parallel but
+   not reliable; both axis conditions pass the history-use gates.
 4. Module D: edge-parallel stability supports a local image-geometry
    preservation mechanism, while axis preference and response-objective
    optimality remain guarded.

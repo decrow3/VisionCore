@@ -26,7 +26,7 @@ from typing import Any
 
 import numpy as np
 
-from .forward import compute_vernier_rates, load_model_and_readout
+from .forward import STIMULUS_NORMALIZATION, compute_vernier_rates, load_model_and_readout
 from .joint_observer import (
     SUPPORTED_COMPACT_COVARIANCE,
     SUPPORTED_JOINT_OBSERVERS,
@@ -484,6 +484,7 @@ def build_local_translation_jacobian_cache(
         spatial_collapse=np.asarray([args.spatial_collapse]),
         response_units=np.asarray(["rates_hz"]),
         jacobian_units=np.asarray(["rates_hz_per_arcmin"]),
+        stimulus_normalization=np.asarray([STIMULUS_NORMALIZATION]),
         model_class=np.asarray([type(model).__name__]),
         readout_class=np.asarray([type(readout).__name__]),
         render_geometry_json=np.asarray([json.dumps(json_ready(asdict(geometry)), sort_keys=True)]),
@@ -590,6 +591,7 @@ def append_joint_geometry_rows(
                         fd_step_arcmin=np.asarray([float(fd_step)], dtype=np.float32),
                         joint_control=np.asarray([control]),
                         compact_k=np.asarray([effective_k], dtype=np.int32),
+                        stimulus_normalization=np.asarray([STIMULUS_NORMALIZATION]),
                     )
                     joint_rows.append(
                         {
@@ -851,6 +853,7 @@ def run_model_responses(
                 fd_step_arcmin=np.asarray([float(step)], dtype=np.float32),
                 inference_mode=np.asarray([args.inference_mode]),
                 stimulus_orientation_deg=np.asarray([float(args.stimulus_orientation_deg)], dtype=np.float32),
+                stimulus_normalization=np.asarray([STIMULUS_NORMALIZATION]),
             )
             append_pose_hidden_rows(
                 summary_rows,
@@ -1239,6 +1242,7 @@ def main() -> None:
             "args": vars(args),
             "geometry": asdict(geometry),
             "canonical_spec": asdict(canonical_spec),
+            "stimulus_normalization": STIMULUS_NORMALIZATION,
             "conditions": conditions,
             "fd_steps_arcmin": fd_steps,
             "skip_model": bool(args.skip_model),

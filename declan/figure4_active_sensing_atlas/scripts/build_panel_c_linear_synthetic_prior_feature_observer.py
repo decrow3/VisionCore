@@ -11,14 +11,15 @@ observed response rows:
     compact_response_and_tau_features = A z + noise
     z ~ N(0, I)
 
-The feature endpoint is not a finite image-candidate posterior and not a
-catalog replay.  The forward-model modes invert the fitted compact model
-``F(z, tau)`` directly: fixed-tau modes solve for ``z`` by ridge/MAP regression,
-and the hidden-joint mode alternates tau MAP updates under the empirically
-calibrated synthetic confined prior with fixed-tau ``z`` updates.  The current
-implementation still uses response-table samples to calibrate compact
-response-vs-displacement geometry, but it does not train the feature decoder by
-expanding cached prior trajectory rows.
+The feature endpoint is not a finite image-candidate posterior, not finite
+image-catalog search, and not catalog replay.  The forward-model modes invert
+the fitted compact model ``F(z, tau)`` directly: fixed-tau modes solve for
+``z`` by ridge/MAP regression, and the hidden-joint mode alternates tau MAP
+updates under the empirically calibrated synthetic confined prior with fixed-tau
+``z`` updates.  The current implementation still uses response-table samples to
+calibrate compact response-vs-displacement geometry, but that is geometry
+calibration rather than catalog search, and it does not train the feature
+decoder by expanding cached prior trajectory rows.
 """
 
 from __future__ import annotations
@@ -204,6 +205,18 @@ class TestSet:
     tau_true: np.ndarray
     observed_compact: np.ndarray
     geometry_tables: list[GeometryTable]
+
+
+def _new_feature_prediction_parts() -> dict[str, list[Any]]:
+    return {
+        "rows": [],
+        "z_hat": [],
+        "z_true": [],
+        "z_train_mean": [],
+        "raw_hat_projected": [],
+        "raw_true_projected": [],
+        "raw_train_mean_projected": [],
+    }
 
 
 SPECS = [
@@ -1643,6 +1656,186 @@ def _fit_transform_for_fold(
     )
 
 
+def _inverse_transform_scores(transform: FeatureTransform, scores: np.ndarray) -> np.ndarray:
+    """Project locked feature-space scores back to the raw feature coordinates.
+
+    For PCA-reduced spaces this is the raw-coordinate projection inside the
+    fitted subspace, not a full reconstruction of discarded feature variance.
+    """
+
+    z = np.asarray(scores, dtype=np.float64)
+    if z.ndim == 1:
+        z = z[None, :]
+    if z.ndim != 2 or z.shape[1] != int(transform.feature_dim):
+        raise ValueError(f"scores must be (*, {transform.feature_dim}), got {z.shape}")
+    projected = (z * transform.denom[None, :]) @ transform.components
+    if transform.weights is not None:
+        weights = np.asarray(transform.weights, dtype=np.float64)
+        projected = projected / np.maximum(weights[None, :], 1e-12)
+    raw = projected * transform.sd[None, :] + transform.mean[None, :]
+    return raw.astype(np.float64, copy=False)
+
+
+def _local_field_dim_metadata(
+    *,
+    latent: str,
+    raw_feature_dim: int,
+    local_grid: int = 8,
+    pyramid_height: int = 4,
+    pyramid_order: int = 3,
+) -> pd.DataFrame:
+    """Return raw feature-dimension metadata for local field targets."""
+
+    latent_name = str(latent)
+    channel_names = ("real", "imag", "magnitude")
+    if latent_name == "pyramid_local_field":
+        band_count = int(pyramid_height)
+        orientation_count = int(pyramid_order) + 1
+        feature_family = "complex_steerable_pyramid_like"
+    elif latent_name == "gabor_local_field":
+        band_count = 3
+        orientation_count = 8
+        feature_family = "gabor_like"
+    else:
+        return pd.DataFrame(
+            {
+                "raw_dim": np.arange(int(raw_feature_dim), dtype=int),
+                "latent": latent_name,
+                "feature_family": "unknown",
+                "band": -1,
+                "orientation": -1,
+                "channel": "unknown",
+                "block_index": -1,
+                "block_row": -1,
+                "block_col": -1,
+            }
+        )
+
+    block_count = int(local_grid) * int(local_grid)
+    rows: list[dict[str, Any]] = []
+    raw_dim = 0
+    for band in range(band_count):
+        for orientation in range(orientation_count):
+            for channel in channel_names:
+                for block_index in range(block_count):
+                    rows.append(
+                        {
+                            "raw_dim": int(raw_dim),
+                            "latent": latent_name,
+                            "feature_family": feature_family,
+                            "band": int(band),
+                            "orientation": int(orientation),
+                            "channel": channel,
+                            "block_index": int(block_index),
+                            "block_row": int(block_index // int(local_grid)),
+                            "block_col": int(block_index % int(local_grid)),
+                        }
+                    )
+                    raw_dim += 1
+    if raw_dim != int(raw_feature_dim):
+        return pd.DataFrame(
+            {
+                "raw_dim": np.arange(int(raw_feature_dim), dtype=int),
+                "latent": latent_name,
+                "feature_family": "dimension_mismatch",
+                "band": -1,
+                "orientation": -1,
+                "channel": "unknown",
+                "block_index": -1,
+                "block_row": -1,
+                "block_col": -1,
+                "expected_local_field_dim": raw_dim,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _append_feature_predictions(
+    parts: dict[str, list[Any]] | None,
+    *,
+    tests: TestSet,
+    global_indices: np.ndarray | list[int],
+    z_hat: np.ndarray,
+    z_true: np.ndarray,
+    z_train_mean: np.ndarray,
+    spec: LinearFeatureObserverSpec,
+    transform: FeatureTransform,
+    fold: int,
+    n_train_samples: int,
+    prediction_source: str,
+) -> None:
+    if parts is None:
+        return
+    indices = [int(index) for index in np.asarray(global_indices, dtype=int).reshape(-1).tolist()]
+    pred = np.asarray(z_hat, dtype=np.float64)
+    true = np.asarray(z_true, dtype=np.float64)
+    if pred.ndim == 1:
+        pred = pred[None, :]
+    if true.ndim == 1:
+        true = true[None, :]
+    if pred.shape != true.shape or pred.shape[0] != len(indices):
+        raise ValueError(f"Prediction shape mismatch: pred={pred.shape}, true={true.shape}, indices={len(indices)}")
+    train_mean = np.asarray(z_train_mean, dtype=np.float64).reshape(1, -1)
+    train_mean_rows = np.repeat(train_mean, pred.shape[0], axis=0)
+    raw_hat = _inverse_transform_scores(transform, pred)
+    raw_true = _inverse_transform_scores(transform, true)
+    raw_train_mean = _inverse_transform_scores(transform, train_mean_rows)
+    start = len(parts["rows"])
+    for local_index, global_index in enumerate(indices):
+        row = dict(tests.rows.iloc[int(global_index)].to_dict())
+        row.update(
+            {
+                "prediction_row": int(start + local_index),
+                "decoder_mode": "linear_gaussian",
+                "observer_mode": spec.slug,
+                "observer_label": spec.label,
+                "train_bank": spec.train_bank,
+                "test_input": spec.test_input,
+                "latent": transform.latent,
+                "feature_space_mode": transform.feature_space_mode,
+                "feature_fit_scope": transform.fit_scope,
+                "feature_preprocessing": transform.preprocessing,
+                "feature_whitened": bool(transform.whitened),
+                "feature_weighted": bool(transform.weighted),
+                "feature_variance_fraction": float(transform.explained_variance_sum),
+                "fold": int(fold),
+                "n_train_samples": int(n_train_samples),
+                "n_fit_sources": int(transform.n_fit_sources),
+                "feature_dim": int(transform.feature_dim),
+                "raw_feature_dim": int(transform.raw_feature_dim),
+                "prediction_source": str(prediction_source),
+                "raw_projection_contract": (
+                    "inverse_projection_of_locked_feature_scores_through_fold_feature_transform"
+                ),
+            }
+        )
+        parts["rows"].append(row)
+    parts["z_hat"].extend(pred.astype(np.float32, copy=False))
+    parts["z_true"].extend(true.astype(np.float32, copy=False))
+    parts["z_train_mean"].extend(train_mean_rows.astype(np.float32, copy=False))
+    parts["raw_hat_projected"].extend(raw_hat.astype(np.float32, copy=False))
+    parts["raw_true_projected"].extend(raw_true.astype(np.float32, copy=False))
+    parts["raw_train_mean_projected"].extend(raw_train_mean.astype(np.float32, copy=False))
+
+
+def _finalize_feature_predictions(parts: dict[str, list[Any]] | None) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
+    if parts is None or not parts["rows"]:
+        return pd.DataFrame(), {}
+    rows = pd.DataFrame(parts["rows"])
+    arrays = {
+        key: np.stack(parts[key], axis=0).astype(np.float32, copy=False)
+        for key in [
+            "z_hat",
+            "z_true",
+            "z_train_mean",
+            "raw_hat_projected",
+            "raw_true_projected",
+            "raw_train_mean_projected",
+        ]
+    }
+    return rows, arrays
+
+
 def _is_feature_conditioned_spec(spec: LinearFeatureObserverSpec) -> bool:
     return str(spec.slug).startswith("feature_conditioned_tau_")
 
@@ -1743,6 +1936,106 @@ def _mean_feature_cosine(pred: np.ndarray, true: np.ndarray) -> float:
     return float(np.mean(cosine))
 
 
+def _fit_scalar_gain(pred: np.ndarray, true: np.ndarray) -> float:
+    lhs = np.asarray(pred, dtype=np.float64)
+    rhs = np.asarray(true, dtype=np.float64)
+    if lhs.shape != rhs.shape or lhs.ndim != 2:
+        raise ValueError(f"Expected matching 2D arrays, got {lhs.shape} and {rhs.shape}")
+    good = np.isfinite(lhs).all(axis=1) & np.isfinite(rhs).all(axis=1)
+    if not np.any(good):
+        return float("nan")
+    denom = float(np.sum(lhs[good] * lhs[good]))
+    if denom <= 1e-12:
+        return float("nan")
+    return float(np.sum(lhs[good] * rhs[good]) / denom)
+
+
+def _gain_calibrated_metrics(
+    z_hat: np.ndarray,
+    z_true: np.ndarray,
+    *,
+    train_mean: np.ndarray,
+    gain: float,
+) -> dict[str, float | str]:
+    if not np.isfinite(gain):
+        return {
+            "feature_scalar_gain_train": float("nan"),
+            "feature_mse_gain_calibrated": float("nan"),
+            "feature_sse_gain_calibrated": float("nan"),
+            "feature_sst_gain_calibrated_train_baseline": float("nan"),
+            "feature_r2_row_diagnostic_gain_calibrated": float("nan"),
+            "feature_pred_norm_gain_calibrated": float("nan"),
+            "feature_gain_calibration": "train_fold_scalar_gain",
+        }
+    metrics = _metrics(float(gain) * np.asarray(z_hat, dtype=np.float64), z_true, train_mean=train_mean)
+    return {
+        "feature_scalar_gain_train": float(gain),
+        "feature_mse_gain_calibrated": float(metrics["feature_mse"]),
+        "feature_sse_gain_calibrated": float(metrics["feature_sse"]),
+        "feature_sst_gain_calibrated_train_baseline": float(metrics["feature_sst_train_baseline"]),
+        "feature_r2_row_diagnostic_gain_calibrated": float(metrics["feature_r2_row_diagnostic"]),
+        "feature_pred_norm_gain_calibrated": float(metrics["feature_pred_norm"]),
+        "feature_gain_calibration": "train_fold_scalar_gain",
+    }
+
+
+def _prefixed_metric_fields(metrics: dict[str, float | str], prefix: str) -> dict[str, float | str]:
+    return {f"{prefix}_{key}": value for key, value in metrics.items()}
+
+
+def _add_crossfold_scalar_gain_calibration(trials: pd.DataFrame) -> pd.DataFrame:
+    required = {
+        "decoder_mode",
+        "latent",
+        "feature_space_mode",
+        "observer_mode",
+        "observer_label",
+        "fold",
+        "feature_cosine",
+        "feature_pred_norm",
+        "feature_true_norm",
+        "feature_sst_train_baseline",
+    }
+    if not required.issubset(trials.columns):
+        return trials
+    out = trials.copy()
+    out["feature_cv_scalar_gain"] = np.nan
+    out["feature_sse_cv_gain_calibrated"] = np.nan
+    out["feature_sst_cv_gain_calibrated_train_baseline"] = out["feature_sst_train_baseline"]
+    out["feature_r2_row_diagnostic_cv_gain_calibrated"] = np.nan
+    out["feature_pred_norm_cv_gain_calibrated"] = np.nan
+    out["feature_cv_gain_calibration"] = "outer_crossfold_scalar_gain_from_row_metrics"
+    group_cols = ["decoder_mode", "latent", "feature_space_mode", "observer_mode", "observer_label"]
+    for _group_key, group in out.groupby(group_cols, dropna=False, sort=False):
+        idx = group.index.to_numpy()
+        folds = group["fold"].to_numpy()
+        pred_norm = group["feature_pred_norm"].to_numpy(dtype=np.float64)
+        true_norm = group["feature_true_norm"].to_numpy(dtype=np.float64)
+        cosine = group["feature_cosine"].to_numpy(dtype=np.float64)
+        dot = cosine * pred_norm * true_norm
+        for fold in sorted(set(folds.tolist())):
+            test_local = folds == fold
+            train_local = ~test_local
+            train_good = train_local & np.isfinite(dot) & np.isfinite(pred_norm) & (pred_norm > 1e-12)
+            denom = float(np.sum(pred_norm[train_good] * pred_norm[train_good]))
+            gain = float(np.sum(dot[train_good]) / denom) if denom > 1e-12 else float("nan")
+            test_good = test_local & np.isfinite(gain) & np.isfinite(dot) & np.isfinite(pred_norm) & np.isfinite(true_norm)
+            if not np.any(test_good):
+                continue
+            sse = true_norm[test_good] ** 2 - 2.0 * gain * dot[test_good] + (gain**2) * pred_norm[test_good] ** 2
+            sse = np.maximum(sse, 0.0)
+            row_indices = idx[test_good]
+            out.loc[row_indices, "feature_cv_scalar_gain"] = gain
+            out.loc[row_indices, "feature_sse_cv_gain_calibrated"] = sse
+            out.loc[row_indices, "feature_pred_norm_cv_gain_calibrated"] = gain * pred_norm[test_good]
+            sst = out.loc[row_indices, "feature_sst_train_baseline"].to_numpy(dtype=np.float64)
+            valid_sst = np.isfinite(sst) & (sst > 1e-12)
+            r2 = np.full(row_indices.shape[0], np.nan, dtype=np.float64)
+            r2[valid_sst] = 1.0 - sse[valid_sst] / sst[valid_sst]
+            out.loc[row_indices, "feature_r2_row_diagnostic_cv_gain_calibrated"] = r2
+    return out
+
+
 def _validated_residual_shrinkage(
     *,
     z0_train: np.ndarray,
@@ -1760,6 +2053,7 @@ def _validated_residual_shrinkage(
         raise ValueError(f"Shrinkage shape mismatch: z0={z0.shape}, z_true={z_true.shape}, x={x.shape}")
     lambda_grid = np.asarray([0.0, 0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1.0], dtype=np.float64)
     residual_cv = np.full_like(z0, np.nan, dtype=np.float64)
+    sst_cv = np.full(z0.shape[0], np.nan, dtype=np.float64)
     unique_sources = np.asarray(sorted(set(int(value) for value in sources.tolist())), dtype=int)
     if unique_sources.size >= 2:
         inner_fold_by_source = _assign_source_folds(
@@ -1784,32 +2078,56 @@ def _validated_residual_shrinkage(
             predict_mask &= np.isfinite(x).all(axis=1) & np.isfinite(z0).all(axis=1) & np.isfinite(z_true).all(axis=1)
             if int(np.sum(fit_mask)) <= 1 or int(np.sum(predict_mask)) == 0:
                 continue
+            train_mean = np.mean(z_true[fit_mask], axis=0)
             model = _fit_residual_update(
                 residual_train=z_true[fit_mask] - z0[fit_mask],
                 x_train=x[fit_mask],
                 ridge=float(ridge),
             )
             residual_cv[predict_mask] = _predict_residual_update(model, x[predict_mask])
-    valid = np.isfinite(residual_cv).all(axis=1) & np.isfinite(z0).all(axis=1) & np.isfinite(z_true).all(axis=1)
+            baseline = z_true[predict_mask] - train_mean[None, :]
+            sst_cv[predict_mask] = np.sum(baseline * baseline, axis=1)
+    valid = (
+        np.isfinite(residual_cv).all(axis=1)
+        & np.isfinite(z0).all(axis=1)
+        & np.isfinite(z_true).all(axis=1)
+        & np.isfinite(sst_cv)
+    )
     if not np.any(valid):
-        zero_score = _mean_feature_cosine(z0, z_true)
+        finite = np.isfinite(z0).all(axis=1) & np.isfinite(z_true).all(axis=1)
+        if np.any(finite):
+            train_mean = np.mean(z_true[finite], axis=0)
+            sse = float(np.sum((z_true[finite] - z0[finite]) ** 2))
+            sst = float(np.sum((z_true[finite] - train_mean[None, :]) ** 2))
+            zero_score = float(1.0 - sse / sst) if sst > 1e-12 else float("nan")
+        else:
+            zero_score = float("nan")
         return {
             "lambda": 0.0,
             "validation_score": zero_score,
             "validation_score_zero": zero_score,
             "validation_score_best": zero_score,
+            "lambda_cosine_selected": 0.0,
+            "validation_score_cosine_selected": _mean_feature_cosine(z0[finite], z_true[finite]) if np.any(finite) else float("nan"),
+            "validation_score_cosine_zero": _mean_feature_cosine(z0[finite], z_true[finite]) if np.any(finite) else float("nan"),
+            "validation_score_r2_at_cosine_lambda": zero_score,
             "validation_n": 0,
             "lambda_grid": ",".join(f"{value:g}" for value in lambda_grid.tolist()),
             "selection_reason": "no_valid_inner_residual_predictions",
         }
-    scores = np.asarray(
-        [
-            _mean_feature_cosine(z0[valid] + float(value) * residual_cv[valid], z_true[valid])
-            for value in lambda_grid
-        ],
-        dtype=np.float64,
-    )
+    sst_total = float(np.sum(sst_cv[valid]))
+    scores = []
+    cosine_scores = []
+    for value in lambda_grid:
+        pred = z0[valid] + float(value) * residual_cv[valid]
+        sse_total = float(np.sum((z_true[valid] - pred) ** 2))
+        score = float(1.0 - sse_total / sst_total) if sst_total > 1e-12 else float("nan")
+        scores.append(score)
+        cosine_scores.append(_mean_feature_cosine(pred, z_true[valid]))
+    scores = np.asarray(scores, dtype=np.float64)
+    cosine_scores = np.asarray(cosine_scores, dtype=np.float64)
     best_index = int(np.nanargmax(scores))
+    cosine_best_index = int(np.nanargmax(cosine_scores))
     zero_index = int(np.where(np.isclose(lambda_grid, 0.0))[0][0])
     best_score = float(scores[best_index])
     zero_score = float(scores[zero_index])
@@ -1821,9 +2139,13 @@ def _validated_residual_shrinkage(
         "validation_score": best_score,
         "validation_score_zero": zero_score,
         "validation_score_best": float(np.nanmax(scores)),
+        "lambda_cosine_selected": float(lambda_grid[cosine_best_index]),
+        "validation_score_cosine_selected": float(cosine_scores[cosine_best_index]),
+        "validation_score_cosine_zero": float(cosine_scores[zero_index]),
+        "validation_score_r2_at_cosine_lambda": float(scores[cosine_best_index]),
         "validation_n": int(np.sum(valid)),
         "lambda_grid": ",".join(f"{value:g}" for value in lambda_grid.tolist()),
-        "selection_reason": "inner_source_disjoint_feature_cosine",
+        "selection_reason": "inner_source_disjoint_pooled_r2_cv_sse_sst",
     }
 
 
@@ -2076,7 +2398,8 @@ def _run_crossfit(
     ridge: float,
     noise_floor: float,
     continuous_args: argparse.Namespace,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    save_feature_predictions: bool,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, np.ndarray]]:
     fold_by_source = _assign_source_folds(
         tests.rows["true_source_row"].to_numpy(dtype=int),
         n_folds=int(n_folds),
@@ -2098,6 +2421,7 @@ def _run_crossfit(
     trial_rows: list[dict[str, Any]] = []
     model_rows: list[dict[str, Any]] = []
     fit_rows: list[dict[str, Any]] = []
+    prediction_parts = _new_feature_prediction_parts() if bool(save_feature_predictions) else None
     compute_response_only_z0 = any(_needs_response_only_z0(spec) for spec in specs)
     precompute_feature_conditioned_tau = any(_needs_precomputed_feature_conditioned_tau(spec) for spec in specs)
     for mode in canonical_modes:
@@ -2114,6 +2438,16 @@ def _run_crossfit(
                 feature_weights=feature_weights,
                 global_transforms=global_transforms,
             )
+            baseline_sources = np.asarray(
+                [
+                    int(source)
+                    for source, source_fold in fold_by_source.items()
+                    if int(source_fold) != int(fold)
+                ],
+                dtype=int,
+            )
+            z_train_baseline = _transform_feature_sources(transform, feature_table, baseline_sources)
+            z_train_mean = np.mean(z_train_baseline, axis=0)
             feature_conditioned_state: dict[str, Any] | None = None
             for spec in specs:
                 if _is_forward_model_spec(spec):
@@ -2304,6 +2638,7 @@ def _run_crossfit(
                             "feature_whitened": bool(transform.whitened),
                             "feature_weighted": bool(transform.weighted),
                             "feature_variance_fraction": float(transform.explained_variance_sum),
+                            "r2_cv_train_baseline": "source_fold_train_feature_mean",
                             "ridge": float(getattr(continuous_args, "forward_model_z_prior_precision", 1.0)),
                             "noise_variance": float(
                                 feature_conditioned_state["feature_conditioned_baseline_residual_variance"]
@@ -2343,6 +2678,19 @@ def _run_crossfit(
                             "interpretation": spec.interpretation,
                         }
                     )
+                    _append_feature_predictions(
+                        prediction_parts,
+                        tests=tests,
+                        global_indices=valid_indices,
+                        z_hat=z_hat_arr,
+                        z_true=z_true_arr,
+                        z_train_mean=z_train_mean,
+                        spec=spec,
+                        transform=transform,
+                        fold=int(fold),
+                        n_train_samples=int(feature_conditioned_state["first_pass_n_train_samples"]),
+                        prediction_source="forward_model_out_of_fold",
+                    )
                     for local_index, global_index in enumerate(valid_indices):
                         trial_meta = meta_by_index[int(global_index)]
                         row = dict(tests.rows.iloc[int(global_index)].to_dict())
@@ -2361,6 +2709,7 @@ def _run_crossfit(
                                 "feature_whitened": bool(transform.whitened),
                                 "feature_weighted": bool(transform.weighted),
                                 "feature_variance_fraction": float(transform.explained_variance_sum),
+                                "r2_cv_train_baseline": "source_fold_train_feature_mean",
                                 "fold": int(fold),
                                 "n_train_samples": int(feature_conditioned_state["first_pass_n_train_samples"]),
                                 "n_fit_sources": int(transform.n_fit_sources),
@@ -2419,7 +2768,7 @@ def _run_crossfit(
                                 "uses_response_table_trajectory_rows_for_geometry_calibration": True,
                             }
                         )
-                        row.update(_metrics(z_hat_arr[local_index], z_true_arr[local_index]))
+                        row.update(_metrics(z_hat_arr[local_index], z_true_arr[local_index], train_mean=z_train_mean))
                         trial_rows.append(row)
                     continue
 
@@ -2520,8 +2869,22 @@ def _run_crossfit(
                         }
                     residual_shrinkage_lambda = float(shrinkage["lambda"])
                     z_delta = residual_shrinkage_lambda * _predict_residual_update(residual_model, x_all[test_mask])
-                    z_hat = z0_all[test_mask] + z_delta
+                    z0_test = z0_all[test_mask]
+                    z_hat = z0_test + z_delta
                     z_true = z_true_all[test_mask]
+                    first_pass_sse = float(np.sum((z_true - z0_test) ** 2))
+                    final_sse = float(np.sum((z_true - z_hat) ** 2))
+                    first_pass_sst = float(np.sum((z_true - z_train_mean[None, :]) ** 2))
+                    first_pass_r2 = (
+                        float(1.0 - first_pass_sse / first_pass_sst)
+                        if first_pass_sst > 1e-12
+                        else float("nan")
+                    )
+                    z_hat_train_uncalibrated = z0_all[train_mask] + residual_shrinkage_lambda * _predict_residual_update(
+                        residual_model,
+                        bank.x[train_mask],
+                    )
+                    scalar_gain = _fit_scalar_gain(z_hat_train_uncalibrated, z_true_all[train_mask])
                     if is_nested_pose_known:
                         feature_update_mode = "response_only_z0_plus_pose_known_tau_validated_shrinkage"
                         tau_hat_source = "observed_recorded_eye_trace_pose_known_nested_upper_limit"
@@ -2556,18 +2919,38 @@ def _run_crossfit(
                         "feature_whitened": bool(transform.whitened),
                         "feature_weighted": bool(transform.weighted),
                         "feature_variance_fraction": float(transform.explained_variance_sum),
+                        "r2_cv_train_baseline": "source_fold_train_feature_mean",
                         "ridge": float(residual_model.ridge),
                         "noise_variance": float(residual_model.train_mse),
                         "response_map_fro_norm": float(np.linalg.norm(residual_model.coef)),
                         "posterior_gain_fro_norm": float(np.linalg.norm(residual_model.coef)),
                         "feature_update_mode": feature_update_mode,
+                        "first_pass_base_observer": "internal_response_only_z0_hat",
+                        "first_pass_feature_sse": first_pass_sse,
+                        "first_pass_feature_sst_train_baseline": first_pass_sst,
+                        "first_pass_R2_cv": first_pass_r2,
+                        "known_nested_sse_minus_first_pass": final_sse - first_pass_sse,
+                        "known_nested_sse_le_first_pass": bool(final_sse <= first_pass_sse + 1e-9),
                         "residual_shrinkage_lambda": residual_shrinkage_lambda,
                         "residual_shrinkage_validation_score": float(shrinkage["validation_score"]),
                         "residual_shrinkage_validation_score_zero": float(shrinkage["validation_score_zero"]),
                         "residual_shrinkage_validation_score_best": float(shrinkage["validation_score_best"]),
+                        "residual_shrinkage_lambda_cosine_selected": float(
+                            shrinkage.get("lambda_cosine_selected", np.nan)
+                        ),
+                        "residual_shrinkage_validation_score_cosine_selected": float(
+                            shrinkage.get("validation_score_cosine_selected", np.nan)
+                        ),
+                        "residual_shrinkage_validation_score_cosine_zero": float(
+                            shrinkage.get("validation_score_cosine_zero", np.nan)
+                        ),
+                        "residual_shrinkage_validation_score_r2_at_cosine_lambda": float(
+                            shrinkage.get("validation_score_r2_at_cosine_lambda", np.nan)
+                        ),
                         "residual_shrinkage_validation_n": int(shrinkage["validation_n"]),
                         "residual_shrinkage_grid": str(shrinkage["lambda_grid"]),
                         "residual_shrinkage_selection_reason": str(shrinkage["selection_reason"]),
+                        "feature_scalar_gain_train": float(scalar_gain),
                         "first_pass_observer_mode": "response_only",
                         "first_pass_n_train_samples": int(
                             feature_conditioned_state["first_pass_n_train_samples"]
@@ -2590,6 +2973,19 @@ def _run_crossfit(
                     model_rows.append(model_row)
                     test_meta = tests.rows.loc[test_mask].reset_index(drop=True)
                     test_indices = np.flatnonzero(test_mask)
+                    _append_feature_predictions(
+                        prediction_parts,
+                        tests=tests,
+                        global_indices=test_indices,
+                        z_hat=z_hat,
+                        z_true=z_true,
+                        z_train_mean=z_train_mean,
+                        spec=spec,
+                        transform=transform,
+                        fold=int(fold),
+                        n_train_samples=int(residual_model.n_train),
+                        prediction_source="residual_update_out_of_fold",
+                    )
                     for row_index, meta in enumerate(test_meta.to_dict(orient="records")):
                         global_index = int(test_indices[row_index])
                         row = dict(meta)
@@ -2613,14 +3009,28 @@ def _run_crossfit(
                                 "feature_whitened": bool(transform.whitened),
                                 "feature_weighted": bool(transform.weighted),
                                 "feature_variance_fraction": float(transform.explained_variance_sum),
+                                "r2_cv_train_baseline": "source_fold_train_feature_mean",
                                 "fold": int(fold),
                                 "n_train_samples": int(residual_model.n_train),
                                 "n_fit_sources": int(transform.n_fit_sources),
                                 "feature_update_mode": feature_update_mode,
+                                "first_pass_base_observer": "internal_response_only_z0_hat",
                                 "residual_shrinkage_lambda": residual_shrinkage_lambda,
                                 "residual_shrinkage_validation_score": float(shrinkage["validation_score"]),
                                 "residual_shrinkage_validation_score_zero": float(shrinkage["validation_score_zero"]),
                                 "residual_shrinkage_validation_score_best": float(shrinkage["validation_score_best"]),
+                                "residual_shrinkage_lambda_cosine_selected": float(
+                                    shrinkage.get("lambda_cosine_selected", np.nan)
+                                ),
+                                "residual_shrinkage_validation_score_cosine_selected": float(
+                                    shrinkage.get("validation_score_cosine_selected", np.nan)
+                                ),
+                                "residual_shrinkage_validation_score_cosine_zero": float(
+                                    shrinkage.get("validation_score_cosine_zero", np.nan)
+                                ),
+                                "residual_shrinkage_validation_score_r2_at_cosine_lambda": float(
+                                    shrinkage.get("validation_score_r2_at_cosine_lambda", np.nan)
+                                ),
                                 "residual_shrinkage_validation_n": int(shrinkage["validation_n"]),
                                 "residual_shrinkage_grid": str(shrinkage["lambda_grid"]),
                                 "residual_shrinkage_selection_reason": str(shrinkage["selection_reason"]),
@@ -2645,7 +3055,28 @@ def _run_crossfit(
                                 "uses_response_table_trajectory_training_rows": False,
                             }
                         )
-                        row.update(_metrics(z_hat[row_index], z_true[row_index]))
+                        first_pass_metrics = _metrics(z0_test[row_index], z_true[row_index], train_mean=z_train_mean)
+                        final_metrics = _metrics(z_hat[row_index], z_true[row_index], train_mean=z_train_mean)
+                        row.update(_prefixed_metric_fields(first_pass_metrics, "first_pass"))
+                        row.update(final_metrics)
+                        row.update(
+                            {
+                                "known_nested_sse_minus_first_pass": float(
+                                    final_metrics["feature_sse"] - first_pass_metrics["feature_sse"]
+                                ),
+                                "known_nested_sse_le_first_pass": bool(
+                                    final_metrics["feature_sse"] <= first_pass_metrics["feature_sse"] + 1e-9
+                                ),
+                            }
+                        )
+                        row.update(
+                            _gain_calibrated_metrics(
+                                z_hat[row_index],
+                                z_true[row_index],
+                                train_mean=z_train_mean,
+                                gain=scalar_gain,
+                            )
+                        )
                         trial_rows.append(row)
                     continue
 
@@ -2662,6 +3093,8 @@ def _run_crossfit(
                     noise_floor=float(noise_floor),
                 )
                 z_hat = _predict_z(model, x_all[test_mask])
+                z_hat_train_uncalibrated = _predict_z(model, bank.x[train_mask])
+                scalar_gain = _fit_scalar_gain(z_hat_train_uncalibrated, bank_z[train_mask])
                 model_row = {
                     "decoder_mode": "linear_gaussian",
                     "observer_mode": spec.slug,
@@ -2682,10 +3115,12 @@ def _run_crossfit(
                     "feature_whitened": bool(transform.whitened),
                     "feature_weighted": bool(transform.weighted),
                     "feature_variance_fraction": float(transform.explained_variance_sum),
+                    "r2_cv_train_baseline": "source_fold_train_feature_mean",
                     "ridge": float(model.ridge),
                     "noise_variance": float(model.noise_variance),
                     "response_map_fro_norm": float(np.linalg.norm(model.response_map)),
                     "posterior_gain_fro_norm": float(np.linalg.norm(model.posterior_gain)),
+                    "feature_scalar_gain_train": float(scalar_gain),
                     "interpretation": spec.interpretation,
                 }
                 if _is_feature_conditioned_spec(spec) and feature_conditioned_state is not None:
@@ -2711,6 +3146,19 @@ def _run_crossfit(
                 model_rows.append(model_row)
                 test_meta = tests.rows.loc[test_mask].reset_index(drop=True)
                 test_indices = np.flatnonzero(test_mask)
+                _append_feature_predictions(
+                    prediction_parts,
+                    tests=tests,
+                    global_indices=test_indices,
+                    z_hat=z_hat,
+                    z_true=z_true,
+                    z_train_mean=z_train_mean,
+                    spec=spec,
+                    transform=transform,
+                    fold=int(fold),
+                    n_train_samples=int(model.n_train),
+                    prediction_source="linear_observer_out_of_fold",
+                )
                 for row_index, meta in enumerate(test_meta.to_dict(orient="records")):
                     row = dict(meta)
                     if _is_feature_conditioned_spec(spec) and feature_conditioned_state is not None:
@@ -2784,16 +3232,27 @@ def _run_crossfit(
                             "feature_whitened": bool(transform.whitened),
                             "feature_weighted": bool(transform.weighted),
                             "feature_variance_fraction": float(transform.explained_variance_sum),
+                            "r2_cv_train_baseline": "source_fold_train_feature_mean",
                             "fold": int(fold),
                             "n_train_samples": int(model.n_train),
                             "n_fit_sources": int(transform.n_fit_sources),
                         }
                     )
-                    row.update(_metrics(z_hat[row_index], z_true[row_index]))
+                    row.update(_metrics(z_hat[row_index], z_true[row_index], train_mean=z_train_mean))
+                    row.update(
+                        _gain_calibrated_metrics(
+                            z_hat[row_index],
+                            z_true[row_index],
+                            train_mean=z_train_mean,
+                            gain=scalar_gain,
+                        )
+                    )
                     trial_rows.append(row)
     if not trial_rows:
         raise ValueError("No valid linear feature observer trials were produced")
-    return pd.DataFrame(trial_rows), pd.DataFrame(model_rows), pd.DataFrame(fit_rows)
+    trials = _add_crossfold_scalar_gain_calibration(pd.DataFrame(trial_rows))
+    prediction_rows, prediction_arrays = _finalize_feature_predictions(prediction_parts)
+    return trials, pd.DataFrame(model_rows), pd.DataFrame(fit_rows), prediction_rows, prediction_arrays
 
 
 def _summarize(trials: pd.DataFrame) -> pd.DataFrame:
@@ -2814,6 +3273,8 @@ def _summarize(trials: pd.DataFrame) -> pd.DataFrame:
             median_feature_cosine=("feature_cosine", "median"),
             mean_feature_mse=("feature_mse", "mean"),
             median_feature_mse=("feature_mse", "median"),
+            feature_sse=("feature_sse", "sum"),
+            feature_sst_train_baseline=("feature_sst_train_baseline", "sum"),
             mean_feature_rmse=("feature_rmse", "mean"),
             median_feature_pred_norm=("feature_pred_norm", "median"),
             median_feature_true_norm=("feature_true_norm", "median"),
@@ -2830,6 +3291,8 @@ def _summarize(trials: pd.DataFrame) -> pd.DataFrame:
             median_feature_cosine=("feature_cosine", "median"),
             mean_feature_mse=("feature_mse", "mean"),
             median_feature_mse=("feature_mse", "median"),
+            feature_sse=("feature_sse", "sum"),
+            feature_sst_train_baseline=("feature_sst_train_baseline", "sum"),
             mean_feature_rmse=("feature_rmse", "mean"),
             median_feature_pred_norm=("feature_pred_norm", "median"),
             median_feature_true_norm=("feature_true_norm", "median"),
@@ -2838,9 +3301,124 @@ def _summarize(trials: pd.DataFrame) -> pd.DataFrame:
         )
         .sort_values("observer_mode")
     )
+    summary["R2_cv"] = 1.0 - summary["feature_sse"] / summary["feature_sst_train_baseline"]
+    summary.loc[summary["feature_sst_train_baseline"] <= 1e-12, "R2_cv"] = np.nan
+    overall["R2_cv"] = 1.0 - overall["feature_sse"] / overall["feature_sst_train_baseline"]
+    overall.loc[overall["feature_sst_train_baseline"] <= 1e-12, "R2_cv"] = np.nan
     overall["observation_scale"] = "all"
     overall["prior_family"] = "all"
-    return pd.concat([summary, overall[summary.columns]], ignore_index=True)
+    out = pd.concat([summary, overall[summary.columns]], ignore_index=True)
+    calibrated_cols = {"feature_sse_gain_calibrated", "feature_sst_gain_calibrated_train_baseline"}
+    if calibrated_cols.issubset(trials.columns):
+        cal_trials = trials[
+            np.isfinite(trials["feature_sse_gain_calibrated"])
+            & np.isfinite(trials["feature_sst_gain_calibrated_train_baseline"])
+        ].copy()
+        if not cal_trials.empty:
+            cal_summary = (
+                cal_trials.groupby(group_cols, as_index=False)
+                .agg(
+                    n_gain_calibrated=("feature_sse_gain_calibrated", "size"),
+                    feature_sse_gain_calibrated=("feature_sse_gain_calibrated", "sum"),
+                    feature_sst_gain_calibrated_train_baseline=(
+                        "feature_sst_gain_calibrated_train_baseline",
+                        "sum",
+                    ),
+                    median_feature_pred_norm_gain_calibrated=("feature_pred_norm_gain_calibrated", "median"),
+                    median_feature_scalar_gain_train=("feature_scalar_gain_train", "median"),
+                )
+            )
+            cal_overall = (
+                cal_trials.groupby(
+                    ["decoder_mode", "latent", "feature_space_mode", "observer_mode", "observer_label"],
+                    as_index=False,
+                )
+                .agg(
+                    n_gain_calibrated=("feature_sse_gain_calibrated", "size"),
+                    feature_sse_gain_calibrated=("feature_sse_gain_calibrated", "sum"),
+                    feature_sst_gain_calibrated_train_baseline=(
+                        "feature_sst_gain_calibrated_train_baseline",
+                        "sum",
+                    ),
+                    median_feature_pred_norm_gain_calibrated=("feature_pred_norm_gain_calibrated", "median"),
+                    median_feature_scalar_gain_train=("feature_scalar_gain_train", "median"),
+                )
+            )
+            cal_overall["observation_scale"] = "all"
+            cal_overall["prior_family"] = "all"
+            cal = pd.concat([cal_summary, cal_overall[cal_summary.columns]], ignore_index=True)
+            cal["R2_cv_gain_calibrated"] = (
+                1.0
+                - cal["feature_sse_gain_calibrated"]
+                / cal["feature_sst_gain_calibrated_train_baseline"]
+            )
+            cal.loc[
+                cal["feature_sst_gain_calibrated_train_baseline"] <= 1e-12,
+                "R2_cv_gain_calibrated",
+            ] = np.nan
+            out = out.merge(cal, on=group_cols, how="left")
+    cv_calibrated_cols = {
+        "feature_sse_cv_gain_calibrated",
+        "feature_sst_cv_gain_calibrated_train_baseline",
+    }
+    if cv_calibrated_cols.issubset(trials.columns):
+        cv_cal_trials = trials[
+            np.isfinite(trials["feature_sse_cv_gain_calibrated"])
+            & np.isfinite(trials["feature_sst_cv_gain_calibrated_train_baseline"])
+        ].copy()
+        if not cv_cal_trials.empty:
+            cv_cal_summary = (
+                cv_cal_trials.groupby(group_cols, as_index=False)
+                .agg(
+                    n_cv_gain_calibrated=("feature_sse_cv_gain_calibrated", "size"),
+                    feature_sse_cv_gain_calibrated=("feature_sse_cv_gain_calibrated", "sum"),
+                    feature_sst_cv_gain_calibrated_train_baseline=(
+                        "feature_sst_cv_gain_calibrated_train_baseline",
+                        "sum",
+                    ),
+                    median_feature_pred_norm_cv_gain_calibrated=(
+                        "feature_pred_norm_cv_gain_calibrated",
+                        "median",
+                    ),
+                    median_feature_cv_scalar_gain=("feature_cv_scalar_gain", "median"),
+                )
+            )
+            cv_cal_overall = (
+                cv_cal_trials.groupby(
+                    ["decoder_mode", "latent", "feature_space_mode", "observer_mode", "observer_label"],
+                    as_index=False,
+                )
+                .agg(
+                    n_cv_gain_calibrated=("feature_sse_cv_gain_calibrated", "size"),
+                    feature_sse_cv_gain_calibrated=("feature_sse_cv_gain_calibrated", "sum"),
+                    feature_sst_cv_gain_calibrated_train_baseline=(
+                        "feature_sst_cv_gain_calibrated_train_baseline",
+                        "sum",
+                    ),
+                    median_feature_pred_norm_cv_gain_calibrated=(
+                        "feature_pred_norm_cv_gain_calibrated",
+                        "median",
+                    ),
+                    median_feature_cv_scalar_gain=("feature_cv_scalar_gain", "median"),
+                )
+            )
+            cv_cal_overall["observation_scale"] = "all"
+            cv_cal_overall["prior_family"] = "all"
+            cv_cal = pd.concat(
+                [cv_cal_summary, cv_cal_overall[cv_cal_summary.columns]],
+                ignore_index=True,
+            )
+            cv_cal["R2_cv_cv_gain_calibrated"] = (
+                1.0
+                - cv_cal["feature_sse_cv_gain_calibrated"]
+                / cv_cal["feature_sst_cv_gain_calibrated_train_baseline"]
+            )
+            cv_cal.loc[
+                cv_cal["feature_sst_cv_gain_calibrated_train_baseline"] <= 1e-12,
+                "R2_cv_cv_gain_calibrated",
+            ] = np.nan
+            out = out.merge(cv_cal, on=group_cols, how="left")
+    return out
 
 
 def _contrasts(trials: pd.DataFrame, *, n_boot: int, seed: int) -> pd.DataFrame:
@@ -3068,6 +3646,7 @@ def _write_readme(
         "Key interpretation boundary:",
         "",
         "- Feature endpoint: candidate-free, no image posterior averaging.",
+        "- Catalog policy: finite image-catalog search is avoided for the main endpoint; response-table rows are used only for source-disjoint geometry calibration and diagnostics.",
         "- Default tau endpoint: candidate-free response-only-feature-and-scale-conditioned full-path MAP, not the true-image branch.",
         "- Default feature endpoint: response-only `z0_hat` plus a linear tau residual update.",
         "- Recorded-tau nested diagnostic: same residual-update decoder, replacing inferred `tau_hat` with the recorded eye trace, with source-disjoint validated shrinkage and explicit response-only fallback.",
@@ -3104,6 +3683,15 @@ def _write_readme(
         "- `linear_synthetic_prior_feature_observer_manifest.json`",
         "- `linear_synthetic_prior_feature_observer.png`",
     ]
+    prediction_outputs = manifest.get("feature_prediction_outputs", {})
+    if isinstance(prediction_outputs, dict) and prediction_outputs.get("prediction_rows"):
+        lines.extend(
+            [
+                "- `linear_synthetic_prior_feature_observer_prediction_rows.csv`",
+                "- `linear_synthetic_prior_feature_observer_prediction_arrays.npz`",
+                "- `linear_synthetic_prior_feature_observer_raw_feature_dim_metadata.csv`",
+            ]
+        )
     (out_dir / "linear_synthetic_prior_feature_observer_README.md").write_text(
         "\n".join(lines) + "\n",
         encoding="utf-8",
@@ -3138,6 +3726,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-tables", type=int, default=0)
     parser.add_argument("--progress-every", type=int, default=64)
     parser.add_argument("--out-dir", type=Path, default=OUT_DIR)
+    parser.add_argument(
+        "--save-feature-predictions",
+        action="store_true",
+        help=(
+            "Save out-of-fold z_true/z_hat arrays and raw-coordinate PCA projections "
+            "for feature-group calibration diagnostics."
+        ),
+    )
 
     parser.add_argument("--alpha", type=float, default=0.92)
     parser.add_argument("--process-var", type=float, default=1e-3)
@@ -3150,7 +3746,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--observation-model", default="time_constant")
     parser.add_argument("--time-smoothing-sigma", type=float, default=0.0)
     parser.add_argument("--time-shrinkage", type=float, default=0.0)
-    parser.add_argument("--continuous-score-mode", default="quadratic_poisson_profile")
+    parser.add_argument("--continuous-score-mode", default="quadratic_affine_poisson_profile")
     parser.add_argument("--trajectory-prior-mean", default="zero")
     parser.add_argument("--trajectory-initial-position", default="inferred")
     parser.add_argument("--trajectory-initial-position-var", type=float, default=1e-4)
@@ -3242,7 +3838,7 @@ def build(args: argparse.Namespace) -> Path:
         compute_pooled_tau_hat=compute_pooled_tau_hat,
         progress_every=int(args.progress_every),
     )
-    trials, models, feature_conditioned_fit_rows = _run_crossfit(
+    trials, models, feature_conditioned_fit_rows, prediction_rows, prediction_arrays = _run_crossfit(
         banks=banks,
         tests=tests,
         feature_table=feature_table,
@@ -3255,6 +3851,7 @@ def build(args: argparse.Namespace) -> Path:
         ridge=float(args.linear_ridge),
         noise_floor=float(args.noise_floor),
         continuous_args=args,
+        save_feature_predictions=bool(args.save_feature_predictions),
     )
     if not feature_conditioned_fit_rows.empty:
         fit_rows = pd.concat([fit_rows, feature_conditioned_fit_rows], ignore_index=True, sort=False)
@@ -3266,11 +3863,34 @@ def build(args: argparse.Namespace) -> Path:
     contrasts_path = out_dir / "linear_synthetic_prior_feature_observer_contrasts.csv"
     models_path = out_dir / "linear_synthetic_prior_feature_observer_models.csv"
     fit_rows_path = out_dir / "linear_synthetic_prior_feature_observer_fit_rows.csv"
+    prediction_rows_path = out_dir / "linear_synthetic_prior_feature_observer_prediction_rows.csv"
+    prediction_arrays_path = out_dir / "linear_synthetic_prior_feature_observer_prediction_arrays.npz"
+    raw_feature_metadata_path = out_dir / "linear_synthetic_prior_feature_observer_raw_feature_dim_metadata.csv"
     trials.to_csv(trials_path, index=False)
     summary.to_csv(summary_path, index=False)
     contrasts.to_csv(contrasts_path, index=False)
     models.to_csv(models_path, index=False)
     fit_rows.to_csv(fit_rows_path, index=False)
+    prediction_outputs: dict[str, str | None] = {
+        "prediction_rows": None,
+        "prediction_arrays": None,
+        "raw_feature_dim_metadata": None,
+    }
+    if bool(args.save_feature_predictions):
+        if prediction_rows.empty or not prediction_arrays:
+            raise ValueError("--save-feature-predictions was requested but no prediction rows were collected")
+        prediction_rows.to_csv(prediction_rows_path, index=False)
+        np.savez_compressed(prediction_arrays_path, **prediction_arrays)
+        raw_metadata = _local_field_dim_metadata(
+            latent=str(args.latent),
+            raw_feature_dim=int(feature_table.features.shape[1]),
+        )
+        raw_metadata.to_csv(raw_feature_metadata_path, index=False)
+        prediction_outputs = {
+            "prediction_rows": str(prediction_rows_path),
+            "prediction_arrays": str(prediction_arrays_path),
+            "raw_feature_dim_metadata": str(raw_feature_metadata_path),
+        }
     png, pdf, plotted_mode = _plot(
         summary,
         contrasts,
@@ -3295,6 +3915,7 @@ def build(args: argparse.Namespace) -> Path:
         },
         "observer_modes": [spec.slug for spec in specs],
         "compute_pooled_tau_hat": bool(compute_pooled_tau_hat),
+        "feature_prediction_outputs": prediction_outputs,
         "decoder": {
             "mode": "linear_gaussian",
             "ridge": float(args.linear_ridge),

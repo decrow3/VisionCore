@@ -8,6 +8,18 @@ Companion methods reset:
 declan/figure4_active_sensing_atlas/literature_methods_reset.md
 ```
 
+Companion design decision:
+
+```text
+declan/figure4_active_sensing_atlas/unified_feature_observer_design_decision.md
+```
+
+Companion score decision:
+
+```text
+declan/figure4_active_sensing_atlas/unified_feature_observer_score_decision.md
+```
+
 Source draft:
 
 ```text
@@ -28,10 +40,13 @@ In scope:
 - Vernier as a pose-confusion demonstration.
 - Behavior panels used only to motivate what animals track.
 - Natural-image feature target definition.
-- Aggregate feature decoder.
-- Local image/trajectory pairing model.
-- Joint feature-eye decoder.
-- Compact-geometry link to joint inference.
+- Unified feature-recovery observer conditions: stabilized, known trajectory,
+  zero-eye baseline, hidden/marginal trajectory baseline, and joint latent
+  trajectory if robust.
+- Local image/trajectory pairing model as a supplemental specificity test.
+- Compact-geometry link as an intervention inside the same observer family.
+- Separation between the primary 4C active-sensing observer and the
+  compact-dependent forward-model audit branch.
 
 Out of scope unless a draft claim explicitly depends on it:
 
@@ -42,6 +57,65 @@ Out of scope unless a draft claim explicitly depends on it:
 - Full exhaustive literature review; method-alignment reading is tracked in the
   companion reset note.
 - Any claim that exact real FEM trajectories are optimal.
+
+## Design Lock
+
+The main Figure 4 feature-decoder sequence should not be written as aggregate
+decoder, local decoder, and joint decoder. It should be written as one
+feature-recovery observer family with one feature target, one primary score
+axis, and several eye-information conditions:
+
+```text
+static_matched_mean
+known trajectory / motion-rendered empirical trajectory
+zero-eye trajectory baseline
+hidden/marginal trajectory baseline
+joint latent-eye trajectory, if robust
+```
+
+Static/motion labels must obey the coordinate contract:
+
+```text
+static_matched_mean  = static at each movie/window mean fixation position
+motion_mean_centered = within-movie residual motion around that mean
+zero_eye_on_motion   = observer/readout assumes no residual motion for a
+                       motion-rendered response
+static_global_zero   = optional oracle/control, not the BackImage default
+```
+
+For BackImage, cached `zero_lambda_counts` / legacy `zero_static` rows are
+only acceptable manuscript evidence if labeled as `static_matched_mean` or
+static at the crop/mean fixation position. Do not call this a global zero-eye
+stimulus.
+
+The main 4C observer should not require compact geometry. Use response-space
+or static-PC feature recovery first, then ask whether compact-only,
+compact-removed, compact-addback, or static-PC interventions explain the
+recovery. Compact-forward tau inference is a useful diagnostic branch, but it
+is entangled with the compact observation model and should not be the sole
+paper-facing 4C result.
+
+The primary score axis should be held-out normalized MSE, reported as `R2_cv`,
+computed as pooled out-of-fold SSE/SST in the locked, train-normalized feature
+space. The target is the pooled complex steerable-pyramid-like magnitude target
+unless a run literally uses Plenoptic. Feature cosine is a secondary robustness
+score. Gaussian likelihood / diagonal information is a supplemental theory
+score.
+
+Linear-Gaussian feature observers should use source-balanced training weights
+unless explicitly labeled as row-unweighted diagnostics. Candidate and
+trajectory tables reuse sources unevenly, so unweighted rows answer a
+candidate/trajectory-frequency-weighted question rather than a source-uniform
+one.
+
+Do not use the pooled-prior continuous feature observer to make along/across
+axis claims. Its current contract fits across prior-family labels and evaluates
+the same observed response under both axis labels, so any parallel-minus-
+orthogonal contrast from that runner is a bookkeeping artifact. Along/across
+requires a dedicated per-axis observer.
+
+Local exact image/trajectory pairing is not load-bearing. It remains a
+specificity control unless the corrected exact-pairing contrast stabilizes.
 
 ## Claim 1: RR100 Is The Working Reduced V1 Representation
 
@@ -85,6 +159,8 @@ Still needed for draft rigor:
       RR265/RR192, or the canonical 756-channel population.
 - [ ] Do not transfer a result across populations without labeling it as a
       representation-dependence assumption.
+- [ ] For every Figure 4 static/motion comparison, state whether the static
+      reference is `static_matched_mean` or `static_global_zero`.
 
 Allowed wording:
 
@@ -399,10 +475,15 @@ Hidden assumptions:
 
 - Joint recovery is not merely static response strength.
 - Posterior feature recovery is not mixed with information-in-bits claims from
-  4B.
+  4B unless both are recomputed on a shared target/score contract.
 - Candidate-table or response-table leakage is not driving the result.
+- Finite image-catalog search is not being used as the main endpoint when a
+  continuous candidate-free feature observer is available.
 - The continuous no-anchor observer is distinguished from candidate-posterior
   and candidate-free feature-embedding diagnostics.
+- The current compact-forward candidate-free branch is compact-dependent, so a
+  failure there can reflect compact observation-model misspecification rather
+  than a general failure of latent-eye feature recovery.
 
 Already checked:
 
@@ -424,7 +505,24 @@ Still needed for draft rigor:
 - [ ] State which joint result the draft is relying on:
       candidate-posterior compact intervention, continuous no-anchor observer,
       or candidate-free embedding diagnostic.
-- [ ] Keep feature-cosine recovery separate from 4B information bits.
+- [ ] Prefer continuous / candidate-free latent-eye feature recovery for the
+      main 4C endpoint; use finite candidate-image catalog search only as a
+      diagnostic, legacy comparison, or fallback if the continuous observer
+      fails.
+- [ ] Make the primary 4C endpoint geometry-uncommitted: full response or
+      static-PC response movie to feature target before compact interventions.
+- [ ] Treat compact-forward latent-tau inference as a compact-dependent audit
+      branch, not as the main active-sensing consequence.
+- [ ] If candidate/source tables are used to fit response geometry, label that
+      as source-disjoint geometry calibration, not as a catalog-search feature
+      endpoint.
+- [ ] Re-score the promoted 4B/4C feature-recovery claims on the shared primary
+      axis: pooled multi-output held-out `R2_cv` / normalized MSE relative to
+      the train-fold feature mean.
+- [ ] Keep feature cosine as a secondary robustness score rather than the final
+      primary figure axis.
+- [ ] Keep diagonal information / Gaussian likelihood as supplemental theory
+      scores unless their covariance contract is locked.
 - [ ] State whether the observer estimates continuous `tau`, marginalizes a
       catalog, or uses posterior over candidate images.
 - [ ] Do not imply the posterior identifies the animal's true eye trajectory.
@@ -437,7 +535,11 @@ Allowed wording:
 ```text
 The joint observer shows that latent-eye feature recovery can be rescued above
 zero-eye baselines, and the promoted continuous no-anchor calibration should be
-read as feature recovery rather than exact image or trajectory identification.
+read as provisional feature recovery rather than exact image or trajectory
+identification. Strong main-text wording requires a geometry-uncommitted
+response-space or static-PC observer to show the same ordering on held-out
+feature R2: known-trajectory > joint > declared baseline, where the baseline is
+explicitly labeled as zero-eye or hidden/marginal.
 ```
 
 Avoid:
@@ -446,6 +548,9 @@ Avoid:
 The joint decoder recovers the true eye trace.
 The joint decoder proves animals use this posterior.
 Feature cosine and information bits are directly comparable.
+High feature cosine alone proves calibrated feature recovery.
+The joint result is a finite image-catalog search, unless that is explicitly
+the diagnostic being discussed.
 ```
 
 ## Claim 8: Compact Geometry Supports Joint Recovery
@@ -464,6 +569,8 @@ Hidden assumptions:
 - Compact geometry provides functional support for joint feature recovery.
 - Static-response PCs and ordinary image-response manifolds are not being
   ignored.
+- The compact-specific observer is not being used circularly as the only
+  evidence for the active-sensing consequence.
 
 Already checked:
 
@@ -490,6 +597,8 @@ Still needed for draft rigor:
       the intervention evidence: compact-only, compact-removed, addback.
 - [ ] Do not imply the joint decoder explicitly uses the compact basis as an
       eye-trajectory prior unless that is true for the specific analysis.
+- [ ] Do not make compact geometry necessary for 4C to succeed. Compact should
+      explain or localize recovery after the primary observer is established.
 - [ ] Reserve the "trivial consequence of translation" question for the compact
       vs static-PC / residualized compact / covariance-closure controls already
       tied to this claim.
@@ -577,8 +686,14 @@ Before turning `draft1.docx` into a Results-style section:
 - [ ] For every decoder result, state population, split, target, response
       summary, score, and baseline.
 - [ ] Replace placeholder text with explicit scientific claims.
-- [ ] Keep 4B information bits, 4C feature cosine / posterior recovery, and
-      Vernier Fisher/discriminability on separate metric axes.
+- [ ] Re-express 4B and 4C feature-observer results on the same primary metric
+      where possible: pooled held-out `R2_cv` / normalized MSE for the locked
+      steerable-pyramid-like magnitude target. Implementation is in place and
+      smoke-verified; production artifacts still need rerun or postprocessing.
+- [ ] Keep 4B diagonal information, 4C feature cosine / posterior recovery,
+      image identity, and Vernier Fisher/discriminability labeled as separate
+      secondary or diagnostic quantities unless explicitly recomputed onto the
+      shared score.
 - [ ] Mark whether each claim is promoted, supportive, diagnostic, historical,
       or open.
 - [ ] Do not let any paragraph imply exact trajectory optimality.
@@ -596,8 +711,8 @@ Before turning `draft1.docx` into a Results-style section:
 | Vernier pose confusion | Supportive diagnostic | Do not call pose-robust decoder true trajectory inference |
 | Behavior geometry | Supportive bridge | Keep raw edge as baseline; avoid objective optimization |
 | Feature target | Supportive methods contract | Specify target family, PCA, covariance approximation |
-| Aggregate feature decoder | Provisional promoted 4B | All-readout review and OU/synthetic prior audit for strong specificity |
+| Aggregate feature decoder | Provisional 4B; R2_cv smoke verified | Production re-score as unified feature `R2_cv`; all-readout review and OU/synthetic prior audit for strong specificity |
 | Local pairing | Diagnostic | Corrected source-trial exact-pairing stability |
-| Joint feature-eye decoder | Promoted with caveats | Keep feature recovery separate from image/trajectory ID |
-| Compact mechanism | Promoted with specificity caveats | State non-uniqueness over static PCs |
+| Joint feature-eye decoder | Repaired diagnostic, not promoted | Primary response-space/static-PC observer must pass known > joint > baseline on shared `R2_cv`; compact-forward branch is only an audit |
+| Compact mechanism | Promoted with specificity caveats | State non-uniqueness over static PCs and do not make compact required for 4C |
 | Along/across mechanism | Diagnostic / scoped 4D | Separate along benefit from across suppression |

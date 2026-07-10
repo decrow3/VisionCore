@@ -10,9 +10,12 @@ from declan.figure4_active_sensing_atlas.scripts.build_panel_c_linear_synthetic_
     _context_from_z,
     _fit_feature_conditioned_baseline,
     _fit_feature_conditioned_quadratic_observation_map,
+    _inverse_transform_scores,
+    _local_field_dim_metadata,
     _predict_compact_from_z_tau,
     _quadratic_design_from_path,
     _solve_z_given_tau,
+    _validated_residual_shrinkage,
 )
 from declan.figure4_active_sensing_atlas.scripts.build_panel_c_continuous_feature_embedding_reconstruction import (
     FeatureTable,
@@ -188,3 +191,66 @@ def test_fitted_feature_conditioned_forward_model_recovers_heldout_latent() -> N
     assert bool(meta["forward_z_solver_success"])
     np.testing.assert_allclose(z_hat, z_true, atol=1e-4, rtol=1e-4)
     np.testing.assert_allclose(compact_hat, compact, atol=1e-5, rtol=1e-5)
+
+
+def test_validated_residual_shrinkage_uses_pooled_r2_cv_contract() -> None:
+    rng = np.random.default_rng(789)
+    z_true = rng.normal(size=(12, 4))
+    z0 = z_true.copy()
+    x = rng.normal(size=(12, 6))
+    sources = np.arange(1000, 1012, dtype=int)
+
+    shrinkage = _validated_residual_shrinkage(
+        z0_train=z0,
+        z_true_train=z_true,
+        x_train=x,
+        source_rows=sources,
+        ridge=1.0,
+        seed=17,
+    )
+
+    assert shrinkage["lambda"] == 0.0
+    assert shrinkage["selection_reason"] == "inner_source_disjoint_pooled_r2_cv_sse_sst"
+    assert shrinkage["validation_n"] > 0
+
+
+def test_inverse_transform_scores_projects_locked_scores_to_raw_space() -> None:
+    transform = FeatureTransform(
+        latent="synthetic",
+        feature_space_mode="synthetic_pca",
+        feature_dim=2,
+        mean=np.asarray([10.0, -2.0, 0.5]),
+        sd=np.asarray([2.0, 4.0, 1.0]),
+        components=np.asarray([[1.0, 0.0, 0.0], [0.0, 0.5, 0.5]]),
+        denom=np.asarray([2.0, 4.0]),
+        weights=None,
+        fit_scope="synthetic",
+        preprocessing="zscore",
+        whitened=True,
+        weighted=False,
+        n_fit_sources=5,
+        raw_feature_dim=3,
+        explained_variance_sum=1.0,
+        explained_variance_first5=[0.8, 0.2],
+    )
+
+    scores = np.asarray([[1.0, -0.5]])
+    raw = _inverse_transform_scores(transform, scores)
+
+    expected_projected = np.asarray([[2.0, -1.0, -1.0]])
+    expected_raw = expected_projected * transform.sd[None, :] + transform.mean[None, :]
+    np.testing.assert_allclose(raw, expected_raw)
+
+
+def test_pyramid_local_field_metadata_matches_feature_contract() -> None:
+    meta = _local_field_dim_metadata(latent="pyramid_local_field", raw_feature_dim=3072)
+
+    assert meta.shape[0] == 3072
+    assert set(meta["channel"]) == {"real", "imag", "magnitude"}
+    assert meta["band"].nunique() == 4
+    assert meta["orientation"].nunique() == 4
+    assert meta["block_index"].nunique() == 64
+    first = meta.iloc[0]
+    assert first["channel"] == "real"
+    assert int(first["band"]) == 0
+    assert int(first["orientation"]) == 0

@@ -140,6 +140,74 @@ def _effective_count(probabilities: np.ndarray) -> float:
     return 1.0 / denom if denom > 0.0 else float("nan")
 
 
+def _normalized_log_weights(log_weights: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    weights = np.asarray(log_weights, dtype=np.float64)
+    keep = np.asarray(mask, dtype=bool)
+    if weights.ndim != 1:
+        raise ValueError(f"trajectory log weights must be 1D, got {weights.shape}")
+    if weights.shape[0] != keep.shape[0]:
+        raise ValueError(f"trajectory log weights length {weights.shape[0]} does not match catalog size {keep.shape[0]}")
+    out = np.full(weights.shape, -np.inf, dtype=np.float64)
+    retained = weights[keep]
+    if np.any(np.isnan(retained)):
+        raise ValueError("trajectory log weights contain NaN for retained trajectories")
+    norm = logsumexp(retained)
+    if not np.isfinite(norm):
+        raise ValueError("trajectory log weights assign no finite mass to retained trajectories")
+    out[keep] = retained - norm
+    return out
+
+
+def trajectory_gaussian_log_weights(
+    cue_pose_arcmin: np.ndarray,
+    candidate_poses_arcmin: np.ndarray,
+    *,
+    sigma_arcmin: float,
+    mask: np.ndarray | None = None,
+    anchor_index: int | None = None,
+    epsilon: float = 1e-12,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return normalized trajectory log weights and mean path distances.
+
+    The Gaussian is applied to mean squared path distance in arcmin^2:
+    ``exp(-0.5 * mean_t ||tau_j(t) - cue(t)||^2 / sigma^2)``.  ``sigma=inf``
+    gives a uniform prior over retained trajectories, and ``sigma<=0`` gives a
+    one-hot prior on ``anchor_index`` when retained, otherwise the nearest
+    retained trajectory.
+    """
+    cue = np.asarray(cue_pose_arcmin, dtype=np.float64)
+    candidates = np.asarray(candidate_poses_arcmin, dtype=np.float64)
+    if cue.ndim != 2 or cue.shape[1] != 2:
+        raise ValueError(f"cue_pose_arcmin must be (time, 2), got {cue.shape}")
+    if candidates.ndim != 3 or candidates.shape[2] != 2:
+        raise ValueError(f"candidate_poses_arcmin must be (trajectory, time, 2), got {candidates.shape}")
+    if candidates.shape[1] != cue.shape[0]:
+        raise ValueError(f"candidate pose time bins {candidates.shape[1]} do not match cue time bins {cue.shape[0]}")
+    if not np.isfinite(cue).all() or not np.isfinite(candidates).all():
+        raise ValueError("trajectory poses contain non-finite values")
+    n = int(candidates.shape[0])
+    keep = np.ones(n, dtype=bool) if mask is None else np.asarray(mask, dtype=bool)
+    if keep.shape != (n,):
+        raise ValueError(f"mask must be length {n}, got {keep.shape}")
+    if not np.any(keep):
+        raise ValueError("trajectory weight mask retained no trajectories")
+    diff = candidates - cue[None, :, :]
+    mean_dist2 = np.mean(np.sum(diff * diff, axis=2), axis=1)
+    sigma = float(sigma_arcmin)
+    if sigma <= 0.0:
+        retained = np.flatnonzero(keep)
+        idx = int(anchor_index) if anchor_index is not None else -1
+        if idx < 0 or idx >= n or not keep[idx]:
+            idx = int(retained[int(np.argmin(mean_dist2[retained]))])
+        log_weights = np.full(n, -np.inf, dtype=np.float64)
+        log_weights[idx] = 0.0
+    elif not np.isfinite(sigma):
+        log_weights = np.zeros(n, dtype=np.float64)
+    else:
+        log_weights = -0.5 * mean_dist2 / max(sigma * sigma, float(epsilon))
+    return _normalized_log_weights(log_weights, keep), mean_dist2
+
+
 def score_trajectory_table_vernier_observer_trial(
     observed_counts: np.ndarray,
     true_label: str,
@@ -148,6 +216,10 @@ def score_trajectory_table_vernier_observer_trial(
     true_trace_index: int,
     known_counts_by_theta: dict[str, np.ndarray] | None = None,
     zero_counts_by_theta: dict[str, np.ndarray] | None = None,
+    joint_log_trajectory_weights: np.ndarray | None = None,
+    trajectory_prior_label: str | None = None,
+    trajectory_weight_sigma_arcmin: float | None = None,
+    trajectory_mean_dist2_arcmin2: np.ndarray | None = None,
     include_self: bool = True,
     phi: float = 1.0,
     likelihood_normalization: str = "poisson",
@@ -191,11 +263,39 @@ def score_trajectory_table_vernier_observer_trial(
     n_joint = int(np.sum(mask))
     if n_joint <= 0:
         raise ValueError("Trajectory catalog is empty after leave-one-out masking")
+    if joint_log_trajectory_weights is None:
+        log_joint_weights = np.full(n_traj, -np.inf, dtype=np.float64)
+        log_joint_weights[mask] = -float(np.log(n_joint))
+        prior_label = (
+            "uniform_empirical_condition_catalog"
+            if bool(include_self)
+            else "leave_one_out_uniform_empirical_condition_catalog"
+        )
+    else:
+        log_joint_weights = _normalized_log_weights(np.asarray(joint_log_trajectory_weights, dtype=np.float64), mask)
+        prior_label = str(trajectory_prior_label or "weighted_empirical_condition_catalog")
+    prior_probs = np.exp(log_joint_weights[mask])
+    trajectory_weight_neff = _effective_count(prior_probs)
+    true_trajectory_prior_weight = (
+        float(np.exp(log_joint_weights[true_idx]))
+        if true_idx < log_joint_weights.shape[0] and np.isfinite(log_joint_weights[true_idx])
+        else 0.0
+    )
+    max_trajectory_prior_weight = float(np.max(prior_probs)) if prior_probs.size else float("nan")
+    min_dist2 = float("nan")
+    true_dist2 = float("nan")
+    if trajectory_mean_dist2_arcmin2 is not None:
+        dist2 = np.asarray(trajectory_mean_dist2_arcmin2, dtype=np.float64)
+        if dist2.shape != (n_traj,):
+            raise ValueError(f"trajectory distances must be length {n_traj}, got {dist2.shape}")
+        retained_dist2 = dist2[mask]
+        min_dist2 = float(np.min(retained_dist2)) if retained_dist2.size else float("nan")
+        true_dist2 = float(dist2[true_idx]) if true_idx < dist2.shape[0] else float("nan")
 
     joint_log_evidence: dict[str, float] = {}
     known_log_evidence: dict[str, float] = {}
     zero_log_evidence: dict[str, float] = {}
-    trajectory_ll: dict[str, np.ndarray] = {}
+    trajectory_weighted_ll: dict[str, np.ndarray] = {}
     posterior_neff: dict[str, float] = {}
     true_rank: dict[str, float] = {}
     for label in THETA_LABELS:
@@ -207,11 +307,12 @@ def score_trajectory_table_vernier_observer_trial(
             likelihood_scale=float(likelihood_scale),
             epsilon=float(epsilon),
         )
-        trajectory_ll[label] = ll
-        joint_log_evidence[label] = logsumexp(ll[mask]) - float(np.log(n_joint)) if n_joint > 0 else float("nan")
-        posterior = _posterior_from_log_likelihood(ll[mask])
+        weighted_ll = ll + log_joint_weights
+        trajectory_weighted_ll[label] = weighted_ll
+        joint_log_evidence[label] = logsumexp(weighted_ll[mask]) if n_joint > 0 else float("nan")
+        posterior = _posterior_from_log_likelihood(weighted_ll[mask])
         posterior_neff[label] = _effective_count(posterior)
-        true_rank[label] = _rank_desc(ll, true_idx) if true_idx < ll.shape[0] else float("nan")
+        true_rank[label] = _rank_desc(weighted_ll, true_idx) if true_idx < ll.shape[0] else float("nan")
         known_ll = diagonal_count_log_likelihood(
             obs,
             known_table[label],
@@ -239,7 +340,9 @@ def score_trajectory_table_vernier_observer_trial(
     pred_joint = _prediction(joint_log_evidence)
     pred_known = _prediction(known_log_evidence)
     pred_zero = _prediction(zero_log_evidence)
-    best_traj_log_evidence = {label: float(np.max(trajectory_ll[label][mask])) for label in THETA_LABELS}
+    best_traj_log_evidence = {
+        label: float(np.max(trajectory_weighted_ll[label][mask])) for label in THETA_LABELS
+    }
     pred_best_traj = _prediction(best_traj_log_evidence)
     joint_margin = float(joint_log_evidence[true] - joint_log_evidence[other])
     known_margin = float(known_log_evidence[true] - known_log_evidence[other])
@@ -252,11 +355,6 @@ def score_trajectory_table_vernier_observer_trial(
         "trajectory_table_marginal_vernier_llr"
         if score_is_llr
         else "trajectory_table_marginal_residual_score"
-    )
-    prior_label = (
-        "uniform_empirical_condition_catalog"
-        if bool(include_self)
-        else "leave_one_out_uniform_empirical_condition_catalog"
     )
 
     raw_denom = known_log_evidence[true] - zero_log_evidence[true]
@@ -285,6 +383,15 @@ def score_trajectory_table_vernier_observer_trial(
         ),
         "trajectory_table_include_self": bool(include_self),
         "trajectory_table_leave_one_out": not bool(include_self),
+        "trajectory_weight_sigma_arcmin": float(trajectory_weight_sigma_arcmin)
+        if trajectory_weight_sigma_arcmin is not None
+        else float("nan"),
+        "trajectory_weight_neff": float(trajectory_weight_neff),
+        "trajectory_weight_neff_fraction": float(trajectory_weight_neff / max(n_joint, 1)),
+        "trajectory_weight_true": float(true_trajectory_prior_weight),
+        "trajectory_weight_max": float(max_trajectory_prior_weight),
+        "trajectory_weight_min_mean_dist2_arcmin2": float(min_dist2),
+        "trajectory_weight_true_mean_dist2_arcmin2": float(true_dist2),
         "n_catalog_trajectories": n_traj,
         "n_known_trajectories": n_known_traj,
         "n_joint_trajectories": n_joint,
@@ -344,6 +451,12 @@ def _accuracy(values: list[Any]) -> float:
     return float(np.mean(vals)) if vals else float("nan")
 
 
+def _group_value(value: Any) -> Any:
+    if isinstance(value, (float, np.floating)) and np.isnan(float(value)):
+        return ""
+    return value
+
+
 def summarize_trajectory_table_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Aggregate trajectory-table observer trials."""
     groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
@@ -356,6 +469,8 @@ def summarize_trajectory_table_rows(rows: list[dict[str, Any]]) -> list[dict[str
             row.get("inference_mode", ""),
             row.get("trajectory_table_mode", ""),
             row.get("trajectory_table_include_self", ""),
+            row.get("trajectory_prior", ""),
+            _group_value(row.get("trajectory_weight_sigma_arcmin", "")),
             row.get("joint_likelihood_normalization", ""),
             row.get("joint_score_family", ""),
             row.get("zero_eye_reference_condition", ""),
@@ -373,6 +488,8 @@ def summarize_trajectory_table_rows(rows: list[dict[str, Any]]) -> list[dict[str
             inference_mode,
             table_mode,
             include_self,
+            trajectory_prior,
+            trajectory_sigma,
             normalization,
             score_family,
             zero_ref,
@@ -389,6 +506,8 @@ def summarize_trajectory_table_rows(rows: list[dict[str, Any]]) -> list[dict[str
                 "trajectory_table_mode": table_mode,
                 "trajectory_table_include_self": include_self,
                 "trajectory_table_leave_one_out": not bool(include_self),
+                "trajectory_prior": trajectory_prior,
+                "trajectory_weight_sigma_arcmin": trajectory_sigma,
                 "joint_likelihood_normalization": normalization,
                 "joint_score_family": score_family,
                 "zero_eye_reference_condition": zero_ref,
@@ -406,6 +525,11 @@ def summarize_trajectory_table_rows(rows: list[dict[str, Any]]) -> list[dict[str
                 "median_posterior_neff_true": float(np.median(_finite([row.get("posterior_neff_true") for row in grp])))
                 if _finite([row.get("posterior_neff_true") for row in grp]).size
                 else float("nan"),
+                "mean_trajectory_weight_neff": _mean_or_nan([row.get("trajectory_weight_neff") for row in grp]),
+                "mean_trajectory_weight_neff_fraction": _mean_or_nan(
+                    [row.get("trajectory_weight_neff_fraction") for row in grp]
+                ),
+                "mean_trajectory_weight_true": _mean_or_nan([row.get("trajectory_weight_true") for row in grp]),
                 "mean_true_trajectory_rank_true": _mean_or_nan([row.get("true_trajectory_rank_true") for row in grp]),
                 "median_true_trajectory_rank_true": float(
                     np.median(_finite([row.get("true_trajectory_rank_true") for row in grp]))

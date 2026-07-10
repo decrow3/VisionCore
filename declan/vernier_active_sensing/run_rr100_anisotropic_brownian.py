@@ -15,8 +15,10 @@ maps. It saves compact rate/SSI caches rather than large spatial-map caches.
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import sys
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +32,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from declan.redundancy_resolved_v1_population import apply_population_view, load_population_view
-from declan.vernier_active_sensing.forward import build_vernier_movie, load_model_and_readout
+from declan.vernier_active_sensing.forward import (
+    STIMULUS_NORMALIZATION,
+    build_vernier_movie,
+    load_model_and_readout,
+)
 from declan.vernier_active_sensing.metrics import expected_counts, poisson_fisher_counts
 from declan.vernier_active_sensing.stimulus import VernierSpec
 from scripts.temporal_decoding.rate_computation import compute_trial_rates
@@ -71,6 +77,26 @@ def canonical_vernier_spec(offset_arcmin: float = 0.0) -> VernierSpec:
         contrast=0.5,
         polarity="bright",
     )
+
+
+def _cache_identity(args: argparse.Namespace, *, base_std_deg: float) -> dict[str, Any]:
+    return {
+        "schema_version": 2,
+        "stimulus_normalization": STIMULUS_NORMALIZATION,
+        "n_traces": int(args.n_traces),
+        "max_frames": int(args.max_frames),
+        "fd_step_arcmin": float(args.fd_step_arcmin),
+        "elongation": float(args.elongation),
+        "seed": int(args.seed),
+        "base_std_deg": float(base_std_deg),
+        "population_version": RR100_VERSION,
+        "plus_spec": asdict(canonical_vernier_spec(+float(args.fd_step_arcmin))),
+        "minus_spec": asdict(canonical_vernier_spec(-float(args.fd_step_arcmin))),
+    }
+
+
+def _identity_text(identity: dict[str, Any]) -> str:
+    return json.dumps(identity, sort_keys=True, separators=(",", ":"))
 
 
 def estimate_base_axis_std_deg() -> float:
@@ -403,13 +429,29 @@ def main() -> None:
     print(f"Compact cache: {compact_cache_path}", flush=True)
     print(f"Saved trace audit: {trace_audit_path}", flush=True)
 
+    expected_identity = _cache_identity(args, base_std_deg=base_std_deg)
     if compact_cache_path.exists() and not args.force:
-        print("Loading compact cache.", flush=True)
-        loaded = np.load(compact_cache_path, allow_pickle=True)
-        cache = {key: loaded[key] for key in loaded.files}
+        with np.load(compact_cache_path, allow_pickle=True) as loaded:
+            matches_identity = (
+                "cache_identity_json" in loaded
+                and str(np.asarray(loaded["cache_identity_json"]).ravel()[0]) == _identity_text(expected_identity)
+            )
+            if matches_identity:
+                print("Loading compact cache.", flush=True)
+                cache = {key: loaded[key] for key in loaded.files}
+            else:
+                print("Compact cache metadata mismatch; recomputing.", flush=True)
+                cache = compute_compact_cache(args, specs, traces_by_condition)
+                cache["base_std_deg"] = np.asarray([base_std_deg], dtype=np.float32)
+                cache["stimulus_normalization"] = np.asarray([STIMULUS_NORMALIZATION])
+                cache["cache_identity_json"] = np.asarray([_identity_text(expected_identity)])
+                np.savez_compressed(compact_cache_path, **cache)
+                print(f"Saved compact cache: {compact_cache_path}", flush=True)
     else:
         cache = compute_compact_cache(args, specs, traces_by_condition)
         cache["base_std_deg"] = np.asarray([base_std_deg], dtype=np.float32)
+        cache["stimulus_normalization"] = np.asarray([STIMULUS_NORMALIZATION])
+        cache["cache_identity_json"] = np.asarray([_identity_text(expected_identity)])
         np.savez_compressed(compact_cache_path, **cache)
         print(f"Saved compact cache: {compact_cache_path}", flush=True)
 

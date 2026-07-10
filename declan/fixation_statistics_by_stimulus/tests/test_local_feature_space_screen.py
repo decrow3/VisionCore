@@ -92,4 +92,9 @@ def test_cross_validated_decode_accepts_scalar_target() -> None:
 
     assert result["target_dim"] == 1
     assert result["per_window_score"].shape == (24,)
+    assert result["per_window_sse"].shape == (24,)
+    assert result["per_window_sst_train_baseline"].shape == (24,)
     assert np.isfinite(result["mean_neg_mse"])
+    assert np.isfinite(result["r2_cv"])
+    assert result["r2_cv_method"] == "pooled_multioutput_out_of_fold_sse_sst_train_mean_baseline"
+    assert result["r2_cv_sst_train_baseline"] > 0.0

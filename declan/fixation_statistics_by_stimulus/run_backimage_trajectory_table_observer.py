@@ -257,7 +257,9 @@ def _add_static_response_features(
     return out, {
         "n_static_response_feature_windows": int(features.shape[0]),
         "n_static_response_units": int(features.shape[1]),
-        "static_response_feature_definition": "mean over aligned patch_center_static_tau_zero rates per canonical unit",
+        "static_response_feature_definition": (
+            "mean over aligned static_matched_mean / patch_center_tau_zero rates per canonical unit"
+        ),
     }
 
 
@@ -893,6 +895,12 @@ def run(args: argparse.Namespace) -> Path:
         "config": {k: _json_ready(v) for k, v in vars(args).items()},
         "rate_to_count_conversion": "expected_counts = rates * bin_seconds",
         "primary_zero_reference": "patch_center_static_tau_zero",
+        "primary_static_reference": "static_matched_mean__patch_center_tau_zero",
+        "trajectory_coordinate_contract": (
+            "BackImage patches are extracted at each window mean fixation position; "
+            "motion traces are crop-centered residual displacements; tau=0 is static "
+            "at that matched mean/crop center, not global absolute-eye zero."
+        ),
         "response_cache_schema": "separate prior_lambda_counts, known_lambda_counts, zero_lambda_counts",
     }
     _write_json(out_dir / "run_metadata.json", metadata)
@@ -1230,6 +1238,13 @@ def run(args: argparse.Namespace) -> Path:
                             nearest_trajectory_distance=np.asarray([float(nearest_dist)], dtype=np.float32),
                             observation_reference_mode=np.asarray(["observed_trace_moved"]),
                             zero_reference_mode=np.asarray(["patch_center_static_tau_zero"]),
+                            static_reference_mode=np.asarray(["static_matched_mean__patch_center_tau_zero"]),
+                            trajectory_coordinate_contract=np.asarray(
+                                [
+                                    "BackImage patches are extracted at each window mean fixation position; "
+                                    "trajectory coordinates are residual displacements around that crop center."
+                                ]
+                            ),
                             trajectory_coordinate_schema=np.asarray(
                                 ["prior_trajectory_xy is (candidate,trajectory,time,xy) for per_candidate catalogs, else (trajectory,time,xy); observed_trajectory_xy is (time,xy)"]
                             ),
@@ -1253,6 +1268,7 @@ def run(args: argparse.Namespace) -> Path:
                                 "nearest_trajectory_distance": float(nearest_dist),
                                 "has_prior_trajectory_xy": True,
                                 "has_observed_trajectory_xy": True,
+                                "static_reference_mode": "static_matched_mean__patch_center_tau_zero",
                                 "prior_duplicate_trajectory_count": int(prior_duplicate_count),
                                 "response_frames_before_alignment_min": int(min(response_frames_before_alignment)),
                                 "response_frames_before_alignment_max": int(max(response_frames_before_alignment)),
@@ -1293,6 +1309,7 @@ def run(args: argparse.Namespace) -> Path:
                                 "axis_catalog_mode": str(args.axis_catalog_mode) if axis_per_candidate else "shared",
                                 "trajectory_prior_mode": str(args.trajectory_prior_mode),
                                 "zero_reference_mode": "patch_center_static_tau_zero",
+                                "static_reference_mode": "static_matched_mean__patch_center_tau_zero",
                                 "bin_seconds": float(args.bin_seconds),
                                 "response_cache_path": cache_rel,
                                 "true_trajectory_id": str(obs_spec["trajectory_id"]),

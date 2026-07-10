@@ -144,6 +144,63 @@ def read_csv_optional(path: Path) -> pd.DataFrame:
             "joint_accuracy",
             "mean_gap_closure_vs_zero_known",
             "mean_margin_gap_closure_vs_zero_known",
+            "trajectory_weight_sigma_arcmin",
+            "mean_trajectory_weight_neff",
+            "mean_trajectory_weight_true",
+            "mean_posterior_neff_true",
+            "mean_joint_score",
+            "mean_known_eye_score",
+            "mean_zero_eye_score",
+            "across_scale",
+            "along_scale",
+            "median_nearest_rms_dist_arcmin",
+            "mean_nearest_rms_dist_arcmin",
+            "median_d_traj_over_d_sign",
+            "mean_d_traj_over_d_sign",
+            "fraction_d_traj_gt_d_sign",
+            "fraction_d_traj_gt_10x_d_sign",
+            "unit_index",
+            "n_units",
+            "mean_unit_log2_ssi_vs_static",
+            "sem_unit_log2_ssi_vs_static",
+            "population_log2_ssi_vs_static",
+            "static_map_median",
+            "static_map_high_percentile",
+            "static_map_low_percentile",
+            "positive_strength",
+            "negative_strength",
+            "polarity_score_positive_minus_negative",
+            "static_ssi_bits_per_spike_mean",
+            "zero_x_ssi_bits_per_spike_mean",
+            "unit_ssi_bits_per_spike_mean",
+            "delta_ssi_vs_static",
+            "delta_ssi_vs_0x",
+            "log2_ratio_vs_static",
+            "log2_ratio_vs_0x",
+            "log2_ratio_vs_static_floor",
+            "log2_ratio_vs_0x_floor",
+            "denominator_floor_bits",
+            "budget_proxy_mean",
+            "delta_budget_proxy_vs_static",
+            "delta_budget_proxy_vs_0x",
+            "sum_unit_ssi_bits_per_spike",
+            "sum_delta_ssi_vs_static",
+            "sum_delta_ssi_vs_0x",
+            "sum_unit_budget_proxy",
+            "sum_delta_budget_proxy_vs_static",
+            "sum_delta_budget_proxy_vs_0x",
+            "population_ssi_bits_per_spike_mean",
+            "delta_population_ssi_vs_static",
+            "delta_population_ssi_vs_0x",
+            "total_rate_mean",
+            "static_ssi_min_bits",
+            "geometric_mean_ratio_vs_static",
+            "geometric_mean_ratio_vs_static_floor",
+            "arithmetic_mean_ratio_vs_static",
+            "sum_static_ssi_bits_per_spike",
+            "sum_current_ssi_bits_per_spike",
+            "min_static_ssi_bits",
+            "geometric_mean_ssi_vs_static",
         }:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
@@ -479,6 +536,15 @@ I_{\mathrm{SSI}}(t)
 \right]
 $$
 
+The ratio \(r_u(x,t) / \bar r_u(t)\) is the internal SSI normalization. It is
+appropriate: SSI asks how spatially concentrated a unit's map is relative to its
+own mean rate. This is separate from later fold-change plots such as
+\(\log_2 I_{\mathrm{SSI}}(\mathrm{scale}) / I_{\mathrm{SSI}}(\mathrm{static})\).
+Those fold-change curves are diagnostics. Averaging unit-wise log ratios is a
+geometric mean in ratio space, but it can still be dominated by tiny static SSI
+denominators. Interpret absolute bits/spike, absolute changes from baseline,
+and spike-weighted SSI budgets before interpreting fold-change curves.
+
 Fisher is offset-specific. SSI is general spatial organization. The hidden-pose
 covariance term is introduced later, after this known-trace comparison is clear.
 """
@@ -654,6 +720,22 @@ TRAJECTORY_TABLE_RUN_DIR = first_existing(
         ROOT / "outputs/vernier_trajectory_table_observer_smoke_poisson",
     ]
 )
+NOISY_TRAJECTORY_RUN_DIR = first_existing(
+    [
+        ROOT / "outputs/notebook_vernier_walkthrough/rr100_noisy_trajectory_observer",
+    ]
+)
+HELDOUT_TRAJECTORY_RUN_DIR = first_existing(
+    [
+        ROOT / "outputs/notebook_vernier_walkthrough/rr100_heldout_trajectory_observer_along1",
+        ROOT / "outputs/notebook_vernier_walkthrough/rr100_heldout_trajectory_observer_smoke",
+    ]
+)
+CATALOG_MISMATCH_RUN_DIR = first_existing(
+    [
+        ROOT / "outputs/notebook_vernier_walkthrough/rr100_catalog_mismatch_diagnostic_along1",
+    ]
+)
 
 WALKTHROUGH_OUT_DIR = ROOT / "outputs/notebook_vernier_walkthrough"
 WALKTHROUGH_OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -744,11 +826,26 @@ SSI_FINAL_HISTORY_BIN_SECONDS = 1.0 / 120.0
 SSI_FINAL_HISTORY_CACHE_DIR = WALKTHROUGH_OUT_DIR / "ssi_final_history_map"
 SSI_FINAL_HISTORY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+# --- RR100 real-trace along=0 unit SSI diagnostic ---
+# This mirrors the endpoint-history tutorial's unit diagnostic, but uses the
+# original real-trace scale grid and averages SSI/maps over all response frames.
+RUN_RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIAGNOSTIC = True
+RR100_REAL_TRACE_SCALE_GRID_DIR = WALKTHROUGH_OUT_DIR / "rr100_real_trace_scale_grid"
+RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR = RR100_REAL_TRACE_SCALE_GRID_DIR / "unit_ssi_along0_diagnostics"
+RR100_REAL_TRACE_UNIT_SSI_N_TRACES = 16
+RR100_REAL_TRACE_UNIT_SSI_MAX_FRAMES = 60
+RR100_REAL_TRACE_UNIT_SSI_BATCH_SIZE = 64
+RR100_REAL_TRACE_UNIT_SSI_TOP_UNITS = 12
+RR100_REAL_TRACE_DENOMINATOR_FLOOR_BITS = 0.01
+
 print(f"ROOT: {ROOT}")
 print(f"BACKIMAGE_FIXATION_WINDOWS_PATH: {BACKIMAGE_FIXATION_WINDOWS_PATH}")
 print(f"RUN_DIR: {RUN_DIR}")
 print(f"JOINT_RUN_DIR: {JOINT_RUN_DIR}")
 print(f"TRAJECTORY_TABLE_RUN_DIR: {TRAJECTORY_TABLE_RUN_DIR}")
+print(f"NOISY_TRAJECTORY_RUN_DIR: {NOISY_TRAJECTORY_RUN_DIR}")
+print(f"HELDOUT_TRAJECTORY_RUN_DIR: {HELDOUT_TRAJECTORY_RUN_DIR}")
+print(f"CATALOG_MISMATCH_RUN_DIR: {CATALOG_MISMATCH_RUN_DIR}")
 
 # %% [markdown]
 # ## Optional runner commands
@@ -800,12 +897,103 @@ cache_recompute_command = [
     "--run-compact-aware-pose-blind",
 ]
 
+rr100_noisy_trajectory_command = [
+    sys.executable,
+    "-m",
+    "declan.vernier_active_sensing.run_rr100_noisy_trajectory_observer",
+    "--source-dir",
+    str(WALKTHROUGH_OUT_DIR / "rr100_real_trace_scale_grid"),
+    "--out-dir",
+    str(WALKTHROUGH_OUT_DIR / "rr100_noisy_trajectory_observer"),
+    "--trajectory-sigmas-arcmin",
+    "0,0.125,0.25,0.5,1,2,inf",
+]
+
+rr100_real_trace_along0_unit_ssi_command = [
+    sys.executable,
+    "-m",
+    "declan.vernier_active_sensing.plot_rr100_real_trace_along0_unit_ssi",
+    "--out-dir",
+    str(RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR),
+    "--summary-csv",
+    str(RR100_REAL_TRACE_SCALE_GRID_DIR / "rr100_real_trace_scale_grid_summary.csv"),
+    "--n-traces",
+    str(RR100_REAL_TRACE_UNIT_SSI_N_TRACES),
+    "--max-frames",
+    str(RR100_REAL_TRACE_UNIT_SSI_MAX_FRAMES),
+    "--fd-step-arcmin",
+    str(FD_STEP_TO_PLOT),
+    "--seed",
+    str(SEED),
+    "--batch-size",
+    str(RR100_REAL_TRACE_UNIT_SSI_BATCH_SIZE),
+    "--top-units",
+    str(RR100_REAL_TRACE_UNIT_SSI_TOP_UNITS),
+]
+
+rr100_real_trace_along0_polarity_group_command = [
+    sys.executable,
+    "-m",
+    "declan.vernier_active_sensing.plot_rr100_along0_polarity_group_averages",
+    "--mode",
+    "real_trace",
+    "--real-trace-dir",
+    str(RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR),
+    "--fd-step-arcmin",
+    str(FD_STEP_TO_PLOT),
+    "--real-trace-max-frames",
+    str(RR100_REAL_TRACE_UNIT_SSI_MAX_FRAMES),
+]
+
+rr100_real_trace_along0_filtered_polarity_group_command = [
+    sys.executable,
+    "-m",
+    "declan.vernier_active_sensing.plot_rr100_along0_polarity_group_averages",
+    "--mode",
+    "real_trace",
+    "--real-trace-dir",
+    str(RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR),
+    "--fd-step-arcmin",
+    str(FD_STEP_TO_PLOT),
+    "--real-trace-max-frames",
+    str(RR100_REAL_TRACE_UNIT_SSI_MAX_FRAMES),
+    "--min-static-ssi-bits",
+    str(RR100_REAL_TRACE_DENOMINATOR_FLOOR_BITS),
+    "--include-all-group",
+]
+
+rr100_real_trace_along0_denominator_diagnostic_command = [
+    sys.executable,
+    "-m",
+    "declan.vernier_active_sensing.plot_rr100_along0_denominator_diagnostics",
+    "--mode",
+    "real_trace",
+    "--real-trace-dir",
+    str(RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR),
+    "--fd-step-arcmin",
+    str(FD_STEP_TO_PLOT),
+    "--real-trace-max-frames",
+    str(RR100_REAL_TRACE_UNIT_SSI_MAX_FRAMES),
+    "--denominator-floor-bits",
+    str(RR100_REAL_TRACE_DENOMINATOR_FLOOR_BITS),
+]
+
 print("Render-only command:")
 print(" ".join(render_audit_command))
 print("\nTiny model smoke command:")
 print(" ".join(tiny_model_smoke_command))
 print("\nCache recompute command:")
 print(" ".join(cache_recompute_command))
+print("\nRR100 noisy trajectory observer command:")
+print(" ".join(rr100_noisy_trajectory_command))
+print("\nRR100 real-trace along=0 unit SSI diagnostic command:")
+print(" ".join(rr100_real_trace_along0_unit_ssi_command))
+print("\nRR100 real-trace along=0 polarity-group command:")
+print(" ".join(rr100_real_trace_along0_polarity_group_command))
+print("\nRR100 real-trace along=0 filtered polarity-group command:")
+print(" ".join(rr100_real_trace_along0_filtered_polarity_group_command))
+print("\nRR100 real-trace along=0 denominator diagnostic command:")
+print(" ".join(rr100_real_trace_along0_denominator_diagnostic_command))
 
 # %%
 if RUN_RENDER_AUDIT:
@@ -816,6 +1004,152 @@ if RUN_TINY_MODEL_SMOKE:
 
 if RUN_CACHE_RECOMPUTE and RUN_DIR is not None:
     subprocess.run(cache_recompute_command, cwd=ROOT, check=True)
+
+# %% [markdown]
+# ## RR100 Real-Trace Along-0 Unit SSI Diagnostic
+#
+# This is the original-method counterpart to the endpoint-history unit plot. It
+# uses the original real-trace anisotropic scale grid, recomputes only the
+# along=0 spatial maps needed for highlighted units, and orders the highlighted
+# legend and activation-map rows by the unit's y-value at across=1.
+#
+# Important interpretation detail: these unit curves are mean log2 ratios, so
+# they are geometric-mean fold changes in ratio space. They are not an absolute
+# information budget. Units with near-zero static SSI can still create large
+# fold changes after tiny absolute SSI increases. The denominator diagnostic and
+# filtered polarity plot below therefore report absolute SSI changes, a
+# spike-weighted budget proxy, and retained-unit curves after excluding units
+# below the static SSI floor `RR100_REAL_TRACE_DENOMINATOR_FLOOR_BITS`.
+
+# %%
+rr100_real_trace_unit_manifest_path = (
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_unit_ssi_manifest.json"
+)
+rr100_real_trace_unit_map_manifest_path = (
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR
+    / "highlighted_unit_activation_maps"
+    / "rr100_real_trace_along0_highlighted_unit_map_manifest.csv"
+)
+rr100_real_trace_unit_required = [
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR
+    / "rr100_real_trace_along0_unit_ssi_lines_top_influence_with_activation_rows.png",
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_unit_ssi_lines_top_influence.png",
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_unit_ssi_leave_one_out.png",
+    rr100_real_trace_unit_map_manifest_path,
+]
+if RUN_RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIAGNOSTIC and not all(
+    path.exists() for path in rr100_real_trace_unit_required
+):
+    subprocess.run(rr100_real_trace_along0_unit_ssi_command, cwd=ROOT, check=True)
+elif RUN_RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIAGNOSTIC:
+    print(f"Using existing cached RR100 real-trace along=0 unit SSI diagnostic: {RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR}")
+else:
+    print("RR100 real-trace along=0 unit SSI diagnostic disabled.")
+    print(" ".join(rr100_real_trace_along0_unit_ssi_command))
+
+rr100_real_trace_polarity_required = [
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_polarity_group_averages.png",
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_polarity_unit_table.csv",
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_polarity_group_summary.csv",
+]
+if RUN_RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIAGNOSTIC and not all(
+    path.exists() for path in rr100_real_trace_polarity_required
+):
+    subprocess.run(rr100_real_trace_along0_polarity_group_command, cwd=ROOT, check=True)
+elif RUN_RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIAGNOSTIC:
+    print(f"Using existing cached RR100 real-trace polarity-group diagnostic: {RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR}")
+
+rr100_real_trace_filtered_polarity_required = [
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_polarity_static_ssi_ge_0p01_group_averages.png",
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_polarity_static_ssi_ge_0p01_unit_table.csv",
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_polarity_static_ssi_ge_0p01_group_summary.csv",
+]
+if RUN_RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIAGNOSTIC and not all(
+    path.exists() for path in rr100_real_trace_filtered_polarity_required
+):
+    subprocess.run(rr100_real_trace_along0_filtered_polarity_group_command, cwd=ROOT, check=True)
+elif RUN_RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIAGNOSTIC:
+    print(f"Using existing cached RR100 real-trace filtered polarity-group diagnostic: {RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR}")
+
+rr100_real_trace_denominator_required = [
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_denominator_diagnostics.png",
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_denominator_static_floor_sweep.png",
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_denominator_diagnostic_units.csv",
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_denominator_diagnostic_groups.csv",
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_denominator_diagnostic_summary.csv",
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_denominator_static_floor_sweep.csv",
+]
+if RUN_RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIAGNOSTIC and not all(
+    path.exists() for path in rr100_real_trace_denominator_required
+):
+    subprocess.run(rr100_real_trace_along0_denominator_diagnostic_command, cwd=ROOT, check=True)
+elif RUN_RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIAGNOSTIC:
+    print(f"Using existing cached RR100 real-trace denominator diagnostic: {RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR}")
+
+show_image_if_exists(
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR
+    / "rr100_real_trace_along0_unit_ssi_lines_top_influence_with_activation_rows.png"
+)
+show_image_if_exists(RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_polarity_group_averages.png")
+show_image_if_exists(
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_polarity_static_ssi_ge_0p01_group_averages.png"
+)
+show_image_if_exists(RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_denominator_diagnostics.png")
+show_image_if_exists(RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_denominator_static_floor_sweep.png")
+show_image_if_exists(RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_unit_ssi_leave_one_out.png")
+
+rr100_real_trace_unit_top_df = read_csv_optional(
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_unit_ssi_top_units.csv"
+)
+if not rr100_real_trace_unit_top_df.empty:
+    show_table(
+        rr100_real_trace_unit_top_df[
+            [
+                "unit_index",
+                "max_abs_leave_one_out_population_ratio_delta",
+                "max_abs_log2_unit_ssi_vs_static",
+                "static_unit_ssi_bits_per_spike_mean",
+                "static_unit_mean_rate_mean",
+            ]
+        ],
+        n=RR100_REAL_TRACE_UNIT_SSI_TOP_UNITS,
+    )
+else:
+    print(f"No real-trace along=0 top-unit table found yet: {RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR}")
+
+rr100_real_trace_polarity_summary_df = read_csv_optional(
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_polarity_group_summary.csv"
+)
+if not rr100_real_trace_polarity_summary_df.empty:
+    show_table(rr100_real_trace_polarity_summary_df)
+
+rr100_real_trace_denominator_summary_df = read_csv_optional(
+    RR100_REAL_TRACE_ALONG0_UNIT_SSI_DIR / "rr100_real_trace_along0_denominator_diagnostic_summary.csv"
+)
+if not rr100_real_trace_denominator_summary_df.empty:
+    show_table(
+        rr100_real_trace_denominator_summary_df[
+            [
+                "across_scale",
+                "population_ssi_bits_per_spike_mean",
+                "delta_population_ssi_vs_static",
+                "budget_proxy_mean",
+                "delta_budget_proxy_vs_static",
+                "mean_unit_log2_ratio_vs_static",
+                "mean_unit_log2_ratio_vs_static_floor",
+                "sum_unit_delta_ssi_vs_static",
+            ]
+        ]
+    )
+
+# %% [markdown]
+# Reading the SSI diagnostic figures: the unfiltered unit-wise fold-change view
+# is useful for finding denominator artifacts, not for claiming population
+# information gains. If the large positive fold changes sit at tiny static SSI,
+# check the absolute SSI table, the rate-weighted budget proxy, and the
+# static-SSI threshold sweep. The filtered polarity-group figure is the cleaner
+# retained-unit fold-change summary; the absolute/budget panels remain the
+# primary evidence for whether spatial information actually increased.
 
 # %% [markdown]
 # ## Population view
@@ -3616,6 +3950,304 @@ def plot_trajectory_table_accuracy(df: pd.DataFrame, *, fd_step: float) -> plt.F
 table_step = nearest_available_step(table_summary, FD_STEP_TO_PLOT)
 fig = plot_trajectory_table_accuracy(table_summary, fd_step=table_step) if table_step is not None else None
 fig
+
+# %% [markdown]
+# ## Noisy retinal-trajectory observer diagnostic
+#
+# This include-self pilot is an endpoint sanity check for a finite-precision
+# trajectory cue. The observer receives a trajectory cue with uncertainty
+# `sigma_e` and computes a Vernier likelihood ratio after marginalizing over the
+# empirical trajectory table:
+#
+# ```text
+# log p(r | s, hat_tau_i)
+#   = log sum_j p(r | s, tau_j) p(tau_j | hat_tau_i).
+# ```
+#
+# Because the true trajectory is retained in this include-self catalog, the
+# endpoints are teaching anchors:
+#
+# - `sigma_e = 0`: the prior collapses to the anchored/true trajectory, so this
+#   recovers the known-trajectory endpoint when self is included.
+# - `sigma_e = inf`: the prior is uniform over the retained catalog, so this
+#   recovers the unknown-trajectory empirical marginal.
+#
+# In the pilot below, the trajectory catalog is the saved RR100 scaled-real-trace
+# grid. No synthetic traces are generated in this analysis. In a held-out catalog
+# where the true trajectory is excluded, `sigma_e = 0` no longer recovers the
+# known-trajectory endpoint.
+
+# %%
+if NOISY_TRAJECTORY_RUN_DIR is None:
+    noisy_summary = pd.DataFrame()
+    print("No noisy retinal-trajectory observer directory found.")
+else:
+    noisy_summary = read_csv_optional(
+        NOISY_TRAJECTORY_RUN_DIR / "rr100_noisy_trajectory_observer_summary.csv"
+    )
+    print(f"NOISY_TRAJECTORY_RUN_DIR: {NOISY_TRAJECTORY_RUN_DIR}")
+    print(f"noisy trajectory summary rows: {len(noisy_summary)}")
+    if not noisy_summary.empty:
+        show_table(noisy_summary.head(12))
+
+# %%
+def _sigma_plot_x(series: pd.Series) -> np.ndarray:
+    vals = pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)
+    x = np.empty_like(vals, dtype=float)
+    for idx, value in enumerate(vals):
+        if value == 0:
+            x[idx] = -2.0
+        elif np.isfinite(value):
+            x[idx] = math.log10(max(float(value), 1e-12))
+        else:
+            x[idx] = 1.0
+    return x
+
+
+def _sigma_plot_ticks() -> tuple[list[float], list[str]]:
+    return (
+        [-2.0, math.log10(0.125), math.log10(0.25), math.log10(0.5), 0.0, math.log10(2.0), 1.0],
+        ["0", "0.125", "0.25", "0.5", "1", "2", "inf"],
+    )
+
+
+def plot_noisy_trajectory_sigma_sweep(df: pd.DataFrame) -> plt.Figure | None:
+    if df.empty:
+        print("No noisy trajectory summary available.")
+        return None
+    conditions = [
+        "real_aniso_across_0_along_1",
+        "real_aniso_across_0p25_along_1",
+        "real_aniso_across_1_along_1",
+        "real_aniso_across_2_along_1",
+    ]
+    fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.0), dpi=140, constrained_layout=True)
+    for condition in conditions:
+        sub = df[df["condition"].eq(condition)].copy()
+        if sub.empty:
+            continue
+        sub = sub.sort_values("trajectory_weight_sigma_arcmin")
+        x = _sigma_plot_x(sub["trajectory_weight_sigma_arcmin"])
+        label = str(sub.iloc[0].get("label", condition_label(condition)))
+        axes[0].plot(x, sub["joint_accuracy"], marker="o", label=label)
+        axes[1].plot(x, sub["mean_trajectory_weight_neff"], marker="o", label=label)
+    ticks, labels = _sigma_plot_ticks()
+    for ax in axes:
+        ax.set_xticks(ticks)
+        ax.set_xticklabels(labels)
+        ax.set_xlabel("trajectory cue sigma_e (arcmin)")
+        ax.spines[["top", "right"]].set_visible(False)
+    axes[0].axhline(0.5, color="#333333", linestyle="--", linewidth=0.9)
+    axes[0].set_ylabel("Vernier sign accuracy")
+    axes[0].set_title("Noisy trajectory marginal")
+    axes[1].set_ylabel("prior effective trajectory count")
+    axes[1].set_title("How many traces does the cue allow?")
+    axes[1].legend(frameon=False, fontsize=8)
+    return fig
+
+
+fig = plot_noisy_trajectory_sigma_sweep(noisy_summary)
+fig
+
+# %% [markdown]
+# The important readout is the pair of curves: accuracy says whether Vernier sign
+# survives marginalization, and `N_eff` says how diffuse the trajectory prior has
+# become. The margin-closure column is still useful as a continuity diagnostic,
+# but it is not the lead plot because it can become unstable when the zero-known
+# denominator is small.
+
+# %%
+def _static_baseline_mask(df: pd.DataFrame) -> pd.Series:
+    if "is_static_baseline" in df:
+        return df["is_static_baseline"].astype(str).str.lower().isin({"1", "true", "t", "yes", "y"})
+    if "condition" in df:
+        return df["condition"].astype(str).eq("static_center")
+    return pd.Series(False, index=df.index)
+
+
+def _display_sigma_value(value: float) -> str:
+    return "inf" if not np.isfinite(float(value)) else f"{float(value):g}"
+
+
+def plot_noisy_trajectory_static_relative_heatmaps(df: pd.DataFrame) -> plt.Figure | None:
+    if df.empty:
+        print("No noisy trajectory summary available.")
+        return None
+    required = {"trajectory_weight_sigma_arcmin", "across_scale", "along_scale", "mean_joint_score"}
+    if not required.issubset(df.columns):
+        print("Noisy trajectory summary lacks static-relative heatmap columns.")
+        return None
+    static = df[_static_baseline_mask(df)].copy()
+    grid = df[~_static_baseline_mask(df)].copy()
+    if static.empty or grid.empty:
+        print("Need both static and scale-grid rows for static-relative heatmaps.")
+        return None
+    sigmas = [0.0, 0.25, 0.5, 1.0, 2.0, float("inf")]
+    scales = sorted(pd.to_numeric(grid["across_scale"], errors="coerce").dropna().unique())
+    available_sigmas = sorted(pd.to_numeric(df["trajectory_weight_sigma_arcmin"], errors="coerce").dropna().unique())
+    sigmas = [sigma for sigma in sigmas if any(np.isclose(available_sigmas, sigma)) or not np.isfinite(sigma)]
+    if not scales or not sigmas:
+        return None
+
+    fig, axes = plt.subplots(
+        1,
+        len(sigmas),
+        figsize=(3.0 * len(sigmas), 3.2),
+        dpi=140,
+        constrained_layout=True,
+    )
+    axes_arr = np.asarray(axes).reshape(-1)
+    im = None
+    for ax, sigma in zip(axes_arr, sigmas, strict=True):
+        if np.isfinite(sigma):
+            static_sub = static[np.isclose(static["trajectory_weight_sigma_arcmin"], sigma)]
+            sub = grid[np.isclose(grid["trajectory_weight_sigma_arcmin"], sigma)]
+        else:
+            static_sub = static[np.isinf(static["trajectory_weight_sigma_arcmin"])]
+            sub = grid[np.isinf(grid["trajectory_weight_sigma_arcmin"])]
+        values = np.full((len(scales), len(scales)), np.nan, dtype=float)
+        if not static_sub.empty:
+            static_score = float(static_sub.iloc[0]["mean_joint_score"])
+            for y, along in enumerate(scales):
+                for x, across in enumerate(scales):
+                    cell = sub[
+                        np.isclose(sub["across_scale"], across)
+                        & np.isclose(sub["along_scale"], along)
+                    ]
+                    if not cell.empty and abs(static_score) > 1e-12:
+                        values[y, x] = float(cell.iloc[0]["mean_joint_score"]) / static_score
+        im = ax.imshow(values, origin="lower", interpolation="nearest", cmap="magma", vmin=0.0, vmax=1.5)
+        ax.set_title(f"sigma={_display_sigma_value(sigma)}")
+        ax.set_xticks(np.arange(len(scales)))
+        ax.set_yticks(np.arange(len(scales)))
+        ax.set_xticklabels([f"{scale:g}" for scale in scales], rotation=45, ha="right", fontsize=6)
+        ax.set_yticklabels([f"{scale:g}" for scale in scales], fontsize=6)
+        ax.set_xlabel("across scale")
+        for yy in range(values.shape[0]):
+            for xx in range(values.shape[1]):
+                if np.isfinite(values[yy, xx]):
+                    ax.text(xx, yy, f"{values[yy, xx]:.2g}", ha="center", va="center", fontsize=4.8, color="white")
+    axes_arr[0].set_ylabel("along scale")
+    if im is not None:
+        fig.colorbar(im, ax=axes_arr.tolist(), fraction=0.025, pad=0.02)
+    fig.suptitle("Mean Vernier LLR margin relative to static", y=1.04)
+    return fig
+
+
+fig = plot_noisy_trajectory_static_relative_heatmaps(noisy_summary)
+fig
+
+# %%
+if NOISY_TRAJECTORY_RUN_DIR is not None:
+    show_image_if_exists(
+        NOISY_TRAJECTORY_RUN_DIR / "rr100_noisy_trajectory_observer_static_relative_heatmaps.png"
+    )
+
+# %% [markdown]
+# ## Held-out empirical trajectory observer diagnostic
+#
+# The include-self noisy-trajectory pilot is useful for endpoint checks, but it
+# is still a small catalog analysis. The stricter stepping-stone analysis uses
+# more real traces and splits trajectory identities into disjoint observation
+# and nuisance-prior sets.
+#
+# In this version:
+#
+# - `known_*` columns are the pose-aware endpoint: the observer is scored against
+#   the same trajectory that generated the response.
+# - finite `sigma_e` curves are trajectory-cue-conditioned local catalog
+#   marginals over held-out nuisance trajectories.
+# - `sigma_e = inf` is the pose-unaware empirical Monte Carlo marginal over
+#   held-out nuisance trajectories.
+#
+# Because the true observation trajectory is deliberately absent from the prior
+# set, `sigma_e = 0` is a nearest-held-out-trajectory limit, not the pose-aware
+# endpoint. So this sigma sweep interpolates from nearest held-out catalog match
+# to uniform held-out catalog marginal, not from pose-aware to pose-unaware.
+# This is why the plots overlay pose-aware separately.
+
+# %%
+if HELDOUT_TRAJECTORY_RUN_DIR is None:
+    heldout_summary = pd.DataFrame()
+    print("No held-out trajectory observer directory found.")
+else:
+    heldout_summary = read_csv_optional(
+        HELDOUT_TRAJECTORY_RUN_DIR / "rr100_heldout_trajectory_observer_summary.csv"
+    )
+    print(f"HELDOUT_TRAJECTORY_RUN_DIR: {HELDOUT_TRAJECTORY_RUN_DIR}")
+    print(f"held-out trajectory summary rows: {len(heldout_summary)}")
+    if not heldout_summary.empty:
+        show_table(heldout_summary.head(18))
+
+# %%
+if HELDOUT_TRAJECTORY_RUN_DIR is not None:
+    show_image_if_exists(
+        HELDOUT_TRAJECTORY_RUN_DIR / "rr100_heldout_along1_across_by_sigma.png"
+    )
+    show_image_if_exists(
+        HELDOUT_TRAJECTORY_RUN_DIR / "rr100_heldout_uniform_k_convergence.png"
+    )
+
+# %% [markdown]
+# ## Held-out catalog density diagnostic
+#
+# Before interpreting the held-out catalog observer, check whether the catalog is
+# dense enough in response space. The diagnostic compares same-sign trajectory
+# mismatch to same-trajectory Vernier sign distance:
+#
+# ```text
+# D_traj = ||mu(s_i, tau_i) - mu(s_i, tau_NN(i))||^2_Sigma^-1
+# D_sign = ||mu(+, tau_i) - mu(-, tau_i)||^2_Sigma^-1
+# ```
+#
+# If `D_traj >> D_sign`, the nearest held-out trajectory is already a much worse
+# response match than the Vernier sign difference. In that regime a finite
+# catalog marginal should fail unless the catalog is densified or the likelihood
+# includes an interpolation/noise term.
+
+# %%
+if CATALOG_MISMATCH_RUN_DIR is None:
+    catalog_mismatch_summary = pd.DataFrame()
+    print("No held-out catalog mismatch diagnostic directory found.")
+else:
+    catalog_mismatch_summary = read_csv_optional(
+        CATALOG_MISMATCH_RUN_DIR / "rr100_catalog_mismatch_summary.csv"
+    )
+    print(f"CATALOG_MISMATCH_RUN_DIR: {CATALOG_MISMATCH_RUN_DIR}")
+    print(f"catalog mismatch summary rows: {len(catalog_mismatch_summary)}")
+    if not catalog_mismatch_summary.empty:
+        show_table(catalog_mismatch_summary.head(12))
+
+# %%
+if CATALOG_MISMATCH_RUN_DIR is not None:
+    show_image_if_exists(
+        CATALOG_MISMATCH_RUN_DIR / "rr100_catalog_mismatch_diagnostic.png"
+    )
+
+# %% [markdown]
+# ## Vernier tutorial landing
+#
+# The clean tutorial result is the known-versus-hidden trajectory Fisher story.
+# When the eye trajectory is supplied, reduced across-contour motion can increase
+# Vernier information. When the eye trajectory is hidden, trajectory-induced
+# response variance overwhelms the small Vernier offset signal. This is the
+# useful Vernier lesson.
+#
+# The leave-one-trajectory-out catalog observer is our best finite-catalog
+# attempt at a generative trajectory marginal. It is worth including as a
+# cautionary diagnostic, but not as the main solution. It fails for an
+# interpretable reason: nearest held-out trajectory mismatch is larger than the
+# Vernier sign signal. Therefore the sigma axis in that analysis is a catalog
+# weighting scale, not a calibrated bridge from pose-aware to pose-unaware.
+#
+# For the manuscript/tutorial, use this as the stopping point:
+#
+# 1. Report pose-aware and pose-unaware Fisher for the real-trace scale sweep.
+# 2. Show that the known-trace benefit comes mainly from reducing across-contour
+#    motion, not from adding along-contour motion.
+# 3. Include the leave-one-out catalog observer only as a principled negative
+#    control showing why sparse whole-trajectory lookup is inadequate.
+# 4. Leave robust joint inference to the feature-decoder / natural-image branch.
 
 # %% [markdown]
 # ## Bridge to natural-image active sensing

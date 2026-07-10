@@ -2,8 +2,11 @@
 
 This is the candidate-free feature endpoint proposed after the current
 candidate-posterior observer. It still uses the existing response-table caches
-to fit the readout, but at test time it infers a continuous compact feature
-embedding ``z`` rather than selecting or averaging over candidate images.
+to fit the readout, but at test time it infers a continuous feature embedding
+``z`` rather than selecting or averaging over candidate images. The response
+movie can be represented in full unit coordinates or projected through a
+compact basis; compact coordinates should be treated as an intervention/control
+unless explicitly promoted by the analysis design.
 
 The default model is deliberately small and linear-Gaussian:
 
@@ -35,6 +38,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from declan.feature_recovery_scores import per_sample_sse_sst
+from declan.redundancy_resolved_v1_population import PopulationView, full_population_view, load_population_view
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -68,34 +74,48 @@ OUT_DIR = (
     / "continuous_feature_embedding"
 )
 
+RESPONSE_BASIS_MODES = ("compact", "full_units")
+RESPONSE_POPULATION_MODES = ("full756", "rr100")
+RR100_MOVIE_MEDOID_VERSION = (
+    "V1-RR_MS_min_complete0p65_split0p75_pair0p60_anyfail_finalsplit0p75"
+    "_medoidPosthocminRepcomplete0p45_movieMedoid"
+)
+STATIC_MATCHED_MEAN_MODE = "static_matched_mean"
+STATIC_MATCHED_MEAN_ALIASES = {
+    "zero_static",
+    "static_zero",
+    "static_crop_center",
+    "static_trace_mean_centered",
+    "stabilized_at_mean_position",
+}
 PRIMARY_LATENT = "pyramid_local_field"
 DEFAULT_DECODER_MODES = ("linear_gaussian",)
 DEFAULT_FEATURE_SPACE_MODES = (
-    "global_centered_whitened_pca",
-    "fold_centered_whitened_pca",
     "fold_zscore_whitened_pca",
+    "fold_centered_whitened_pca",
     "fold_zscore_pca",
 )
+SOURCE_WEIGHTING_MODES = ("source_balanced", "row_unweighted")
 OBSERVER_ORDER = [
     "known_eye",
     "hidden_eye_tau_marginal",
     "hidden_eye_prior_mean",
     "zero_eye_on_motion",
-    "zero_static",
+    STATIC_MATCHED_MEAN_MODE,
 ]
 OBSERVER_LABELS = {
     "known_eye": "known eye",
     "hidden_eye_tau_marginal": "hidden eye",
     "hidden_eye_prior_mean": "prior mean",
     "zero_eye_on_motion": "zero-eye model",
-    "zero_static": "0x stabilized",
+    STATIC_MATCHED_MEAN_MODE: "static matched mean",
 }
 OBSERVER_COLORS = {
     "known_eye": "#111827",
     "hidden_eye_tau_marginal": "#235789",
     "hidden_eye_prior_mean": "#4c78a8",
     "zero_eye_on_motion": "#8a5ca8",
-    "zero_static": "#66717d",
+    STATIC_MATCHED_MEAN_MODE: "#66717d",
 }
 
 
@@ -119,7 +139,7 @@ class SampleBank:
 class TestSet:
     rows: pd.DataFrame
     observed_x: np.ndarray
-    zero_static_x: np.ndarray
+    static_matched_mean_x: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -207,11 +227,14 @@ SPECS = [
         interpretation="Zero-eye response model applied to moving-response observations.",
     ),
     ReconstructionSpec(
-        slug="zero_static",
-        label=OBSERVER_LABELS["zero_static"],
+        slug=STATIC_MATCHED_MEAN_MODE,
+        label=OBSERVER_LABELS[STATIC_MATCHED_MEAN_MODE],
         train_bank="zero",
-        test_input="zero_static",
-        interpretation="Stabilized 0x counterfactual response and zero-eye response model.",
+        test_input=STATIC_MATCHED_MEAN_MODE,
+        interpretation=(
+            "Static crop-center counterfactual: no within-patch displacement, "
+            "with each BackImage crop centered at its own mean fixation position."
+        ),
     ),
 ]
 
@@ -307,8 +330,100 @@ def _load_basis(path: Path, *, n_units: int, basis_key: str, max_dim: int) -> tu
     return basis, meta
 
 
-def _project_response(response_counts: np.ndarray, basis: np.ndarray) -> np.ndarray:
+def _response_population(
+    *,
+    mode: str,
+    n_units: int,
+    rr100_version: str,
+) -> tuple[PopulationView, dict[str, Any]]:
+    population_mode = str(mode)
+    if population_mode == "full756":
+        view = full_population_view(int(n_units), name=f"full_{int(n_units)}")
+    elif population_mode == "rr100":
+        view = load_population_view(version_name=str(rr100_version))
+        if int(view.input_channels) != int(n_units):
+            raise ValueError(
+                "RR population view input channels do not match response cache: "
+                f"{view.input_channels} vs {n_units}"
+            )
+    else:
+        valid = ", ".join(RESPONSE_POPULATION_MODES)
+        raise ValueError(f"Unknown response population mode {mode!r}; valid modes: {valid}")
+
+    membership = view.membership
+    meta = dict(view.meta or {})
+    meta.update(
+        {
+            "response_population_mode": population_mode,
+            "population_name": str(view.name),
+            "population_input_channels": int(view.input_channels),
+            "population_n_units": int(view.n_units),
+            "population_pooling_mode": str(meta.get("pooling_mode", "identity" if membership is None else "unknown")),
+            "population_membership_shape": None if membership is None else [int(v) for v in membership.shape],
+        }
+    )
+    if membership is not None:
+        meta["population_membership_max_nnz"] = int((np.asarray(membership) != 0).sum(axis=1).max())
+    return view, meta
+
+
+def _response_basis(
+    *,
+    mode: str,
+    path: Path,
+    n_units: int,
+    basis_key: str,
+    max_dim: int,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    basis_mode = str(mode)
+    if basis_mode == "compact":
+        basis, meta = _load_basis(path, n_units=int(n_units), basis_key=str(basis_key), max_dim=int(max_dim))
+        meta["response_basis_mode"] = "compact"
+        meta["response_coordinate_contract"] = "response_counts_projected_onto_declared_compact_basis"
+        return basis, meta
+    if basis_mode == "full_units":
+        basis = np.eye(int(n_units), dtype=np.float64)
+        return (
+            basis,
+            {
+                "response_basis_mode": "full_units",
+                "response_coordinate_contract": "full_response_movie_flattened_over_time_and_units",
+                "basis_source": None,
+                "basis_key": "identity",
+                "basis_dim": int(n_units),
+                "basis_max_dim": "ignored_for_full_units",
+            },
+        )
+    valid = ", ".join(RESPONSE_BASIS_MODES)
+    raise ValueError(f"Unknown response basis mode {mode!r}; valid modes: {valid}")
+
+
+def _apply_response_population(response_counts: np.ndarray, population: PopulationView) -> np.ndarray:
     response = np.asarray(response_counts, dtype=np.float64)
+    if response.ndim < 2:
+        raise ValueError(f"response must have at least time and unit axes, got {response.shape}")
+    if response.shape[-1] != int(population.input_channels):
+        raise ValueError(
+            f"response unit count {response.shape[-1]} does not match population input "
+            f"{population.input_channels}"
+        )
+    if population.membership is None:
+        return response
+    membership = np.asarray(population.membership, dtype=np.float64)
+    if membership.ndim != 2 or membership.shape[1] != response.shape[-1]:
+        raise ValueError(f"population membership shape {membership.shape} is incompatible with {response.shape}")
+    return np.einsum("...tc,rc->...tr", response, membership, optimize=True)
+
+
+def _project_response(
+    response_counts: np.ndarray,
+    basis: np.ndarray,
+    *,
+    population: PopulationView | None = None,
+) -> np.ndarray:
+    response = np.asarray(response_counts, dtype=np.float64)
+    if population is not None:
+        response = _apply_response_population(response, population)
     if response.ndim != 2:
         raise ValueError(f"response must be (time, unit), got {response.shape}")
     if response.shape[1] != basis.shape[0]:
@@ -594,6 +709,8 @@ def _build_sample_banks(
     *,
     run_dir: Path,
     manifest: pd.DataFrame,
+    population: PopulationView,
+    population_meta: dict[str, Any],
     basis: np.ndarray,
     feature_sources: set[int],
     progress_every: int,
@@ -601,7 +718,7 @@ def _build_sample_banks(
     parts = _new_sample_parts()
     test_rows: list[dict[str, Any]] = []
     observed_x: list[np.ndarray] = []
-    zero_static_x: list[np.ndarray] = []
+    static_matched_mean_x: list[np.ndarray] = []
 
     for local_index, man_row in manifest.iterrows():
         table_index = int(man_row["table_index"])
@@ -613,6 +730,11 @@ def _build_sample_banks(
         known = np.asarray(table["known_lambda_counts"], dtype=np.float64)
         zero = np.asarray(table["zero_lambda_counts"], dtype=np.float64)
         obs = np.asarray(table["y_obs_counts"], dtype=np.float64)
+        static_reference_mode = (
+            str(np.asarray(table["zero_reference_mode"]).reshape(-1)[0])
+            if "zero_reference_mode" in table
+            else "patch_center_static_tau_zero"
+        )
         candidate_ids = [str(value) for value in np.asarray(table["candidate_ids"]).tolist()]
         source_rows = [_source_row_from_candidate_id(candidate_id) for candidate_id in candidate_ids]
         missing = [source for source in source_rows if source not in feature_sources]
@@ -626,32 +748,32 @@ def _build_sample_banks(
         for candidate_index, source_row in enumerate(source_rows):
             _append_sample(
                 parts["known"],
-                x=_project_response(known[candidate_index], basis),
+                x=_project_response(known[candidate_index], basis, population=population),
                 source_row=source_row,
                 table_index=table_index,
             )
             _append_sample(
                 parts["zero"],
-                x=_project_response(zero[candidate_index], basis),
+                x=_project_response(zero[candidate_index], basis, population=population),
                 source_row=source_row,
                 table_index=table_index,
             )
             _append_sample(
                 parts["prior_mean"],
-                x=_project_response(np.mean(prior[candidate_index], axis=0), basis),
+                x=_project_response(np.mean(prior[candidate_index], axis=0), basis, population=population),
                 source_row=source_row,
                 table_index=table_index,
             )
             for trajectory_index in range(prior.shape[1]):
                 _append_sample(
                     parts["prior_all"],
-                    x=_project_response(prior[candidate_index, trajectory_index], basis),
+                    x=_project_response(prior[candidate_index, trajectory_index], basis, population=population),
                     source_row=source_row,
                     table_index=table_index,
                 )
 
-        observed_x.append(_project_response(obs, basis))
-        zero_static_x.append(_project_response(zero[true_idx], basis))
+        observed_x.append(_project_response(obs, basis, population=population))
+        static_matched_mean_x.append(_project_response(zero[true_idx], basis, population=population))
         test_rows.append(
             {
                 "table_index": table_index,
@@ -666,6 +788,11 @@ def _build_sample_banks(
                 "n_prior_trajectories": int(man_row["n_prior_trajectories"]),
                 "n_timebins": int(man_row["n_timebins"]),
                 "n_units": int(man_row["n_units"]),
+                "response_population_mode": str(population_meta.get("response_population_mode", "")),
+                "response_population_name": str(population.name),
+                "observer_n_units": int(population.n_units),
+                "static_matched_mean_reference_mode": static_reference_mode,
+                "static_matched_mean_source": "zero_lambda_counts[true_candidate_index]",
                 "true_candidate_index": int(true_idx),
                 "true_source_row": true_source,
                 "true_candidate_id": candidate_ids[true_idx],
@@ -676,7 +803,7 @@ def _build_sample_banks(
     tests = TestSet(
         rows=pd.DataFrame(test_rows),
         observed_x=np.stack(observed_x, axis=0).astype(np.float32),
-        zero_static_x=np.stack(zero_static_x, axis=0).astype(np.float32),
+        static_matched_mean_x=np.stack(static_matched_mean_x, axis=0).astype(np.float32),
     )
     return banks, tests
 
@@ -696,6 +823,7 @@ def _fit_forward_posterior(
     x_train: np.ndarray,
     ridge: float,
     noise_floor: float,
+    sample_weight: np.ndarray | None = None,
 ) -> ForwardPosteriorModel:
     z = np.asarray(z_train, dtype=np.float64)
     x = np.asarray(x_train, dtype=np.float64)
@@ -703,15 +831,28 @@ def _fit_forward_posterior(
         raise ValueError(f"Expected z/x train matrices with shared rows, got {z.shape} and {x.shape}")
     if z.shape[0] <= z.shape[1]:
         raise ValueError(f"Need more training samples than feature dimensions, got {z.shape}")
-    response_mean = np.mean(x, axis=0)
+    if sample_weight is None:
+        weights = np.ones(z.shape[0], dtype=np.float64)
+    else:
+        weights = np.asarray(sample_weight, dtype=np.float64)
+        if weights.shape != (z.shape[0],):
+            raise ValueError(f"sample_weight must have shape ({z.shape[0]},), got {weights.shape}")
+        if not np.isfinite(weights).all() or np.any(weights < 0.0):
+            raise ValueError("sample_weight must be finite and non-negative")
+        if float(np.sum(weights)) <= 1e-12:
+            raise ValueError("sample_weight sum must be positive")
+    weights = weights / (float(np.mean(weights)) + 1e-12)
+    weight_sum = float(np.sum(weights))
+    response_mean = np.sum(x * weights[:, None], axis=0) / weight_sum
     y = x - response_mean[None, :]
     ridge_value = float(ridge)
     if not np.isfinite(ridge_value) or ridge_value < 0.0:
         raise ValueError("ridge must be finite and non-negative")
-    normal = z.T @ z + ridge_value * np.eye(z.shape[1], dtype=np.float64)
-    response_map = np.linalg.solve(normal, z.T @ y)
+    wz = z * weights[:, None]
+    normal = z.T @ wz + ridge_value * np.eye(z.shape[1], dtype=np.float64)
+    response_map = np.linalg.solve(normal, wz.T @ y)
     residual = y - z @ response_map
-    noise_variance = max(float(np.mean(residual * residual)), float(noise_floor))
+    noise_variance = max(float(np.sum((residual * residual) * weights[:, None]) / (weight_sum * residual.shape[1])), float(noise_floor))
     precision = np.eye(z.shape[1], dtype=np.float64) + (response_map @ response_map.T) / noise_variance
     posterior_gain = np.linalg.solve(precision, response_map) / noise_variance
     return ForwardPosteriorModel(
@@ -722,6 +863,18 @@ def _fit_forward_posterior(
         ridge=ridge_value,
         n_train=int(z.shape[0]),
     )
+
+
+def _source_balanced_weights(source_rows: np.ndarray) -> np.ndarray:
+    sources = np.asarray(source_rows, dtype=int)
+    if sources.ndim != 1:
+        raise ValueError(f"source_rows must be 1D, got {sources.shape}")
+    if sources.size == 0:
+        return np.empty(0, dtype=np.float64)
+    unique, inverse, counts = np.unique(sources, return_inverse=True, return_counts=True)
+    weights = 1.0 / counts[inverse].astype(np.float64)
+    weights *= float(sources.size) / float(max(1, unique.size))
+    return weights.astype(np.float64, copy=False)
 
 
 def _predict_z(model: ForwardPosteriorModel, x: np.ndarray) -> np.ndarray:
@@ -932,16 +1085,17 @@ def _fit_predict_mlp(
 def _selected_specs(observer_modes: list[str]) -> list[ReconstructionSpec]:
     if not observer_modes:
         return list(SPECS)
-    requested = set(str(value) for value in observer_modes)
+    alias = {name: STATIC_MATCHED_MEAN_MODE for name in STATIC_MATCHED_MEAN_ALIASES}
+    requested = {alias.get(str(value), str(value)) for value in observer_modes}
     specs = [spec for spec in SPECS if spec.slug in requested]
     missing = sorted(requested.difference({spec.slug for spec in specs}))
     if missing:
-        valid = ", ".join(spec.slug for spec in SPECS)
+        valid = ", ".join([spec.slug for spec in SPECS] + sorted(STATIC_MATCHED_MEAN_ALIASES))
         raise ValueError(f"Unknown observer mode(s) {missing}; valid modes: {valid}")
     return specs
 
 
-def _metrics(z_hat: np.ndarray, z_true: np.ndarray) -> dict[str, float]:
+def _metrics(z_hat: np.ndarray, z_true: np.ndarray, *, train_mean: np.ndarray | None = None) -> dict[str, float]:
     pred = np.asarray(z_hat, dtype=np.float64)
     true = np.asarray(z_true, dtype=np.float64)
     diff = pred - true
@@ -950,7 +1104,7 @@ def _metrics(z_hat: np.ndarray, z_true: np.ndarray) -> dict[str, float]:
     true_norm = float(np.linalg.norm(true))
     denom = pred_norm * true_norm
     cosine = float(np.dot(pred, true) / denom) if denom > 1e-12 else float("nan")
-    return {
+    out = {
         "feature_mse": mse,
         "feature_neg_mse": -mse,
         "feature_rmse": float(np.sqrt(mse)),
@@ -959,6 +1113,15 @@ def _metrics(z_hat: np.ndarray, z_true: np.ndarray) -> dict[str, float]:
         "feature_true_norm": true_norm,
         "feature_pred_norm": pred_norm,
     }
+    if train_mean is not None:
+        row_sse, row_sst, row_valid = per_sample_sse_sst(true[None, :], pred[None, :], train_mean=train_mean)
+        out["feature_sse"] = float(row_sse[0])
+        out["feature_sst_train_baseline"] = float(row_sst[0])
+        out["feature_r2_row_diagnostic"] = (
+            float(1.0 - row_sse[0] / row_sst[0]) if bool(row_valid[0]) and row_sst[0] > 1e-12 else float("nan")
+        )
+        out["feature_r2_baseline"] = "train_fold_feature_mean"
+    return out
 
 
 def _run_crossfit(
@@ -975,6 +1138,7 @@ def _run_crossfit(
     fold_seed: int,
     ridge: float,
     noise_floor: float,
+    source_weighting: str,
     mlp_config: MLPConfig,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     fold_by_source = _assign_source_folds(tests.rows["true_source_row"].to_numpy(dtype=int), n_folds=n_folds, seed=fold_seed)
@@ -1023,6 +1187,16 @@ def _run_crossfit(
                     feature_space_mode=mode,
                     feature_weights=feature_weights,
                 )
+            baseline_sources = np.asarray(
+                [
+                    int(source)
+                    for source, source_fold in fold_by_source.items()
+                    if int(source_fold) != int(fold)
+                ],
+                dtype=int,
+            )
+            z_train_baseline = _transform_feature_sources(transform, feature_table, baseline_sources)
+            z_train_mean = np.mean(z_train_baseline, axis=0)
             test_sources = tests.rows.loc[test_mask, "true_source_row"].to_numpy(dtype=int)
             z_true = _transform_feature_sources(transform, feature_table, test_sources)
 
@@ -1032,7 +1206,19 @@ def _run_crossfit(
                 if int(np.sum(train_mask)) <= transform.feature_dim:
                     raise ValueError(f"Fold {fold} has too few training samples for {spec.slug} / {mode}")
                 bank_z = _transform_feature_sources(transform, feature_table, bank.source_rows)
-                x_test = tests.zero_static_x[test_mask] if spec.test_input == "zero_static" else tests.observed_x[test_mask]
+                train_source_rows = bank.source_rows[train_mask]
+                if str(source_weighting) == "source_balanced":
+                    train_weights = _source_balanced_weights(train_source_rows)
+                elif str(source_weighting) == "row_unweighted":
+                    train_weights = np.ones(int(np.sum(train_mask)), dtype=np.float64)
+                else:
+                    valid = ", ".join(SOURCE_WEIGHTING_MODES)
+                    raise ValueError(f"Unknown source_weighting={source_weighting!r}; valid modes: {valid}")
+                x_test = (
+                    tests.static_matched_mean_x[test_mask]
+                    if spec.test_input == STATIC_MATCHED_MEAN_MODE
+                    else tests.observed_x[test_mask]
+                )
                 for decoder_mode in canonical_decoders:
                     decoder_stats: dict[str, Any]
                     if decoder_mode == "linear_gaussian":
@@ -1041,10 +1227,15 @@ def _run_crossfit(
                             x_train=bank.x[train_mask],
                             ridge=float(ridge),
                             noise_floor=float(noise_floor),
+                            sample_weight=train_weights,
                         )
                         z_hat = _predict_z(model, x_test)
                         decoder_stats = {
                             "n_train_samples": int(model.n_train),
+                            "n_train_sources": int(len(set(train_source_rows.tolist()))),
+                            "source_weighting": str(source_weighting),
+                            "train_weight_min": float(np.min(train_weights)) if train_weights.size else float("nan"),
+                            "train_weight_max": float(np.max(train_weights)) if train_weights.size else float("nan"),
                             "ridge": float(model.ridge),
                             "noise_variance": float(model.noise_variance),
                             "response_map_fro_norm": float(np.linalg.norm(model.response_map)),
@@ -1064,6 +1255,10 @@ def _run_crossfit(
                         )
                         decoder_stats = {
                             "n_train_samples": int(np.sum(train_mask)),
+                            "n_train_sources": int(len(set(train_source_rows.tolist()))),
+                            "source_weighting": "row_unweighted_mlp",
+                            "train_weight_min": float("nan"),
+                            "train_weight_max": float("nan"),
                             "ridge": float("nan"),
                             "noise_variance": float("nan"),
                             "response_map_fro_norm": float("nan"),
@@ -1091,6 +1286,7 @@ def _run_crossfit(
                         "feature_whitened": bool(transform.whitened),
                         "feature_weighted": bool(transform.weighted),
                         "feature_variance_fraction": float(transform.explained_variance_sum),
+                        "r2_cv_train_baseline": "source_fold_train_feature_mean",
                         "interpretation": spec.interpretation,
                     }
                     model_row.update(decoder_stats)
@@ -1112,12 +1308,15 @@ def _run_crossfit(
                                 "feature_whitened": bool(transform.whitened),
                                 "feature_weighted": bool(transform.weighted),
                                 "feature_variance_fraction": float(transform.explained_variance_sum),
+                                "r2_cv_train_baseline": "source_fold_train_feature_mean",
                                 "fold": int(fold),
                                 "n_train_samples": int(decoder_stats["n_train_samples"]),
+                                "n_train_sources": int(decoder_stats["n_train_sources"]),
+                                "source_weighting": str(decoder_stats["source_weighting"]),
                                 "n_fit_sources": int(transform.n_fit_sources),
                             }
                         )
-                        row.update(_metrics(z_hat[row_index], z_true[row_index]))
+                        row.update(_metrics(z_hat[row_index], z_true[row_index], train_mean=z_train_mean))
                         trial_rows.append(row)
     return pd.DataFrame(trial_rows), pd.DataFrame(model_rows)
 
@@ -1140,6 +1339,8 @@ def _summarize(trials: pd.DataFrame) -> pd.DataFrame:
             median_feature_cosine=("feature_cosine", "median"),
             mean_feature_mse=("feature_mse", "mean"),
             median_feature_mse=("feature_mse", "median"),
+            feature_sse=("feature_sse", "sum"),
+            feature_sst_train_baseline=("feature_sst_train_baseline", "sum"),
             mean_feature_rmse=("feature_rmse", "mean"),
             median_feature_pred_norm=("feature_pred_norm", "median"),
             median_feature_true_norm=("feature_true_norm", "median"),
@@ -1154,27 +1355,55 @@ def _summarize(trials: pd.DataFrame) -> pd.DataFrame:
             median_feature_cosine=("feature_cosine", "median"),
             mean_feature_mse=("feature_mse", "mean"),
             median_feature_mse=("feature_mse", "median"),
+            feature_sse=("feature_sse", "sum"),
+            feature_sst_train_baseline=("feature_sst_train_baseline", "sum"),
             mean_feature_rmse=("feature_rmse", "mean"),
             median_feature_pred_norm=("feature_pred_norm", "median"),
             median_feature_true_norm=("feature_true_norm", "median"),
         )
         .sort_values("observer_mode")
     )
+    summary["R2_cv"] = 1.0 - summary["feature_sse"] / summary["feature_sst_train_baseline"]
+    summary.loc[summary["feature_sst_train_baseline"] <= 1e-12, "R2_cv"] = np.nan
+    overall["R2_cv"] = 1.0 - overall["feature_sse"] / overall["feature_sst_train_baseline"]
+    overall.loc[overall["feature_sst_train_baseline"] <= 1e-12, "R2_cv"] = np.nan
     overall["observation_scale"] = "all"
     overall["prior_family"] = "all"
     return pd.concat([summary, overall[summary.columns]], ignore_index=True)
 
 
-def _bootstrap_mean(values: np.ndarray, rng: np.random.Generator, n_boot: int) -> tuple[float, float, float]:
+def _bootstrap_mean(
+    values: np.ndarray,
+    rng: np.random.Generator,
+    n_boot: int,
+    clusters: np.ndarray | None = None,
+) -> tuple[float, float, float]:
     vals = np.asarray(values, dtype=np.float64)
-    vals = vals[np.isfinite(vals)]
+    finite = np.isfinite(vals)
+    vals = vals[finite]
+    if clusters is not None:
+        cluster_values = np.asarray(clusters, dtype=object)[finite]
+    else:
+        cluster_values = None
     if vals.size == 0:
         return float("nan"), float("nan"), float("nan")
-    if vals.size == 1 or int(n_boot) <= 0:
-        value = float(np.mean(vals))
+    if cluster_values is not None:
+        grouped = (
+            pd.DataFrame({"cluster": cluster_values, "value": vals})
+            .groupby("cluster", sort=False)["value"]
+            .mean()
+            .to_numpy(dtype=np.float64)
+        )
+        vals_for_bootstrap = grouped[np.isfinite(grouped)]
+    else:
+        vals_for_bootstrap = vals
+    if vals_for_bootstrap.size == 0:
+        return float("nan"), float("nan"), float("nan")
+    if vals_for_bootstrap.size == 1 or int(n_boot) <= 0:
+        value = float(np.mean(vals_for_bootstrap))
         return value, value, value
-    draws = rng.choice(vals, size=(int(n_boot), vals.size), replace=True).mean(axis=1)
-    return float(np.mean(vals)), float(np.percentile(draws, 2.5)), float(np.percentile(draws, 97.5))
+    draws = rng.choice(vals_for_bootstrap, size=(int(n_boot), vals_for_bootstrap.size), replace=True).mean(axis=1)
+    return float(np.mean(vals_for_bootstrap)), float(np.percentile(draws, 2.5)), float(np.percentile(draws, 97.5))
 
 
 def _contrasts(trials: pd.DataFrame, *, n_boot: int, seed: int) -> pd.DataFrame:
@@ -1193,8 +1422,8 @@ def _contrasts(trials: pd.DataFrame, *, n_boot: int, seed: int) -> pd.DataFrame:
         ("known_eye", "hidden_eye_tau_marginal", "known_minus_hidden"),
         ("hidden_eye_tau_marginal", "zero_eye_on_motion", "hidden_minus_zero_eye_model"),
         ("known_eye", "zero_eye_on_motion", "known_minus_zero_eye_model"),
-        ("known_eye", "zero_static", "known_motion_minus_zero_static"),
-        ("hidden_eye_tau_marginal", "zero_static", "hidden_motion_minus_zero_static"),
+        ("known_eye", STATIC_MATCHED_MEAN_MODE, "known_motion_minus_static_matched_mean"),
+        ("hidden_eye_tau_marginal", STATIC_MATCHED_MEAN_MODE, "hidden_motion_minus_static_matched_mean"),
     ]
     rng = np.random.default_rng(int(seed))
     rows: list[dict[str, Any]] = []
@@ -1204,14 +1433,17 @@ def _contrasts(trials: pd.DataFrame, *, n_boot: int, seed: int) -> pd.DataFrame:
         vals = (pivot[lhs] - pivot[rhs]).rename("delta").reset_index()
         vals = vals[np.isfinite(vals["delta"].to_numpy(dtype=float))]
         for scale_value, scale_rows in vals.groupby("observation_scale", sort=True):
-            values = scale_rows["delta"].to_numpy(dtype=float)
-            mean, lo, hi = _bootstrap_mean(values, rng, n_boot)
             for (decoder_mode, latent, feature_space_mode), mode_rows in scale_rows.groupby(
                 ["decoder_mode", "latent", "feature_space_mode"],
                 sort=True,
             ):
                 mode_values = mode_rows["delta"].to_numpy(dtype=float)
-                mode_mean, mode_lo, mode_hi = _bootstrap_mean(mode_values, rng, n_boot)
+                mode_mean, mode_lo, mode_hi = _bootstrap_mean(
+                    mode_values,
+                    rng,
+                    n_boot,
+                    clusters=mode_rows["true_source_row"].to_numpy(dtype=int),
+                )
                 rows.append(
                     {
                         "decoder_mode": str(decoder_mode),
@@ -1225,8 +1457,10 @@ def _contrasts(trials: pd.DataFrame, *, n_boot: int, seed: int) -> pd.DataFrame:
                         "mean_feature_cosine_delta": mode_mean,
                         "ci_low": mode_lo,
                         "ci_high": mode_hi,
+                        "bootstrap_unit": "true_source_row",
                         "fraction_positive": float(np.mean(mode_values > 0.0)) if mode_values.size else float("nan"),
                         "n": int(mode_values.size),
+                        "n_bootstrap_clusters": int(mode_rows["true_source_row"].nunique()),
                     }
                 )
         for (decoder_mode, latent, feature_space_mode), mode_rows in vals.groupby(
@@ -1234,7 +1468,12 @@ def _contrasts(trials: pd.DataFrame, *, n_boot: int, seed: int) -> pd.DataFrame:
             sort=True,
         ):
             values = mode_rows["delta"].to_numpy(dtype=float)
-            mean, lo, hi = _bootstrap_mean(values, rng, n_boot)
+            mean, lo, hi = _bootstrap_mean(
+                values,
+                rng,
+                n_boot,
+                clusters=mode_rows["true_source_row"].to_numpy(dtype=int),
+            )
             rows.append(
                 {
                     "decoder_mode": str(decoder_mode),
@@ -1248,48 +1487,12 @@ def _contrasts(trials: pd.DataFrame, *, n_boot: int, seed: int) -> pd.DataFrame:
                     "mean_feature_cosine_delta": mean,
                     "ci_low": lo,
                     "ci_high": hi,
+                    "bootstrap_unit": "true_source_row",
                     "fraction_positive": float(np.mean(values > 0.0)) if values.size else float("nan"),
                     "n": int(values.size),
+                    "n_bootstrap_clusters": int(mode_rows["true_source_row"].nunique()),
                 }
             )
-    axis_pivot = pivot.reset_index()
-    if {"axis_edge_parallel", "axis_edge_orthogonal"}.issubset(set(axis_pivot["prior_family"].astype(str))):
-        for observer in ["known_eye", "hidden_eye_tau_marginal", "zero_eye_on_motion", "zero_static"]:
-            if observer not in axis_pivot.columns:
-                continue
-            paired = axis_pivot.pivot_table(
-                index=["decoder_mode", "latent", "feature_space_mode", "trial_id", "observation_scale", "true_source_row"],
-                columns="prior_family",
-                values=observer,
-                aggfunc="first",
-            )
-            if {"axis_edge_parallel", "axis_edge_orthogonal"}.issubset(paired.columns):
-                paired = paired.dropna(subset=["axis_edge_parallel", "axis_edge_orthogonal"])
-                deltas = (paired["axis_edge_parallel"] - paired["axis_edge_orthogonal"]).reset_index(name="delta")
-                for scale_value, scale_rows in deltas.groupby("observation_scale", sort=True):
-                    for (decoder_mode, latent, feature_space_mode), mode_rows in scale_rows.groupby(
-                        ["decoder_mode", "latent", "feature_space_mode"],
-                        sort=True,
-                    ):
-                        values = mode_rows["delta"].to_numpy(dtype=float)
-                        mean, lo, hi = _bootstrap_mean(values, rng, n_boot)
-                        rows.append(
-                            {
-                                "decoder_mode": str(decoder_mode),
-                                "latent": str(latent),
-                                "feature_space_mode": str(feature_space_mode),
-                                "contrast": f"{observer}_parallel_minus_orthogonal",
-                                "lhs": f"{observer}:axis_edge_parallel",
-                                "rhs": f"{observer}:axis_edge_orthogonal",
-                                "observation_scale": float(scale_value),
-                                "prior_family": "axis_pair",
-                                "mean_feature_cosine_delta": mean,
-                                "ci_low": lo,
-                                "ci_high": hi,
-                                "fraction_positive": float(np.mean(values > 0.0)) if values.size else float("nan"),
-                                "n": int(values.size),
-                            }
-                        )
     return pd.DataFrame(rows)
 
 
@@ -1306,9 +1509,14 @@ def _filter_plot_tables(
     feature_space_mode: str,
 ) -> tuple[pd.DataFrame, pd.DataFrame, str, str]:
     available = summary[["decoder_mode", "latent", "feature_space_mode"]].drop_duplicates()
+    if available.empty:
+        raise ValueError("No summary rows are available for plotting")
     selected_decoder = str(decoder_mode)
     if selected_decoder == "auto":
         selected_decoder = str(available.iloc[0]["decoder_mode"]) if not available.empty else selected_decoder
+    elif selected_decoder not in set(available["decoder_mode"].astype(str)):
+        choices = available[["decoder_mode", "latent", "feature_space_mode"]].drop_duplicates().to_dict(orient="records")
+        raise ValueError(f"Requested plot decoder {selected_decoder!r} is absent; available={choices}")
     selected_mode = str(feature_space_mode)
     if selected_mode == "auto":
         match = available[
@@ -1320,8 +1528,11 @@ def _filter_plot_tables(
         if match.empty:
             match = available
         if match.empty:
-            return summary.copy(), contrasts.copy(), selected_decoder, selected_mode
+            raise ValueError("No available decoder/feature-space mode for plotting")
         selected_mode = str(match.iloc[0]["feature_space_mode"])
+    elif selected_mode not in set(available["feature_space_mode"].astype(str)):
+        choices = available[["decoder_mode", "latent", "feature_space_mode"]].drop_duplicates().to_dict(orient="records")
+        raise ValueError(f"Requested plot feature-space mode {selected_mode!r} is absent; available={choices}")
     plot_summary = summary[
         summary["decoder_mode"].astype(str).eq(selected_decoder)
         & summary["latent"].astype(str).eq(str(latent))
@@ -1333,9 +1544,11 @@ def _filter_plot_tables(
         & contrasts["feature_space_mode"].astype(str).eq(selected_mode)
     ].copy()
     if plot_summary.empty:
-        plot_summary = summary.copy()
-    if plot_contrasts.empty:
-        plot_contrasts = contrasts.copy()
+        choices = available[["decoder_mode", "latent", "feature_space_mode"]].drop_duplicates().to_dict(orient="records")
+        raise ValueError(
+            f"Requested plot combination decoder={selected_decoder!r}, latent={latent!r}, "
+            f"feature_space_mode={selected_mode!r} is absent; available={choices}"
+        )
     return plot_summary, plot_contrasts, selected_decoder, selected_mode
 
 
@@ -1364,7 +1577,7 @@ def _plot(
             .agg(mean_feature_cosine=("mean_feature_cosine", "mean"), mean_feature_mse=("mean_feature_mse", "mean"), n=("n", "sum"))
         )
         scale_summary["prior_family"] = "all"
-    fig, axes = plt.subplots(1, 3, figsize=(10.2, 3.1), constrained_layout=True)
+    fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.1), constrained_layout=True)
 
     ax = axes[0]
     for observer in OBSERVER_ORDER:
@@ -1376,7 +1589,7 @@ def _plot(
             block["mean_feature_cosine"],
             marker="o",
             lw=2.0 if observer in {"known_eye", "hidden_eye_tau_marginal", "zero_eye_on_motion"} else 1.5,
-            linestyle=":" if observer in {"zero_static", "hidden_eye_prior_mean"} else "-",
+            linestyle=":" if observer in {STATIC_MATCHED_MEAN_MODE, "hidden_eye_prior_mean"} else "-",
             color=OBSERVER_COLORS[observer],
             label=OBSERVER_LABELS[observer],
         )
@@ -1391,8 +1604,8 @@ def _plot(
     key_contrasts = [
         ("known_minus_hidden", "known - hidden", "#111827"),
         ("hidden_minus_zero_eye_model", "hidden - zero model", "#235789"),
-        ("known_motion_minus_zero_static", "known - 0x", "#2f8f6a"),
-        ("hidden_motion_minus_zero_static", "hidden - 0x", "#4c78a8"),
+        ("known_motion_minus_static_matched_mean", "known - static mean", "#2f8f6a"),
+        ("hidden_motion_minus_static_matched_mean", "hidden - static mean", "#4c78a8"),
     ]
     offsets = np.linspace(-0.21, 0.21, len(key_contrasts))
     for offset, (contrast, label, color) in zip(offsets, key_contrasts, strict=True):
@@ -1413,36 +1626,6 @@ def _plot(
     ax.set_ylabel("cosine difference")
     ax.set_xticks([0, 1, 2], ["0.5x", "1x", "2x"])
     ax.legend(frameon=False, loc="best")
-    _clean_axis(ax)
-
-    ax = axes[2]
-    axis_rows = contrasts[
-        (contrasts["prior_family"] == "axis_pair")
-        & (contrasts["contrast"].isin(["known_eye_parallel_minus_orthogonal", "hidden_eye_tau_marginal_parallel_minus_orthogonal"]))
-    ].copy()
-    if axis_rows.empty:
-        ax.text(0.5, 0.5, "No paired axis rows", ha="center", va="center", transform=ax.transAxes)
-    else:
-        axis_defs = [
-            ("known_eye_parallel_minus_orthogonal", "known eye", "#111827"),
-            ("hidden_eye_tau_marginal_parallel_minus_orthogonal", "hidden eye", "#235789"),
-        ]
-        for offset, (contrast, label, color) in zip([-0.08, 0.08], axis_defs, strict=True):
-            block = axis_rows[axis_rows["contrast"] == contrast].sort_values("observation_scale")
-            if block.empty:
-                continue
-            x = _scale_x(block["observation_scale"]) + offset
-            y = block["mean_feature_cosine_delta"].to_numpy(dtype=float)
-            yerr = np.vstack([y - block["ci_low"].to_numpy(dtype=float), block["ci_high"].to_numpy(dtype=float) - y])
-            ax.errorbar(x, y, yerr=yerr, marker="o", lw=1.5, capsize=2.5, color=color, label=label)
-        ax.axhline(0.0, color="#6b7280", lw=0.9)
-        ax.legend(frameon=False, loc="best")
-    ax.set_title("C. along - across")
-    ax.set_ylabel("cosine difference")
-    ax.set_xticks([0, 1, 2], ["0.5x", "1x", "2x"])
-    finite_axis = axis_rows["mean_feature_cosine_delta"].to_numpy(dtype=float)
-    if finite_axis.size and float(np.nanmax(np.abs(finite_axis))) < 1e-6:
-        ax.set_ylim(-0.001, 0.001)
     _clean_axis(ax)
 
     png = out_dir / "continuous_feature_embedding_reconstruction.png"
@@ -1498,9 +1681,13 @@ def _write_readme(
     option_rows = all_summary[
         (all_summary["observation_scale"].astype(str) == "all")
         & (all_summary["prior_family"].astype(str) == "all")
-        & (all_summary["observer_mode"].astype(str).isin(["known_eye", "hidden_eye_tau_marginal", "zero_eye_on_motion", "zero_static"]))
+        & (
+            all_summary["observer_mode"]
+            .astype(str)
+            .isin(["known_eye", "hidden_eye_tau_marginal", "zero_eye_on_motion", STATIC_MATCHED_MEAN_MODE])
+        )
     ].copy()
-    option_lines = ["decoder_mode,feature_space_mode,known,hidden,zero_eye_model,zero_static"]
+    option_lines = ["decoder_mode,feature_space_mode,known,hidden,zero_eye_model,static_matched_mean"]
     if not option_rows.empty:
         wide = option_rows.pivot_table(
             index=["decoder_mode", "feature_space_mode"],
@@ -1517,35 +1704,56 @@ def _write_readme(
                         f"{float(row.get('known_eye', np.nan)):.4f}",
                         f"{float(row.get('hidden_eye_tau_marginal', np.nan)):.4f}",
                         f"{float(row.get('zero_eye_on_motion', np.nan)):.4f}",
-                        f"{float(row.get('zero_static', np.nan)):.4f}",
+                        f"{float(row.get(STATIC_MATCHED_MEAN_MODE, np.nan)):.4f}",
                     ]
                 )
             )
 
+    population_meta = manifest.get("population", {})
+    population_name = str(population_meta.get("population_name", "full response population"))
+    population_n_units = population_meta.get("population_n_units", "unknown")
+    population_mode = str(population_meta.get("response_population_mode", "full756"))
+    population_line = f"response population = `{population_name}` ({population_n_units} units; mode `{population_mode}`)"
+    basis_meta = manifest.get("basis", {})
+    response_basis_mode = str(basis_meta.get("response_basis_mode", "compact"))
+    if response_basis_mode == "full_units":
+        response_feature_line = "response_features = flatten(selected response population movie over time and units)"
+        response_target_lines = [
+            "the selected response population movie, flattened over time and unit identity.",
+            "This is the geometry-uncommitted primary 4C response representation.",
+        ]
+    else:
+        response_feature_line = "response_features = compact_basis(response movie)"
+        response_target_lines = [
+            "the declared compact response basis.",
+            "This is a compact intervention/control representation, not a prerequisite for the primary 4C claim.",
+        ]
+
     if selected_decoder == "mlp":
         model_lines = [
-            "response_features = compact_basis(response movie)",
+            response_feature_line,
             "z_hat = MLP(response_features)",
         ]
         decoder_note = "Tejas-style ReLU MLP decoder trained as a nonlinear information upper-bound readout."
     else:
         model_lines = [
+            f"{response_feature_line}",
             "response_features = A z + noise",
             "z ~ N(0, I)",
             "z_hat = E[z | response]",
         ]
-        decoder_note = "Linear-Gaussian decoder with a compact feature prior."
+        decoder_note = "Linear-Gaussian decoder with a feature-space prior."
 
     lines = [
         "# Continuous Feature-Embedding Reconstruction",
         "",
-        "This diagnostic is the first 4C branch that infers a continuous compact",
-        "feature embedding instead of selecting or posterior-averaging over the",
-        "candidate image list.",
+        "This diagnostic infers a continuous feature embedding instead of",
+        "selecting or posterior-averaging over the candidate image list.",
         "",
         "Model:",
         "",
         "```text",
+        population_line,
         *model_lines,
         "```",
         "",
@@ -1554,10 +1762,28 @@ def _write_readme(
         "",
         "The feature target is a compact PCA-space embedding of the existing local",
         f"`{manifest['feature']['latent']}` feature array. The plotted feature-space",
-        f"option is `{selected_mode}`. The response target is",
-        "the image-disjoint compact response basis used by the promoted 4C",
-        "continuous observer. Cross-fitting is by source image: no response sample",
+        f"option is `{selected_mode}`. The response representation is",
+        *response_target_lines,
+        "Cross-fitting is by source image: no response sample",
         "whose target source row is in the held-out fold is used to fit that fold.",
+        "Linear-Gaussian fits use inverse-source-frequency weighting by default,",
+        f"with source weighting mode `{manifest.get('source_weighting', 'unknown')}`.",
+        "Contrast intervals are bootstrapped over `true_source_row` clusters.",
+        "",
+        "Coordinate contract: BackImage crops are extracted at each window's mean",
+        "fixation position. The `static_matched_mean` observer uses the cached",
+        "`zero_lambda_counts[true_candidate_index]`, i.e. zero residual displacement",
+        "at that crop center. This is static at the movie/window mean position, not",
+        "a global absolute-eye-position zero oracle. Legacy names such as",
+        "`zero_static` are accepted as aliases but should not be used in manuscript",
+        "wording.",
+        "",
+        "Axis note: this runner does not report edge-parallel minus",
+        "edge-orthogonal contrasts. The current response-feature model is fit",
+        "pooled across prior-family labels and evaluates the same observed",
+        "response rows for both labels, so axis-prior contrasts would be a",
+        "structural bookkeeping artifact. Use a dedicated per-axis observer for",
+        "along/across claims.",
         "",
         "At the 1x scale:",
         "",
@@ -1565,7 +1791,7 @@ def _write_readme(
         f"known eye feature cosine:          {_value(scale1, 'known_eye'):.4f}",
         f"hidden eye feature cosine:         {_value(scale1, 'hidden_eye_tau_marginal'):.4f}",
         f"zero-eye model on motion:          {_value(scale1, 'zero_eye_on_motion'):.4f}",
-        f"0x stabilized feature cosine:      {_value(scale1, 'zero_static'):.4f}",
+        f"static matched mean feature cosine:{_value(scale1, STATIC_MATCHED_MEAN_MODE):.4f}",
         "```",
         "",
         "All-scale paired contrasts:",
@@ -1573,8 +1799,8 @@ def _write_readme(
         "```text",
         f"known - hidden:                    {_contrast('known_minus_hidden'):.4f}",
         f"hidden - zero-eye model:           {_contrast('hidden_minus_zero_eye_model'):.4f}",
-        f"known motion - 0x stabilized:      {_contrast('known_motion_minus_zero_static'):.4f}",
-        f"hidden motion - 0x stabilized:     {_contrast('hidden_motion_minus_zero_static'):.4f}",
+        f"known motion - static mean:        {_contrast('known_motion_minus_static_matched_mean'):.4f}",
+        f"hidden motion - static mean:       {_contrast('hidden_motion_minus_static_matched_mean'):.4f}",
         "```",
         "",
         "All-scale option means:",
@@ -1616,15 +1842,56 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--latent", default=PRIMARY_LATENT)
     parser.add_argument("--feature-dim", type=int, default=32)
     parser.add_argument("--feature-space-modes", default=",".join(DEFAULT_FEATURE_SPACE_MODES))
+    parser.add_argument(
+        "--allow-global-feature-transforms",
+        action="store_true",
+        help=(
+            "Allow global feature-space transforms fit on all feature rows. This is a diagnostic "
+            "coordinate system, not a fully source-disjoint promoted score."
+        ),
+    )
     parser.add_argument("--decoder-modes", default=",".join(DEFAULT_DECODER_MODES))
     parser.add_argument("--observer-modes", default="")
     parser.add_argument("--plot-decoder-mode", default="linear_gaussian")
     parser.add_argument("--plot-feature-space-mode", default="fold_zscore_whitened_pca")
+    parser.add_argument(
+        "--response-population-mode",
+        choices=RESPONSE_POPULATION_MODES,
+        default="full756",
+        help=(
+            "Twin population before response-basis projection. 'full756' keeps the canonical "
+            "population; 'rr100' applies the saved RR100 movie-medoid population view."
+        ),
+    )
+    parser.add_argument(
+        "--rr100-version",
+        default=RR100_MOVIE_MEDOID_VERSION,
+        help="Saved redundancy-resolved population version used when --response-population-mode rr100.",
+    )
+    parser.add_argument(
+        "--response-basis-mode",
+        choices=RESPONSE_BASIS_MODES,
+        default="compact",
+        help=(
+            "Response representation for the observer. 'full_units' is the geometry-uncommitted "
+            "primary path; 'compact' is a compact-basis intervention/control path."
+        ),
+    )
     parser.add_argument("--compact-basis-path", type=Path, default=COMPACT_BASIS)
     parser.add_argument("--basis-key", default="basis")
     parser.add_argument("--basis-max-dim", type=int, default=20)
     parser.add_argument("--ridge", type=float, default=1e-2)
     parser.add_argument("--noise-floor", type=float, default=1e-8)
+    parser.add_argument(
+        "--source-weighting",
+        choices=SOURCE_WEIGHTING_MODES,
+        default="source_balanced",
+        help=(
+            "Training-row weighting for linear-Gaussian fits. source_balanced gives each "
+            "source equal total weight inside each fold/spec; row_unweighted reproduces "
+            "the older candidate/trajectory-frequency-weighted fit."
+        ),
+    )
     parser.add_argument("--mlp-hidden-dim", type=int, default=512)
     parser.add_argument("--mlp-layers", type=int, default=4)
     parser.add_argument("--mlp-dropout", type=float, default=0.0)
@@ -1655,9 +1922,21 @@ def build(args: argparse.Namespace) -> Path:
 
     first_table = _load_npz(run_dir / str(manifest.iloc[0]["response_cache_path"]))
     n_units = int(np.asarray(first_table["y_obs_counts"]).shape[1])
-    basis, basis_meta = _load_basis(
-        Path(args.compact_basis_path),
+    population, population_meta = _response_population(
+        mode=str(args.response_population_mode),
         n_units=n_units,
+        rr100_version=str(args.rr100_version),
+    )
+    if str(args.response_basis_mode) == "compact" and str(args.response_population_mode) != "full756":
+        raise ValueError(
+            "The declared compact basis is defined in the canonical full-756 unit space. "
+            "Use --response-population-mode full756 with --response-basis-mode compact, "
+            "or use --response-basis-mode full_units for RR100."
+        )
+    basis, basis_meta = _response_basis(
+        mode=str(args.response_basis_mode),
+        path=Path(args.compact_basis_path),
+        n_units=int(population.n_units),
         basis_key=str(args.basis_key),
         max_dim=int(args.basis_max_dim),
     )
@@ -1673,6 +1952,17 @@ def build(args: argparse.Namespace) -> Path:
     feature_space_modes = _parse_str_list(args.feature_space_modes)
     if not feature_space_modes:
         raise ValueError("--feature-space-modes must list at least one mode")
+    global_modes = [
+        mode
+        for mode in feature_space_modes
+        if _feature_space_config(mode)["fit_scope"] == "global"
+    ]
+    if global_modes and not bool(args.allow_global_feature_transforms):
+        raise ValueError(
+            "Global feature transforms include held-out feature rows and are diagnostic only. "
+            f"Requested global mode(s): {global_modes}. Pass --allow-global-feature-transforms "
+            "to run them explicitly."
+        )
     decoder_modes = _parse_str_list(args.decoder_modes)
     if not decoder_modes:
         raise ValueError("--decoder-modes must list at least one mode")
@@ -1694,6 +1984,8 @@ def build(args: argparse.Namespace) -> Path:
     banks, tests = _build_sample_banks(
         run_dir=run_dir,
         manifest=manifest,
+        population=population,
+        population_meta=population_meta,
         basis=basis,
         feature_sources=set(int(value) for value in feature_table.source_rows.tolist()),
         progress_every=int(args.progress_every),
@@ -1711,6 +2003,7 @@ def build(args: argparse.Namespace) -> Path:
         fold_seed=int(args.fold_seed),
         ridge=float(args.ridge),
         noise_floor=float(args.noise_floor),
+        source_weighting=str(args.source_weighting),
         mlp_config=mlp_config,
     )
     summary = _summarize(trials)
@@ -1748,10 +2041,35 @@ def build(args: argparse.Namespace) -> Path:
         "decoder_modes_requested": decoder_modes,
         "decoder_modes_canonical": sorted(set(models["decoder_mode"].astype(str).tolist())),
         "observer_modes": [spec.slug for spec in specs],
+        "source_weighting": str(args.source_weighting),
+        "allow_global_feature_transforms": bool(args.allow_global_feature_transforms),
+        "axis_prior_family_contrasts": {
+            "reported": False,
+            "reason": (
+                "This runner fits response-feature models pooled across prior-family labels "
+                "and evaluates the same observed response rows for axis_edge_parallel and "
+                "axis_edge_orthogonal labels. Axis contrasts require a dedicated per-axis "
+                "fit/evaluation contract."
+            ),
+        },
         "mlp": _json_ready(mlp_config.__dict__),
         "plot_decoder_mode": plotted_decoder,
         "plot_feature_space_mode": plotted_mode,
+        "population": population_meta,
         "basis": basis_meta,
+        "trajectory_coordinate_contract": {
+            "rendering_coordinate": "crop_centered_displacement",
+            "motion_condition": "motion_mean_centered_within_each_backimage_crop",
+            "static_matched_mean_mode": STATIC_MATCHED_MEAN_MODE,
+            "static_matched_mean_source": "zero_lambda_counts[true_candidate_index]",
+            "static_matched_mean_reference_mode": "patch_center_static_tau_zero",
+            "legacy_aliases": sorted(STATIC_MATCHED_MEAN_ALIASES),
+            "interpretation": (
+                "BackImage crops are extracted at each window's mean fixation position; "
+                "tau=0 is therefore static at that crop/mean position, not a global-zero "
+                "absolute eye-position oracle."
+            ),
+        },
         "ridge": float(args.ridge),
         "noise_floor": float(args.noise_floor),
         "n_folds": int(args.n_folds),

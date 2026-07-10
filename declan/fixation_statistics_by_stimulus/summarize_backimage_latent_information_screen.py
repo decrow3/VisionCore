@@ -343,8 +343,14 @@ def _latent_carrier_summary(decode: pd.DataFrame) -> pd.DataFrame:
         [*scale_cols, "latent_family", "latent_scope", "observer", "pca_k"],
     ):
         for key, block in non_control.groupby(group_cols, sort=True):
-            best_static = block.sort_values("Delta_score_vs_static", ascending=False).iloc[0]
-            best_random = block.sort_values("Delta_score_vs_random_axis", ascending=False).iloc[0]
+            static_rank_col = "Delta_R2_cv_vs_static" if "Delta_R2_cv_vs_static" in block.columns else "Delta_score_vs_static"
+            random_rank_col = (
+                "Delta_R2_cv_vs_random_axis"
+                if "Delta_R2_cv_vs_random_axis" in block.columns
+                else "Delta_score_vs_random_axis"
+            )
+            best_static = block.sort_values(static_rank_col, ascending=False).iloc[0]
+            best_random = block.sort_values(random_rank_col, ascending=False).iloc[0]
             row = dict(zip(group_cols, key, strict=True))
             if "latent_family" not in row:
                 row["latent_family"] = str(best_static["latent_family"])
@@ -355,10 +361,27 @@ def _latent_carrier_summary(decode: pd.DataFrame) -> pd.DataFrame:
                     "summary_level": "+".join(group_cols),
                     "best_candidate_vs_static": str(best_static["candidate"]),
                     "best_delta_score_vs_static": float(best_static["Delta_score_vs_static"]),
+                    "best_delta_R2_cv_vs_static": (
+                        float(best_static["Delta_R2_cv_vs_static"])
+                        if "Delta_R2_cv_vs_static" in best_static.index
+                        else float("nan")
+                    ),
+                    "best_R2_cv_vs_static": (
+                        float(best_static["R2_cv"]) if "R2_cv" in best_static.index else float("nan")
+                    ),
                     "best_R2_z_vs_static": float(best_static["R2_z"]),
                     "best_candidate_vs_random": str(best_random["candidate"]),
                     "best_delta_score_vs_random": float(best_random["Delta_score_vs_random_axis"]),
+                    "best_delta_R2_cv_vs_random": (
+                        float(best_random["Delta_R2_cv_vs_random_axis"])
+                        if "Delta_R2_cv_vs_random_axis" in best_random.index
+                        else float("nan")
+                    ),
+                    "best_R2_cv_vs_random": (
+                        float(best_random["R2_cv"]) if "R2_cv" in best_random.index else float("nan")
+                    ),
                     "best_R2_z_vs_random": float(best_random["R2_z"]),
+                    "primary_rank_metric": str(static_rank_col),
                 }
             )
             rows.append(row)

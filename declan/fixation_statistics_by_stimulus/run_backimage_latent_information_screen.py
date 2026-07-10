@@ -39,6 +39,12 @@ from sklearn.model_selection import GroupKFold, KFold
 from tqdm import tqdm
 
 try:
+    from declan.feature_recovery_scores import (
+        R2_CV_METHOD,
+        per_sample_sse_sst,
+        pooled_multioutput_r2,
+        pooled_multioutput_r2_from_sse_sst,
+    )
     from .image_features import _backimage_canvas, gaze_deg_to_screen_px
     from .run_backimage_twin_drift_geometry import (
         TwinScorer,
@@ -50,6 +56,12 @@ try:
     )
 except ImportError:  # pragma: no cover - script-mode fallback
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from declan.feature_recovery_scores import (
+        R2_CV_METHOD,
+        per_sample_sse_sst,
+        pooled_multioutput_r2,
+        pooled_multioutput_r2_from_sse_sst,
+    )
     from declan.fixation_statistics_by_stimulus.image_features import _backimage_canvas, gaze_deg_to_screen_px
     from declan.fixation_statistics_by_stimulus.run_backimage_twin_drift_geometry import (
         TwinScorer,
@@ -1122,7 +1134,10 @@ def _cross_validated_decode(
     target = np.full((n, k_eff), np.nan, dtype=np.float64)
     chosen_alphas = []
     fold_r2s = []
+    fold_r2_cv = []
     fold_residuals = []
+    per_window_sse = np.full(n, np.nan, dtype=np.float64)
+    per_window_sst = np.full(n, np.nan, dtype=np.float64)
     target_feature_weights_arr = None
     if target_feature_weights is not None:
         target_feature_weights_arr = np.asarray(target_feature_weights, dtype=np.float64).reshape(-1)
@@ -1159,6 +1174,12 @@ def _cross_validated_decode(
         if Y_pred.ndim == 1:
             Y_pred = Y_pred[:, None]
         fold_r2s.append(_mean_r2(Y_test, Y_pred))
+        train_mean = np.mean(Y_train, axis=0, keepdims=True)
+        fold_score = pooled_multioutput_r2(Y_test, Y_pred, train_mean=train_mean)
+        fold_r2_cv.append(fold_score)
+        row_sse, row_sst, _row_valid = per_sample_sse_sst(Y_test, Y_pred, train_mean=train_mean)
+        per_window_sse[test_idx] = row_sse
+        per_window_sst[test_idx] = row_sst
         pred[test_idx] = Y_pred
         target[test_idx] = Y_test
         fold_residuals.append(
@@ -1169,15 +1190,30 @@ def _cross_validated_decode(
                 "target_dim": int(k_eff),
                 "n_test": int(len(test_idx)),
                 "alpha": float(alpha),
+                "r2_cv": float(fold_score.r2),
+                "r2_cv_sse": float(fold_score.sse),
+                "r2_cv_sst_train_baseline": float(fold_score.sst),
+                "r2_cv_method": str(fold_score.method),
             }
         )
         chosen_alphas.append(alpha)
     mse = np.mean((target - pred) ** 2, axis=1)
     valid_fold_r2s = [float(v) for v in fold_r2s if np.isfinite(v)]
+    pooled_cv = pooled_multioutput_r2_from_sse_sst(
+        [score.sse for score in fold_r2_cv],
+        [score.sst for score in fold_r2_cv],
+        n_outputs=k_eff,
+    )
     return {
         "r2": float(np.mean(valid_fold_r2s)) if valid_fold_r2s else float("nan"),
+        "r2_cv": float(pooled_cv.r2),
+        "r2_cv_sse": float(pooled_cv.sse),
+        "r2_cv_sst_train_baseline": float(pooled_cv.sst),
+        "r2_cv_method": R2_CV_METHOD,
         "mean_neg_mse": float(np.nanmean(-mse)),
         "per_window_score": -mse,
+        "per_window_sse": per_window_sse,
+        "per_window_sst_train_baseline": per_window_sst,
         "chosen_alpha_median": float(np.nanmedian(chosen_alphas)) if chosen_alphas else float("nan"),
         "ridge_alpha_mode": str(alpha_mode),
         "target_dim": k_eff,
@@ -1761,12 +1797,18 @@ def run(args: argparse.Namespace) -> Path:
                         "target_dim": int(result["target_dim"]),
                         "R2_z": float(result["r2"]),
                         "R2_z_method": str(result["r2_method"]),
+                        "R2_cv": float(result["r2_cv"]),
+                        "R2_cv_method": str(result["r2_cv_method"]),
+                        "R2_cv_sse": float(result["r2_cv_sse"]),
+                        "R2_cv_sst_train_baseline": float(result["r2_cv_sst_train_baseline"]),
                         "decode_score_neg_mse": float(result["mean_neg_mse"]),
                         "chosen_alpha_median": float(result["chosen_alpha_median"]),
                         "ridge_alpha_mode": str(result["ridge_alpha_mode"]),
                     }
                 )
                 scores = result["per_window_score"]
+                sse_by_window = result["per_window_sse"]
+                sst_by_window = result["per_window_sst_train_baseline"]
                 for idx, score in enumerate(scores):
                     per_window_rows.append(
                         {
@@ -1787,6 +1829,8 @@ def run(args: argparse.Namespace) -> Path:
                             "observer": observer,
                             "pca_k": int(k),
                             "decode_score_neg_mse": float(score),
+                            "feature_sse": float(sse_by_window[idx]),
+                            "feature_sst_train_baseline": float(sst_by_window[idx]),
                         }
                     )
 
@@ -1795,16 +1839,30 @@ def run(args: argparse.Namespace) -> Path:
         scale_cols = ["motion_scale_id", "motion_scale_kind", "motion_scale_value", "motion_scale_label"]
         merge_cols = ["latent_name", "observer", "pca_k", *scale_cols]
         static = decode_df[decode_df["candidate"] == "static"][
-            [*merge_cols, "R2_z", "decode_score_neg_mse"]
-        ].rename(columns={"R2_z": "static_R2_z", "decode_score_neg_mse": "static_decode_score_neg_mse"})
+            [*merge_cols, "R2_z", "R2_cv", "decode_score_neg_mse"]
+        ].rename(
+            columns={
+                "R2_z": "static_R2_z",
+                "R2_cv": "static_R2_cv",
+                "decode_score_neg_mse": "static_decode_score_neg_mse",
+            }
+        )
         randoms = decode_df[decode_df["candidate"].str.startswith("random_axis_")]
         random_summary = randoms.groupby(merge_cols, as_index=False)[
-            ["R2_z", "decode_score_neg_mse"]
-        ].mean().rename(columns={"R2_z": "random_axis_R2_z", "decode_score_neg_mse": "random_axis_decode_score_neg_mse"})
+            ["R2_z", "R2_cv", "decode_score_neg_mse"]
+        ].mean().rename(
+            columns={
+                "R2_z": "random_axis_R2_z",
+                "R2_cv": "random_axis_R2_cv",
+                "decode_score_neg_mse": "random_axis_decode_score_neg_mse",
+            }
+        )
         decode_df = decode_df.merge(static, on=merge_cols, how="left")
         decode_df = decode_df.merge(random_summary, on=merge_cols, how="left")
         decode_df["Delta_R2_z_vs_static"] = decode_df["R2_z"] - decode_df["static_R2_z"]
         decode_df["Delta_R2_z_vs_random_axis"] = decode_df["R2_z"] - decode_df["random_axis_R2_z"]
+        decode_df["Delta_R2_cv_vs_static"] = decode_df["R2_cv"] - decode_df["static_R2_cv"]
+        decode_df["Delta_R2_cv_vs_random_axis"] = decode_df["R2_cv"] - decode_df["random_axis_R2_cv"]
         decode_df["Delta_score_vs_static"] = decode_df["decode_score_neg_mse"] - decode_df["static_decode_score_neg_mse"]
         decode_df["Delta_score_vs_random_axis"] = decode_df["decode_score_neg_mse"] - decode_df["random_axis_decode_score_neg_mse"]
     decode_df.to_csv(out_dir / "decode_summary_by_candidate.csv", index=False)
@@ -1897,8 +1955,10 @@ def run(args: argparse.Namespace) -> Path:
             "actual_response_units": int(actual_response_units),
             "n_canvas_cache_entries": int(len(canvas_cache)),
             "notes": (
-                "Ridge R2 and negative MSE are first-pass information proxies. "
-                "R2_z is the mean of outer-fold R2 values in each fold's target PCA basis. "
+                "R2_cv is the pooled multi-output out-of-fold SSE/SST score in each fold's "
+                "train-normalized target PCA basis, using that fold's train-mean baseline. "
+                "Legacy R2_z is the unweighted mean of outer-fold R2 values in each fold's "
+                "target PCA basis. "
                 f"Ridge alpha mode is {cfg.ridge_alpha_mode}. "
                 "Trace batching is a canonical-twin optimization; sampled mode falls back to per-trace scoring. "
                 "Axis candidates use matched sinusoidal-line templates with amplitude_type=RMS radius. "
@@ -1920,15 +1980,16 @@ def _plot_decode_summary(out_dir: Path, decode_df: pd.DataFrame) -> None:
     for observer, block in key.groupby("observer"):
         labels = []
         values = []
+        delta_col = "Delta_R2_cv_vs_static" if "Delta_R2_cv_vs_static" in block.columns else "Delta_R2_z_vs_static"
         for _, row in block.sort_values(["latent_name", "candidate"]).iterrows():
             labels.append(f"{row['latent_name']}\n{row['candidate']}")
-            values.append(float(row["Delta_R2_z_vs_static"]))
+            values.append(float(row[delta_col]))
         fig, ax = plt.subplots(figsize=(max(8.0, 0.32 * len(values)), 3.8), dpi=150)
         ax.bar(np.arange(len(values)), values, color="#4c78a8")
         ax.axhline(0.0, color="black", linewidth=0.8)
         ax.set_xticks(np.arange(len(values)))
         ax.set_xticklabels(labels, rotation=75, ha="right", fontsize=6)
-        ax.set_ylabel("Delta R2 vs static")
+        ax.set_ylabel("Delta R2_cv vs static" if delta_col.startswith("Delta_R2_cv") else "Delta R2_z vs static")
         ax.set_title(f"BackImage latent screen ({observer})", loc="left", fontsize=10)
         fig.tight_layout()
         fig.savefig(out_dir / f"fig_delta_r2_vs_static_{observer}.png", dpi=150)
@@ -1962,7 +2023,8 @@ def _write_summary(
             f"- Twin frame batch size: `{cfg.twin_batch_size}`; canonical trace batch size: `{cfg.twin_trace_batch_size}`; "
             f"empty-cache every batch: `{cfg.cuda_empty_cache_every_batch}`; trace-batch equivalence check: `{cfg.check_trace_batch_equivalence}`",
             f"- Local-field grid: `{cfg.local_field_grid}x{cfg.local_field_grid}` blocks; Gabor local fields include even, odd, and amplitude maps",
-        "- R2_z method: mean outer-fold R2 in each fold's target PCA basis",
+        "- R2_cv method: pooled multi-output out-of-fold SSE/SST in each fold's target PCA basis, using that fold's train-mean baseline",
+        "- Legacy R2_z method: unweighted mean outer-fold R2 in each fold's target PCA basis",
         f"- Motion amplitude: `{cfg.observed_rms_scale}x observed RMS radius`, clipped to `[{cfg.min_rms_deg}, {cfg.max_rms_deg}]` deg",
         f"- Max observed RMS filter: `{cfg.max_observed_rms_deg}`",
         f"- Motion scale sweep: relative `{cfg.observed_rms_scales}`, absolute arcmin `{cfg.absolute_rms_arcmin}`",
@@ -1981,12 +2043,14 @@ def _write_summary(
         key = decode_df[
             decode_df["candidate"].isin(["edge", "edge_orthogonal", "real_drift_axis", "spectrum", "random_axis_0"])
         ].copy()
-        key = key.sort_values("Delta_R2_z_vs_static", ascending=False).head(12)
+        sort_col = "Delta_R2_cv_vs_static" if "Delta_R2_cv_vs_static" in key.columns else "Delta_R2_z_vs_static"
+        key = key.sort_values(sort_col, ascending=False).head(12)
         for _, row in key.iterrows():
             lines.append(
                 f"- `{row['latent_name']}` `{row['observer']}` k=`{int(row['pca_k'])}` `{row['candidate']}`: "
-                f"R2 `{row['R2_z']:.4f}`, dR2 static `{row['Delta_R2_z_vs_static']:.4f}`, "
-                f"dR2 random `{row['Delta_R2_z_vs_random_axis']:.4f}`."
+                f"R2_cv `{row['R2_cv']:.4f}`, dR2_cv static `{row['Delta_R2_cv_vs_static']:.4f}`, "
+                f"dR2_cv random `{row['Delta_R2_cv_vs_random_axis']:.4f}`, "
+                f"legacy R2_z `{row['R2_z']:.4f}`."
             )
     lines.extend(["", "## Alignment-Strength Prediction", ""])
     if geom_rows:

@@ -20,6 +20,7 @@ import argparse
 import json
 import math
 import sys
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from declan.redundancy_resolved_v1_population import apply_population_view, load_population_view
-from declan.vernier_active_sensing.forward import build_vernier_movie, load_model_and_readout
+from declan.vernier_active_sensing.forward import (
+    STIMULUS_NORMALIZATION,
+    build_vernier_movie,
+    load_model_and_readout,
+)
 from declan.vernier_active_sensing.metrics import (
     expected_counts,
     poisson_fisher_counts,
@@ -66,6 +71,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--eye-traces-path", type=Path, default=ROOT / DEFAULT_EYE_TRACES_PATH)
     parser.add_argument("--scales", type=str, default=DEFAULT_SCALES)
+    parser.add_argument(
+        "--across-scales",
+        type=str,
+        default="",
+        help="Optional across-contour scales. Defaults to --scales.",
+    )
+    parser.add_argument(
+        "--along-scales",
+        type=str,
+        default="",
+        help="Optional along-contour scales. Defaults to --scales.",
+    )
     parser.add_argument("--n-traces", type=int, default=16)
     parser.add_argument("--max-frames", type=int, default=60)
     parser.add_argument("--fd-step-arcmin", type=float, default=0.25)
@@ -105,7 +122,7 @@ def condition_name(across_scale: float, along_scale: float) -> str:
     return f"real_aniso_across_{scale_token(across_scale)}_along_{scale_token(along_scale)}"
 
 
-def condition_specs(scales: list[float]) -> list[dict[str, Any]]:
+def condition_specs(across_scales: list[float], along_scales: list[float]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = [
         {
             "condition": "static_center",
@@ -115,8 +132,8 @@ def condition_specs(scales: list[float]) -> list[dict[str, Any]]:
             "is_static_baseline": True,
         }
     ]
-    for along in scales:
-        for across in scales:
+    for along in along_scales:
+        for across in across_scales:
             rows.append(
                 {
                     "condition": condition_name(across, along),
@@ -155,6 +172,31 @@ def cache_path(args: argparse.Namespace, condition: str) -> Path:
         / "cache"
         / f"rr100_rates_{condition}_fd{float(args.fd_step_arcmin):.4f}arcmin.npz"
     )
+
+
+def _cache_identity(args: argparse.Namespace, *, condition: str) -> dict[str, Any]:
+    return {
+        "schema_version": 2,
+        "stimulus_normalization": STIMULUS_NORMALIZATION,
+        "condition": str(condition),
+        "eye_traces_path": str(Path(args.eye_traces_path).expanduser().resolve()),
+        "n_traces": int(args.n_traces),
+        "max_frames": int(args.max_frames),
+        "fd_step_arcmin": float(args.fd_step_arcmin),
+        "bin_seconds": float(args.bin_seconds),
+        "phi": float(args.phi),
+        "seed": int(args.seed),
+        "population_version": RR100_VERSION,
+        "plus_spec": asdict(canonical_vernier_spec(+float(args.fd_step_arcmin))),
+        "minus_spec": asdict(canonical_vernier_spec(-float(args.fd_step_arcmin))),
+        "trajectory_contract": "native real-trace positions, condition transform applied per trace",
+        "readout_time_contract": "all response frames retained and summarized downstream",
+        "map_contract": "RR100 spatial maps collapsed to per-unit max rates plus population SSI",
+    }
+
+
+def _identity_text(identity: dict[str, Any]) -> str:
+    return json.dumps(identity, sort_keys=True, separators=(",", ":"))
 
 
 def compute_condition_cache(
@@ -244,16 +286,23 @@ def load_or_compute_condition(
     device: str,
 ) -> dict[str, Any]:
     path = cache_path(args, condition)
+    expected_identity = _cache_identity(args, condition=condition)
     if path.exists() and not bool(args.force):
         with np.load(path, allow_pickle=True) as data:
-            print(f"Loaded cache: {path}", flush=True)
-            return {
-                "plus_rates": np.asarray(data["plus_rates"], dtype=np.float32),
-                "minus_rates": np.asarray(data["minus_rates"], dtype=np.float32),
-                "ssi_curves": np.asarray(data["ssi_curves"], dtype=np.float32),
-                "pose_traces": np.asarray(data["pose_traces"], dtype=np.float32),
-                "inventory_rows": list(data["inventory_rows"].tolist()),
-            }
+            matches_identity = (
+                "cache_identity_json" in data
+                and str(np.asarray(data["cache_identity_json"]).ravel()[0]) == _identity_text(expected_identity)
+            )
+            if matches_identity:
+                print(f"Loaded cache: {path}", flush=True)
+                return {
+                    "plus_rates": np.asarray(data["plus_rates"], dtype=np.float32),
+                    "minus_rates": np.asarray(data["minus_rates"], dtype=np.float32),
+                    "ssi_curves": np.asarray(data["ssi_curves"], dtype=np.float32),
+                    "pose_traces": np.asarray(data["pose_traces"], dtype=np.float32),
+                    "inventory_rows": list(data["inventory_rows"].tolist()),
+                }
+        print(f"RR100 real-trace scale-grid cache metadata mismatch; recomputing {path}", flush=True)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     cache = compute_condition_cache(
@@ -275,6 +324,8 @@ def load_or_compute_condition(
         condition=np.asarray([condition]),
         fd_step_arcmin=np.asarray([float(args.fd_step_arcmin)], dtype=np.float32),
         bin_seconds=np.asarray([float(args.bin_seconds)], dtype=np.float32),
+        stimulus_normalization=np.asarray([STIMULUS_NORMALIZATION]),
+        cache_identity_json=np.asarray([_identity_text(expected_identity)]),
     )
     print(f"Saved cache: {path}", flush=True)
     return cache
@@ -367,11 +418,11 @@ def add_static_ratios(summary: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _grid(summary: pd.DataFrame, scales: list[float], value_col: str) -> np.ndarray:
-    values = np.full((len(scales), len(scales)), np.nan, dtype=np.float64)
+def _grid(summary: pd.DataFrame, across_scales: list[float], along_scales: list[float], value_col: str) -> np.ndarray:
+    values = np.full((len(along_scales), len(across_scales)), np.nan, dtype=np.float64)
     grid_rows = summary[~summary["is_static_baseline"].astype(bool)]
-    for y, along in enumerate(scales):
-        for x, across in enumerate(scales):
+    for y, along in enumerate(along_scales):
+        for x, across in enumerate(across_scales):
             row = grid_rows[
                 np.isclose(pd.to_numeric(grid_rows["across_scale"], errors="coerce"), across)
                 & np.isclose(pd.to_numeric(grid_rows["along_scale"], errors="coerce"), along)
@@ -395,7 +446,12 @@ def _annotate_heatmap(ax: Any, values: np.ndarray) -> None:
             ax.text(x, y, f"{value:.2g}", ha="center", va="center", fontsize=5.6, color=text_color)
 
 
-def write_heatmaps(args: argparse.Namespace, summary: pd.DataFrame, scales: list[float]) -> None:
+def write_heatmaps(
+    args: argparse.Namespace,
+    summary: pd.DataFrame,
+    across_scales: list[float],
+    along_scales: list[float],
+) -> None:
     out_dir = Path(args.out_dir)
     metric_specs = [
         ("pose_aware_fisher_vs_static", "Known-trace Fisher / static"),
@@ -404,16 +460,22 @@ def write_heatmaps(args: argparse.Namespace, summary: pd.DataFrame, scales: list
     ]
     fig, axes = plt.subplots(1, 3, figsize=(12.6, 4.2), dpi=220, constrained_layout=True)
     for ax, (value_col, title) in zip(axes, metric_specs, strict=True):
-        values = _grid(summary, scales, value_col)
+        values = _grid(summary, across_scales, along_scales, value_col)
         im = ax.imshow(values, origin="lower", interpolation="nearest", cmap="viridis")
         _annotate_heatmap(ax, values)
-        if 1.0 in scales:
-            one_idx = scales.index(1.0)
-            ax.scatter([one_idx], [one_idx], marker="x", s=36, color="white", linewidths=1.4)
-        ax.set_xticks(np.arange(len(scales)))
-        ax.set_yticks(np.arange(len(scales)))
-        ax.set_xticklabels([f"{s:g}" for s in scales], rotation=45, ha="right")
-        ax.set_yticklabels([f"{s:g}" for s in scales])
+        if 1.0 in across_scales and 1.0 in along_scales:
+            ax.scatter(
+                [across_scales.index(1.0)],
+                [along_scales.index(1.0)],
+                marker="x",
+                s=36,
+                color="white",
+                linewidths=1.4,
+            )
+        ax.set_xticks(np.arange(len(across_scales)))
+        ax.set_yticks(np.arange(len(along_scales)))
+        ax.set_xticklabels([f"{s:g}" for s in across_scales], rotation=45, ha="right")
+        ax.set_yticklabels([f"{s:g}" for s in along_scales])
         ax.set_xlabel("across-contour scale")
         ax.set_title(title, fontsize=10)
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.03)
@@ -429,18 +491,24 @@ def write_heatmaps(args: argparse.Namespace, summary: pd.DataFrame, scales: list
 
     fig2, axes2 = plt.subplots(1, 3, figsize=(12.6, 4.2), dpi=220, constrained_layout=True)
     for ax, (value_col, title) in zip(axes2, metric_specs, strict=True):
-        values = np.log2(np.maximum(_grid(summary, scales, value_col), 1e-12))
+        values = np.log2(np.maximum(_grid(summary, across_scales, along_scales, value_col), 1e-12))
         finite = values[np.isfinite(values)]
         vmax = max(float(np.nanmax(np.abs(finite))), 1.0) if finite.size else 1.0
         im = ax.imshow(values, origin="lower", interpolation="nearest", cmap="coolwarm", vmin=-vmax, vmax=vmax)
         _annotate_heatmap(ax, values)
-        if 1.0 in scales:
-            one_idx = scales.index(1.0)
-            ax.scatter([one_idx], [one_idx], marker="x", s=36, color="black", linewidths=1.4)
-        ax.set_xticks(np.arange(len(scales)))
-        ax.set_yticks(np.arange(len(scales)))
-        ax.set_xticklabels([f"{s:g}" for s in scales], rotation=45, ha="right")
-        ax.set_yticklabels([f"{s:g}" for s in scales])
+        if 1.0 in across_scales and 1.0 in along_scales:
+            ax.scatter(
+                [across_scales.index(1.0)],
+                [along_scales.index(1.0)],
+                marker="x",
+                s=36,
+                color="black",
+                linewidths=1.4,
+            )
+        ax.set_xticks(np.arange(len(across_scales)))
+        ax.set_yticks(np.arange(len(along_scales)))
+        ax.set_xticklabels([f"{s:g}" for s in across_scales], rotation=45, ha="right")
+        ax.set_yticklabels([f"{s:g}" for s in along_scales])
         ax.set_xlabel("across-contour scale")
         ax.set_title(f"log2 {title}", fontsize=10)
         fig2.colorbar(im, ax=ax, fraction=0.046, pad=0.03)
@@ -454,7 +522,9 @@ def main() -> None:
     args = parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
     scales = parse_scales(args.scales)
-    specs = condition_specs(scales)
+    across_scales = parse_scales(args.across_scales) if str(args.across_scales).strip() else scales
+    along_scales = parse_scales(args.along_scales) if str(args.along_scales).strip() else scales
+    specs = condition_specs(across_scales, along_scales)
     trace_set = subsample_traces(load_eye_traces(Path(args.eye_traces_path)), int(args.n_traces), int(args.seed))
 
     device_arg = None if str(args.device).lower() == "auto" else str(args.device)
@@ -470,6 +540,8 @@ def main() -> None:
             "out_dir": str(args.out_dir),
             "eye_traces_path": str(args.eye_traces_path),
             "scales": scales,
+            "across_scales": across_scales,
+            "along_scales": along_scales,
             "n_traces": int(args.n_traces),
             "max_frames": int(args.max_frames),
             "fd_step_arcmin": float(args.fd_step_arcmin),
@@ -482,6 +554,7 @@ def main() -> None:
         },
         "population_version": RR100_VERSION,
         "axis_convention": "vertical_vernier_across_x_along_y",
+        "stimulus_normalization": STIMULUS_NORMALIZATION,
         "condition_count": len(specs),
     }
     (Path(args.out_dir) / "rr100_real_trace_scale_grid_manifest.json").write_text(
@@ -521,7 +594,7 @@ def main() -> None:
     summary_df.to_csv(summary_path, index=False)
     trace_df.to_csv(trace_path, index=False)
     inventory_df.to_csv(inventory_path, index=False)
-    write_heatmaps(args, summary_df, scales)
+    write_heatmaps(args, summary_df, across_scales, along_scales)
     print(summary_df.to_string(index=False, float_format=lambda x: f"{x:.6g}"), flush=True)
     print(f"Saved summary: {summary_path}", flush=True)
     print(f"Saved trace table: {trace_path}", flush=True)

@@ -22,7 +22,12 @@ import torch
 from scripts.temporal_decoding.rate_computation import compute_trial_rates
 from scripts.temporal_decoding.stimulus_hires import N_LAGS
 
-from .forward import build_vernier_movie, load_model_and_readout
+from .forward import (
+    STIMULUS_NORMALIZATION,
+    build_vernier_movie,
+    load_model_and_readout,
+    renderer_raw_to_model_pixelnorm,
+)
 from .joint_observer import build_compact_translation_basis
 from .run_vernier_active_sensing import build_spec, parse_csv_float, parse_csv_int, parse_csv_str
 from .stimulus import RenderGeometry, render_world, sample_retina_movie
@@ -169,8 +174,14 @@ def build_lag_kernel_for_trace(
                 movie_minus = sample_retina_movie(world, shifted_minus, geometry=geometry, device=device)[0, 0].detach().cpu()
                 stim_plus = baseline_stim.clone()
                 stim_minus = baseline_stim.clone()
-                stim_plus[:, :, lag] = movie_plus[start:stop].unsqueeze(1) / float(geometry.max_raw)
-                stim_minus[:, :, lag] = movie_minus[start:stop].unsqueeze(1) / float(geometry.max_raw)
+                stim_plus[:, :, lag] = renderer_raw_to_model_pixelnorm(
+                    movie_plus[start:stop].unsqueeze(1),
+                    max_raw=float(geometry.max_raw),
+                )
+                stim_minus[:, :, lag] = renderer_raw_to_model_pixelnorm(
+                    movie_minus[start:stop].unsqueeze(1),
+                    max_raw=float(geometry.max_raw),
+                )
                 rates_plus = compute_trial_rates(
                     model,
                     readout,
@@ -200,6 +211,7 @@ def build_lag_kernel_for_trace(
         "reference_trace_deg": np.asarray(reference_trace_deg, dtype=np.float32),
         "mu0_rates": np.asarray(mu0_rates, dtype=np.float32),
         "lag_kernel_rates_per_arcmin": np.asarray(kernels, dtype=np.float32),
+        "stimulus_normalization": np.asarray([STIMULUS_NORMALIZATION]),
     }
     np.savez_compressed(cache_path, **{key: value for key, value in payload.items() if key != "path"})
     return payload
@@ -648,6 +660,7 @@ def main() -> None:
                     )
                 ),
                 "n_rows": len(rows),
+                "stimulus_normalization": STIMULUS_NORMALIZATION,
                 "note": (
                     "Lag-plane Jacobian diagnostic for framewise Vernier observer; "
                     "this is not yet the production joint trajectory filter."

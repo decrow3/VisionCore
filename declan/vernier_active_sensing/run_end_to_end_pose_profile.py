@@ -21,7 +21,7 @@ import torch
 from scripts.temporal_decoding.stimulus_hires import N_LAGS
 from scripts.temporal_decoding.rate_computation import _collapse_spatial
 
-from .forward import load_model_and_readout
+from .forward import STIMULUS_NORMALIZATION, load_model_and_readout, renderer_raw_to_model_pixelnorm
 from . import synthetic_trajectory_priors as trajectory_priors
 from .joint_observer import THETA_LABELS, THETA_MINUS, THETA_PLUS
 from .run_trajectory_table_observer import parse_csv_float, parse_csv_str, write_csv, write_json
@@ -185,7 +185,8 @@ def _forward_counts(
     pose_deg = pose_arcmin / POSE_UNITS_PER_DEGREE
     pad = pose_deg[:1].expand(max(int(n_lags) - 1, 0), -1)
     padded_pose = torch.cat([pad, pose_deg], dim=0)
-    movie = retina(world, padded_pose)[0, 0] / float(retina.geometry.max_raw)
+    movie_raw = retina(world, padded_pose)[0, 0]
+    movie = renderer_raw_to_model_pixelnorm(movie_raw, max_raw=float(retina.geometry.max_raw))
     stim = _torch_lag_embed(movie, int(n_lags))
     feats = model.model.core_forward(stim, None)
     feats_last = feats[:, :, -1]
@@ -970,6 +971,7 @@ def run(args: argparse.Namespace) -> tuple[list[dict[str, Any]], list[dict[str, 
             "out_dir": out_dir,
             "n_trial_rows": len(rows),
             "n_summary_rows": len(summary),
+            "stimulus_normalization": STIMULUS_NORMALIZATION,
             "interpretation": (
                 "This profiles continuous eye pose directly through the differentiable Vernier retinal sampler, "
                 "lag embedding, model core, and readout. Model/readout parameters are frozen; gradients flow to pose. "

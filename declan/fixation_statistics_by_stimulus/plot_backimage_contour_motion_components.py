@@ -52,6 +52,7 @@ DEFAULT_OUT_DIR = (
     / "backimage_contour_motion_component_plots_v1"
 )
 DEFAULT_MSD_LAGS = (1, 2, 4, 8, 16)
+DEFAULT_NO_COHERENCE_MAX = 0.10
 
 COLORS = {
     "along": "#1b7f5c",
@@ -63,6 +64,7 @@ COLORS = {
     "Logan": "#b26b22",
     "fixrsvp": "#5b6f95",
     "backimage": "#1b7f5c",
+    "no_coherence": "#333333",
 }
 
 
@@ -82,6 +84,7 @@ class ComponentPlotConfig:
     condition_max_diffusion_lag_s: float
     condition_within_segment_max_diffusion_lag_s: float
     condition_min_segments_per_lag: int
+    no_coherence_max: float
     n_bootstrap: int
     seed: int
     recompute_traces: bool
@@ -286,6 +289,123 @@ def _coherence_brackets(values: pd.Series) -> tuple[pd.Series, dict[str, str]]:
         sub = values[cats == name].astype(float)
         labels[name] = f"{name} ({sub.min():.2f}-{sub.max():.2f})"
     return cats, labels
+
+
+def _no_coherence_subset(df: pd.DataFrame, no_coherence_max: float | None) -> pd.DataFrame:
+    if no_coherence_max is None or not np.isfinite(no_coherence_max) or no_coherence_max <= 0.0:
+        return df.iloc[0:0].copy()
+    coherence = pd.to_numeric(df["image_orientation_coherence"], errors="coerce")
+    return df[coherence <= float(no_coherence_max)].copy()
+
+
+def _polar_density_and_stats(delta: np.ndarray, bins: np.ndarray) -> tuple[np.ndarray | None, dict[str, Any]]:
+    delta = np.asarray(delta, dtype=np.float64)
+    delta = delta[np.isfinite(delta)]
+    if delta.size == 0:
+        return None, {
+            "n_windows": 0,
+            "mean_cos2_delta": float("nan"),
+            "median_abs_delta_deg": float("nan"),
+            "fraction_within_15deg_parallel": float("nan"),
+            "fraction_within_30deg_parallel": float("nan"),
+            "fraction_within_30deg_orthogonal": float("nan"),
+        }
+    theta_half = np.radians(np.mod(delta, 180.0))
+    theta = np.mod(np.concatenate([theta_half, theta_half + np.pi]), 2.0 * np.pi)
+    counts, _ = np.histogram(theta, bins=bins, density=False)
+    density = counts.astype(float) / max(float(np.sum(counts)) * (bins[1] - bins[0]), 1.0)
+    density = _smooth_periodic(density, sigma_bins=1.4)
+    stats = {
+        "n_windows": int(delta.size),
+        "mean_cos2_delta": float(np.nanmean(np.cos(2.0 * np.radians(delta)))),
+        "median_abs_delta_deg": float(np.nanmedian(np.abs(delta))),
+        "fraction_within_15deg_parallel": float(np.nanmean(np.abs(delta) <= 15.0)),
+        "fraction_within_30deg_parallel": float(np.nanmean(np.abs(delta) <= 30.0)),
+        "fraction_within_30deg_orthogonal": float(np.nanmean(np.abs(np.abs(delta) - 90.0) <= 30.0)),
+    }
+    return density, stats
+
+
+def _draw_polar_density(
+    ax: plt.Axes,
+    centers: np.ndarray,
+    density: np.ndarray,
+    *,
+    color: str,
+    label: str,
+    linestyle: str = "-",
+    linewidth: float = 2.0,
+    fill_alpha: float = 0.08,
+) -> None:
+    theta = np.r_[centers, centers[0]]
+    radius = np.r_[density, density[0]]
+    ax.plot(theta, radius, color=color, lw=linewidth, ls=linestyle, label=label)
+    if fill_alpha > 0.0:
+        ax.fill(theta, radius, color=color, alpha=fill_alpha)
+
+
+def _directional_rms_values(df: pd.DataFrame, rel_angle_rad: float) -> np.ndarray:
+    edge = np.radians(pd.to_numeric(df["image_edge_axis_deg"], errors="coerce").to_numpy(dtype=np.float64))
+    cxx = pd.to_numeric(df["cov_xx_deg2"], errors="coerce").to_numpy(dtype=np.float64)
+    cxy = pd.to_numeric(df["cov_xy_deg2"], errors="coerce").to_numpy(dtype=np.float64)
+    cyy = pd.to_numeric(df["cov_yy_deg2"], errors="coerce").to_numpy(dtype=np.float64)
+    ok = np.isfinite(edge) & np.isfinite(cxx) & np.isfinite(cxy) & np.isfinite(cyy)
+    if not np.any(ok):
+        return np.asarray([], dtype=np.float64)
+    theta = edge[ok] + float(rel_angle_rad)
+    ux = np.cos(theta)
+    uy = np.sin(theta)
+    var = ux * ux * cxx[ok] + 2.0 * ux * uy * cxy[ok] + uy * uy * cyy[ok]
+    return 60.0 * np.sqrt(np.maximum(var, 0.0))
+
+
+def _directional_rms_profile(df: pd.DataFrame, centers: np.ndarray) -> tuple[np.ndarray | None, dict[str, Any]]:
+    if df.empty:
+        return None, {
+            "n_windows": 0,
+            "median_parallel_rms_arcmin": float("nan"),
+            "median_orthogonal_rms_arcmin": float("nan"),
+            "parallel_minus_orthogonal_rms_arcmin": float("nan"),
+            "parallel_over_orthogonal_rms": float("nan"),
+        }
+
+    profile = np.empty_like(centers, dtype=np.float64)
+    for i, angle in enumerate(centers):
+        vals = _directional_rms_values(df, float(angle))
+        vals = vals[np.isfinite(vals)]
+        profile[i] = float(np.nanmedian(vals)) if vals.size else float("nan")
+
+    parallel = _directional_rms_values(df, 0.0)
+    orthogonal = _directional_rms_values(df, 0.5 * np.pi)
+    parallel = parallel[np.isfinite(parallel)]
+    orthogonal = orthogonal[np.isfinite(orthogonal)]
+    par_med = float(np.nanmedian(parallel)) if parallel.size else float("nan")
+    orth_med = float(np.nanmedian(orthogonal)) if orthogonal.size else float("nan")
+    stats = {
+        "n_windows": int(min(parallel.size, orthogonal.size)),
+        "median_parallel_rms_arcmin": par_med,
+        "median_orthogonal_rms_arcmin": orth_med,
+        "parallel_minus_orthogonal_rms_arcmin": float(par_med - orth_med) if np.isfinite(par_med) and np.isfinite(orth_med) else float("nan"),
+        "parallel_over_orthogonal_rms": float(par_med / orth_med) if np.isfinite(par_med) and np.isfinite(orth_med) and orth_med > 0.0 else float("nan"),
+    }
+    if not np.isfinite(profile).any():
+        return None, stats
+    return profile, stats
+
+
+def _draw_polar_rms_profile(
+    ax: plt.Axes,
+    centers: np.ndarray,
+    profile: np.ndarray,
+    *,
+    color: str,
+    label: str,
+    linestyle: str = "-",
+    linewidth: float = 2.0,
+) -> None:
+    theta = np.r_[centers, centers[0]]
+    radius = np.r_[profile, profile[0]]
+    ax.plot(theta, radius, color=color, lw=linewidth, ls=linestyle, label=label)
 
 
 def _bootstrap_ci(values: np.ndarray, *, n_bootstrap: int, seed: int) -> tuple[float, float, float]:
@@ -566,7 +686,7 @@ def _smooth_periodic(counts: np.ndarray, sigma_bins: float = 1.5) -> np.ndarray:
     return smoothed[radius:-radius]
 
 
-def _plot_polar_alignment(df: pd.DataFrame, out_path: Path) -> pd.DataFrame:
+def _plot_polar_alignment(df: pd.DataFrame, out_path: Path, *, no_coherence_max: float | None) -> pd.DataFrame:
     bins = np.linspace(0.0, 2.0 * np.pi, 97)
     centers = 0.5 * (bins[:-1] + bins[1:])
     rows: list[dict[str, Any]] = []
@@ -577,24 +697,37 @@ def _plot_polar_alignment(df: pd.DataFrame, out_path: Path) -> pd.DataFrame:
     for bracket in ["low", "mid", "high"]:
         sub = df[df["coherence_bracket"].astype(str) == bracket].copy()
         delta = sub["drift_edge_delta_deg"].to_numpy(dtype=np.float64)
-        delta = delta[np.isfinite(delta)]
-        theta_half = np.radians(np.mod(delta, 180.0))
-        theta = np.mod(np.concatenate([theta_half, theta_half + np.pi]), 2.0 * np.pi)
-        counts, _ = np.histogram(theta, bins=bins, density=False)
-        density = counts.astype(float) / max(float(np.sum(counts)) * (bins[1] - bins[0]), 1.0)
-        density = _smooth_periodic(density, sigma_bins=1.4)
+        density, stats = _polar_density_and_stats(delta, bins)
+        if density is None:
+            continue
         color = COLORS[bracket]
-        label = f"{bracket}: cos2={np.nanmean(np.cos(2.0 * np.radians(delta))):.2f}"
-        ax.plot(np.r_[centers, centers[0]], np.r_[density, density[0]], color=color, lw=2.0, label=label)
-        ax.fill(np.r_[centers, centers[0]], np.r_[density, density[0]], color=color, alpha=0.08)
+        label = f"{bracket}: cos2={stats['mean_cos2_delta']:.2f}"
+        _draw_polar_density(ax, centers, density, color=color, label=label)
         rows.append({
             "coherence_bracket": bracket,
-            "n_windows": int(sub.shape[0]),
-            "mean_cos2_delta": float(np.nanmean(np.cos(2.0 * np.radians(delta)))),
-            "median_abs_delta_deg": float(np.nanmedian(np.abs(delta))),
-            "fraction_within_15deg_parallel": float(np.nanmean(np.abs(delta) <= 15.0)),
-            "fraction_within_30deg_parallel": float(np.nanmean(np.abs(delta) <= 30.0)),
-            "fraction_within_30deg_orthogonal": float(np.nanmean(np.abs(np.abs(delta) - 90.0) <= 30.0)),
+            "reference": False,
+            "coherence_max": float("nan"),
+            **stats,
+        })
+    ref = _no_coherence_subset(df, no_coherence_max)
+    ref_density, ref_stats = _polar_density_and_stats(ref["drift_edge_delta_deg"].to_numpy(dtype=np.float64), bins)
+    if ref_density is not None:
+        label = f"no coh <= {float(no_coherence_max):.2f}"
+        _draw_polar_density(
+            ax,
+            centers,
+            ref_density,
+            color=COLORS["no_coherence"],
+            label=label,
+            linestyle="--",
+            linewidth=1.6,
+            fill_alpha=0.0,
+        )
+        rows.append({
+            "coherence_bracket": "no_coherence",
+            "reference": True,
+            "coherence_max": float(no_coherence_max),
+            **ref_stats,
         })
     ax.set_thetagrids([0, 90, 180, 270], ["parallel", "orthogonal", "parallel", "orthogonal"])
     ax.set_yticklabels([])
@@ -607,7 +740,7 @@ def _plot_polar_alignment(df: pd.DataFrame, out_path: Path) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _plot_polar_alignment_by_subject(df: pd.DataFrame, out_path: Path) -> pd.DataFrame:
+def _plot_polar_alignment_by_subject(df: pd.DataFrame, out_path: Path, *, no_coherence_max: float | None) -> pd.DataFrame:
     subjects = sorted(df["subject"].dropna().unique())
     if not subjects:
         return pd.DataFrame()
@@ -628,33 +761,445 @@ def _plot_polar_alignment_by_subject(df: pd.DataFrame, out_path: Path) -> pd.Dat
         for bracket in ["low", "mid", "high"]:
             sub = subject_df[subject_df["coherence_bracket"].astype(str) == bracket].copy()
             delta = sub["drift_edge_delta_deg"].to_numpy(dtype=np.float64)
-            delta = delta[np.isfinite(delta)]
-            if delta.size == 0:
+            density, stats = _polar_density_and_stats(delta, bins)
+            if density is None:
                 continue
-            theta_half = np.radians(np.mod(delta, 180.0))
-            theta = np.mod(np.concatenate([theta_half, theta_half + np.pi]), 2.0 * np.pi)
-            counts, _ = np.histogram(theta, bins=bins, density=False)
-            density = counts.astype(float) / max(float(np.sum(counts)) * (bins[1] - bins[0]), 1.0)
-            density = _smooth_periodic(density, sigma_bins=1.4)
             color = COLORS[bracket]
-            mean_cos = float(np.nanmean(np.cos(2.0 * np.radians(delta))))
-            ax.plot(np.r_[centers, centers[0]], np.r_[density, density[0]], color=color, lw=2.0, label=f"{bracket}: {mean_cos:.2f}")
-            ax.fill(np.r_[centers, centers[0]], np.r_[density, density[0]], color=color, alpha=0.08)
+            _draw_polar_density(ax, centers, density, color=color, label=f"{bracket}: {stats['mean_cos2_delta']:.2f}")
             rows.append({
                 "subject": str(subject),
                 "coherence_bracket": bracket,
-                "n_windows": int(sub.shape[0]),
+                "reference": False,
+                "coherence_max": float("nan"),
                 "n_sessions": int(sub["session"].nunique()),
-                "mean_cos2_delta": mean_cos,
-                "median_abs_delta_deg": float(np.nanmedian(np.abs(delta))),
-                "fraction_within_15deg_parallel": float(np.nanmean(np.abs(delta) <= 15.0)),
-                "fraction_within_30deg_parallel": float(np.nanmean(np.abs(delta) <= 30.0)),
-                "fraction_within_30deg_orthogonal": float(np.nanmean(np.abs(np.abs(delta) - 90.0) <= 30.0)),
+                **stats,
+            })
+        ref = _no_coherence_subset(subject_df, no_coherence_max)
+        ref_density, ref_stats = _polar_density_and_stats(ref["drift_edge_delta_deg"].to_numpy(dtype=np.float64), bins)
+        if ref_density is not None:
+            _draw_polar_density(
+                ax,
+                centers,
+                ref_density,
+                color=COLORS["no_coherence"],
+                label=f"no coh <= {float(no_coherence_max):.2f}",
+                linestyle="--",
+                linewidth=1.6,
+                fill_alpha=0.0,
+            )
+            rows.append({
+                "subject": str(subject),
+                "coherence_bracket": "no_coherence",
+                "reference": True,
+                "coherence_max": float(no_coherence_max),
+                "n_sessions": int(ref["session"].nunique()),
+                **ref_stats,
             })
         ax.set_thetagrids([0, 90, 180, 270], ["parallel", "orthogonal", "parallel", "orthogonal"])
         ax.set_yticklabels([])
         ax.set_title(f"{subject}: drift vs local contour", va="bottom", fontsize=10)
     axes_arr[-1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.48))
+    fig.tight_layout()
+    fig.savefig(out_path.with_suffix(".png"), dpi=180, bbox_inches="tight")
+    fig.savefig(out_path.with_suffix(".pdf"), bbox_inches="tight")
+    plt.close(fig)
+    return pd.DataFrame(rows)
+
+
+def _plot_polar_rms_profile(df: pd.DataFrame, out_path: Path, *, no_coherence_max: float | None) -> pd.DataFrame:
+    centers = np.linspace(0.0, 2.0 * np.pi, 97)[:-1]
+    rows: list[dict[str, Any]] = []
+    fig = plt.figure(figsize=(6.0, 4.2))
+    ax = fig.add_subplot(111, projection="polar")
+    ax.set_theta_zero_location("E")
+    ax.set_theta_direction(1)
+    for bracket in ["low", "mid", "high"]:
+        sub = df[df["coherence_bracket"].astype(str) == bracket].copy()
+        profile, stats = _directional_rms_profile(sub, centers)
+        if profile is None:
+            continue
+        label = f"{bracket}: ratio={stats['parallel_over_orthogonal_rms']:.2f}"
+        _draw_polar_rms_profile(ax, centers, profile, color=COLORS[bracket], label=label)
+        rows.append({
+            "coherence_bracket": bracket,
+            "reference": False,
+            "coherence_max": float("nan"),
+            **stats,
+        })
+    ref = _no_coherence_subset(df, no_coherence_max)
+    ref_profile, ref_stats = _directional_rms_profile(ref, centers)
+    if ref_profile is not None:
+        _draw_polar_rms_profile(
+            ax,
+            centers,
+            ref_profile,
+            color=COLORS["no_coherence"],
+            label=f"no coh <= {float(no_coherence_max):.2f}",
+            linestyle="--",
+            linewidth=1.6,
+        )
+        rows.append({
+            "coherence_bracket": "no_coherence",
+            "reference": True,
+            "coherence_max": float(no_coherence_max),
+            **ref_stats,
+        })
+    ax.set_thetagrids([0, 90, 180, 270], ["parallel", "orthogonal", "parallel", "orthogonal"])
+    ax.set_title("Motion scale relative to local contour", va="bottom", fontsize=11)
+    ax.legend(frameon=False, loc="center left", bbox_to_anchor=(1.04, 0.48), ncol=1)
+    fig.tight_layout()
+    fig.savefig(out_path.with_suffix(".png"), dpi=180, bbox_inches="tight")
+    fig.savefig(out_path.with_suffix(".pdf"), bbox_inches="tight")
+    plt.close(fig)
+    return pd.DataFrame(rows)
+
+
+def _plot_polar_rms_profile_by_subject(df: pd.DataFrame, out_path: Path, *, no_coherence_max: float | None) -> pd.DataFrame:
+    subjects = sorted(df["subject"].dropna().unique())
+    if not subjects:
+        return pd.DataFrame()
+    centers = np.linspace(0.0, 2.0 * np.pi, 97)[:-1]
+    fig, axes = plt.subplots(
+        1,
+        len(subjects),
+        figsize=(4.5 * len(subjects), 4.0),
+        subplot_kw={"projection": "polar"},
+    )
+    axes_arr = np.atleast_1d(axes)
+    rows: list[dict[str, Any]] = []
+    for ax, subject in zip(axes_arr, subjects, strict=True):
+        subject_df = df[df["subject"].astype(str) == str(subject)].copy()
+        ax.set_theta_zero_location("E")
+        ax.set_theta_direction(1)
+        for bracket in ["low", "mid", "high"]:
+            sub = subject_df[subject_df["coherence_bracket"].astype(str) == bracket].copy()
+            profile, stats = _directional_rms_profile(sub, centers)
+            if profile is None:
+                continue
+            _draw_polar_rms_profile(
+                ax,
+                centers,
+                profile,
+                color=COLORS[bracket],
+                label=f"{bracket}: {stats['parallel_over_orthogonal_rms']:.2f}",
+            )
+            rows.append({
+                "subject": str(subject),
+                "coherence_bracket": bracket,
+                "reference": False,
+                "coherence_max": float("nan"),
+                "n_sessions": int(sub["session"].nunique()),
+                **stats,
+            })
+        ref = _no_coherence_subset(subject_df, no_coherence_max)
+        ref_profile, ref_stats = _directional_rms_profile(ref, centers)
+        if ref_profile is not None:
+            _draw_polar_rms_profile(
+                ax,
+                centers,
+                ref_profile,
+                color=COLORS["no_coherence"],
+                label=f"no coh <= {float(no_coherence_max):.2f}",
+                linestyle="--",
+                linewidth=1.6,
+            )
+            rows.append({
+                "subject": str(subject),
+                "coherence_bracket": "no_coherence",
+                "reference": True,
+                "coherence_max": float(no_coherence_max),
+                "n_sessions": int(ref["session"].nunique()),
+                **ref_stats,
+            })
+        ax.set_thetagrids([0, 90, 180, 270], ["parallel", "orthogonal", "parallel", "orthogonal"])
+        ax.set_title(f"{subject}: RMS vs local contour", va="bottom", fontsize=10)
+    axes_arr[-1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.48))
+    fig.tight_layout()
+    fig.savefig(out_path.with_suffix(".png"), dpi=180, bbox_inches="tight")
+    fig.savefig(out_path.with_suffix(".pdf"), bbox_inches="tight")
+    plt.close(fig)
+    return pd.DataFrame(rows)
+
+
+def _rms_ratio_stats(stats: dict[str, Any], ref_stats: dict[str, Any]) -> dict[str, float]:
+    par = float(stats["median_parallel_rms_arcmin"])
+    orth = float(stats["median_orthogonal_rms_arcmin"])
+    ref_par = float(ref_stats["median_parallel_rms_arcmin"])
+    ref_orth = float(ref_stats["median_orthogonal_rms_arcmin"])
+    par_ratio = par / ref_par if np.isfinite(par) and np.isfinite(ref_par) and ref_par > 0.0 else float("nan")
+    orth_ratio = orth / ref_orth if np.isfinite(orth) and np.isfinite(ref_orth) and ref_orth > 0.0 else float("nan")
+    return {
+        "parallel_rms_ratio_to_no_coherence": float(par_ratio),
+        "orthogonal_rms_ratio_to_no_coherence": float(orth_ratio),
+        "orthogonal_minus_parallel_ratio_to_no_coherence": (
+            float(orth_ratio - par_ratio) if np.isfinite(par_ratio) and np.isfinite(orth_ratio) else float("nan")
+        ),
+        "parallel_over_orthogonal_relative_rms": (
+            float(par_ratio / orth_ratio) if np.isfinite(par_ratio) and np.isfinite(orth_ratio) and orth_ratio > 0.0 else float("nan")
+        ),
+    }
+
+
+def _plot_polar_rms_ratio_profile(df: pd.DataFrame, out_path: Path, *, no_coherence_max: float | None) -> pd.DataFrame:
+    centers = np.linspace(0.0, 2.0 * np.pi, 97)[:-1]
+    ref = _no_coherence_subset(df, no_coherence_max)
+    ref_profile, ref_stats = _directional_rms_profile(ref, centers)
+    if ref_profile is None:
+        return pd.DataFrame()
+    ok_ref = np.isfinite(ref_profile) & (ref_profile > 0.0)
+    rows: list[dict[str, Any]] = []
+    fig = plt.figure(figsize=(6.0, 4.2))
+    ax = fig.add_subplot(111, projection="polar")
+    ax.set_theta_zero_location("E")
+    ax.set_theta_direction(1)
+    _draw_polar_rms_profile(
+        ax,
+        centers,
+        np.ones_like(centers, dtype=np.float64),
+        color=COLORS["no_coherence"],
+        label=f"no coh <= {float(no_coherence_max):.2f}",
+        linestyle="--",
+        linewidth=1.6,
+    )
+    rows.append({
+        "coherence_bracket": "no_coherence",
+        "reference": True,
+        "coherence_max": float(no_coherence_max),
+        **ref_stats,
+        "parallel_rms_ratio_to_no_coherence": 1.0,
+        "orthogonal_rms_ratio_to_no_coherence": 1.0,
+        "orthogonal_minus_parallel_ratio_to_no_coherence": 0.0,
+        "parallel_over_orthogonal_relative_rms": 1.0,
+    })
+    for bracket in ["low", "mid", "high"]:
+        sub = df[df["coherence_bracket"].astype(str) == bracket].copy()
+        profile, stats = _directional_rms_profile(sub, centers)
+        if profile is None:
+            continue
+        ratio = np.full_like(profile, np.nan, dtype=np.float64)
+        ok = ok_ref & np.isfinite(profile)
+        ratio[ok] = profile[ok] / ref_profile[ok]
+        ratio_stats = _rms_ratio_stats(stats, ref_stats)
+        label = (
+            f"{bracket}: par {ratio_stats['parallel_rms_ratio_to_no_coherence']:.2f}, "
+            f"orth {ratio_stats['orthogonal_rms_ratio_to_no_coherence']:.2f}"
+        )
+        _draw_polar_rms_profile(ax, centers, ratio, color=COLORS[bracket], label=label)
+        rows.append({
+            "coherence_bracket": bracket,
+            "reference": False,
+            "coherence_max": float("nan"),
+            **stats,
+            **ratio_stats,
+        })
+    ax.set_thetagrids([0, 90, 180, 270], ["parallel", "orthogonal", "parallel", "orthogonal"])
+    ax.set_title("Motion scale / no-coherence baseline", va="bottom", fontsize=11)
+    ax.legend(frameon=False, loc="center left", bbox_to_anchor=(1.04, 0.48), ncol=1)
+    fig.tight_layout()
+    fig.savefig(out_path.with_suffix(".png"), dpi=180, bbox_inches="tight")
+    fig.savefig(out_path.with_suffix(".pdf"), bbox_inches="tight")
+    plt.close(fig)
+    return pd.DataFrame(rows)
+
+
+def _plot_polar_rms_ratio_profile_by_subject(df: pd.DataFrame, out_path: Path, *, no_coherence_max: float | None) -> pd.DataFrame:
+    subjects = sorted(df["subject"].dropna().unique())
+    if not subjects:
+        return pd.DataFrame()
+    centers = np.linspace(0.0, 2.0 * np.pi, 97)[:-1]
+    fig, axes = plt.subplots(
+        1,
+        len(subjects),
+        figsize=(4.5 * len(subjects), 4.0),
+        subplot_kw={"projection": "polar"},
+    )
+    axes_arr = np.atleast_1d(axes)
+    rows: list[dict[str, Any]] = []
+    for ax, subject in zip(axes_arr, subjects, strict=True):
+        subject_df = df[df["subject"].astype(str) == str(subject)].copy()
+        ref = _no_coherence_subset(subject_df, no_coherence_max)
+        ref_profile, ref_stats = _directional_rms_profile(ref, centers)
+        if ref_profile is None:
+            continue
+        ok_ref = np.isfinite(ref_profile) & (ref_profile > 0.0)
+        ax.set_theta_zero_location("E")
+        ax.set_theta_direction(1)
+        _draw_polar_rms_profile(
+            ax,
+            centers,
+            np.ones_like(centers, dtype=np.float64),
+            color=COLORS["no_coherence"],
+            label=f"no coh <= {float(no_coherence_max):.2f}",
+            linestyle="--",
+            linewidth=1.6,
+        )
+        rows.append({
+            "subject": str(subject),
+            "coherence_bracket": "no_coherence",
+            "reference": True,
+            "coherence_max": float(no_coherence_max),
+            "n_sessions": int(ref["session"].nunique()),
+            **ref_stats,
+            "parallel_rms_ratio_to_no_coherence": 1.0,
+            "orthogonal_rms_ratio_to_no_coherence": 1.0,
+            "orthogonal_minus_parallel_ratio_to_no_coherence": 0.0,
+            "parallel_over_orthogonal_relative_rms": 1.0,
+        })
+        for bracket in ["low", "mid", "high"]:
+            sub = subject_df[subject_df["coherence_bracket"].astype(str) == bracket].copy()
+            profile, stats = _directional_rms_profile(sub, centers)
+            if profile is None:
+                continue
+            ratio = np.full_like(profile, np.nan, dtype=np.float64)
+            ok = ok_ref & np.isfinite(profile)
+            ratio[ok] = profile[ok] / ref_profile[ok]
+            ratio_stats = _rms_ratio_stats(stats, ref_stats)
+            label = (
+                f"{bracket}: {ratio_stats['parallel_rms_ratio_to_no_coherence']:.2f}/"
+                f"{ratio_stats['orthogonal_rms_ratio_to_no_coherence']:.2f}"
+            )
+            _draw_polar_rms_profile(ax, centers, ratio, color=COLORS[bracket], label=label)
+            rows.append({
+                "subject": str(subject),
+                "coherence_bracket": bracket,
+                "reference": False,
+                "coherence_max": float("nan"),
+                "n_sessions": int(sub["session"].nunique()),
+                **stats,
+                **ratio_stats,
+            })
+        ax.set_thetagrids([0, 90, 180, 270], ["parallel", "orthogonal", "parallel", "orthogonal"])
+        ax.set_title(f"{subject}: RMS / no coherence", va="bottom", fontsize=10)
+    axes_arr[-1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.02, 0.48))
+    fig.tight_layout()
+    fig.savefig(out_path.with_suffix(".png"), dpi=180, bbox_inches="tight")
+    fig.savefig(out_path.with_suffix(".pdf"), bbox_inches="tight")
+    plt.close(fig)
+    return pd.DataFrame(rows)
+
+
+def _plot_polar_rms_four_panel_by_subject(df: pd.DataFrame, out_path: Path, *, no_coherence_max: float | None) -> pd.DataFrame:
+    subjects = sorted(df["subject"].dropna().unique())
+    if not subjects:
+        return pd.DataFrame()
+    centers = np.linspace(0.0, 2.0 * np.pi, 97)[:-1]
+    fig, axes = plt.subplots(
+        2,
+        len(subjects),
+        figsize=(4.8 * len(subjects), 7.4),
+        subplot_kw={"projection": "polar"},
+        squeeze=False,
+    )
+    rows: list[dict[str, Any]] = []
+
+    for col_idx, subject in enumerate(subjects):
+        subject_df = df[df["subject"].astype(str) == str(subject)].copy()
+        ref = _no_coherence_subset(subject_df, no_coherence_max)
+        ref_profile, ref_stats = _directional_rms_profile(ref, centers)
+        if ref_profile is None:
+            continue
+        ok_ref = np.isfinite(ref_profile) & (ref_profile > 0.0)
+
+        ax_abs = axes[0, col_idx]
+        ax_rel = axes[1, col_idx]
+        for ax in (ax_abs, ax_rel):
+            ax.set_theta_zero_location("E")
+            ax.set_theta_direction(1)
+            ax.set_thetagrids([0, 90, 180, 270], ["parallel", "orthogonal", "parallel", "orthogonal"])
+
+        _draw_polar_rms_profile(
+            ax_abs,
+            centers,
+            ref_profile,
+            color=COLORS["no_coherence"],
+            label=f"no coh <= {float(no_coherence_max):.2f}",
+            linestyle="--",
+            linewidth=1.6,
+        )
+        _draw_polar_rms_profile(
+            ax_rel,
+            centers,
+            np.ones_like(centers, dtype=np.float64),
+            color=COLORS["no_coherence"],
+            label=f"no coh <= {float(no_coherence_max):.2f}",
+            linestyle="--",
+            linewidth=1.6,
+        )
+        rows.append({
+            "panel": "absolute_rms",
+            "subject": str(subject),
+            "coherence_bracket": "no_coherence",
+            "reference": True,
+            "coherence_max": float(no_coherence_max),
+            "n_sessions": int(ref["session"].nunique()),
+            **ref_stats,
+        })
+        rows.append({
+            "panel": "ratio_to_no_coherence",
+            "subject": str(subject),
+            "coherence_bracket": "no_coherence",
+            "reference": True,
+            "coherence_max": float(no_coherence_max),
+            "n_sessions": int(ref["session"].nunique()),
+            **ref_stats,
+            "parallel_rms_ratio_to_no_coherence": 1.0,
+            "orthogonal_rms_ratio_to_no_coherence": 1.0,
+            "orthogonal_minus_parallel_ratio_to_no_coherence": 0.0,
+            "parallel_over_orthogonal_relative_rms": 1.0,
+        })
+
+        for bracket in ["low", "mid", "high"]:
+            sub = subject_df[subject_df["coherence_bracket"].astype(str) == bracket].copy()
+            profile, stats = _directional_rms_profile(sub, centers)
+            if profile is None:
+                continue
+            ratio = np.full_like(profile, np.nan, dtype=np.float64)
+            ok = ok_ref & np.isfinite(profile)
+            ratio[ok] = profile[ok] / ref_profile[ok]
+            ratio_stats = _rms_ratio_stats(stats, ref_stats)
+            _draw_polar_rms_profile(
+                ax_abs,
+                centers,
+                profile,
+                color=COLORS[bracket],
+                label=f"{bracket}: {stats['parallel_over_orthogonal_rms']:.2f}",
+            )
+            _draw_polar_rms_profile(
+                ax_rel,
+                centers,
+                ratio,
+                color=COLORS[bracket],
+                label=(
+                    f"{bracket}: {ratio_stats['parallel_rms_ratio_to_no_coherence']:.2f}/"
+                    f"{ratio_stats['orthogonal_rms_ratio_to_no_coherence']:.2f}"
+                ),
+            )
+            rows.append({
+                "panel": "absolute_rms",
+                "subject": str(subject),
+                "coherence_bracket": bracket,
+                "reference": False,
+                "coherence_max": float("nan"),
+                "n_sessions": int(sub["session"].nunique()),
+                **stats,
+            })
+            rows.append({
+                "panel": "ratio_to_no_coherence",
+                "subject": str(subject),
+                "coherence_bracket": bracket,
+                "reference": False,
+                "coherence_max": float("nan"),
+                "n_sessions": int(sub["session"].nunique()),
+                **stats,
+                **ratio_stats,
+            })
+
+        ax_abs.set_title(f"{subject}: RMS anisotropy", va="bottom", fontsize=10)
+        ax_rel.set_title(f"{subject}: RMS / no coherence", va="bottom", fontsize=10)
+
+    axes[0, -1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.03, 0.48))
+    axes[1, -1].legend(frameon=False, loc="center left", bbox_to_anchor=(1.03, 0.48))
+    fig.suptitle("Contour-relative eye-motion scale", x=0.06, ha="left", fontsize=12)
     fig.tight_layout()
     fig.savefig(out_path.with_suffix(".png"), dpi=180, bbox_inches="tight")
     fig.savefig(out_path.with_suffix(".pdf"), bbox_inches="tight")
@@ -1478,7 +2023,12 @@ def _plot_condition_along_across_density(
     plt.close(fig)
 
 
-def _plot_condition_polar_alignment_by_stimulus(df: pd.DataFrame, out_path: Path) -> pd.DataFrame:
+def _plot_condition_polar_alignment_by_stimulus(
+    df: pd.DataFrame,
+    out_path: Path,
+    *,
+    no_coherence_max: float | None,
+) -> pd.DataFrame:
     bins = np.linspace(0.0, 2.0 * np.pi, 97)
     centers = 0.5 * (bins[:-1] + bins[1:])
     fig, axes = plt.subplots(1, 2, figsize=(8.4, 4.1), subplot_kw={"projection": "polar"})
@@ -1489,28 +2039,39 @@ def _plot_condition_polar_alignment_by_stimulus(df: pd.DataFrame, out_path: Path
         for bracket in ["low", "mid", "high"]:
             sub = df[(df["stimulus"].astype(str) == stimulus) & (df["coherence_bracket"].astype(str) == bracket)].copy()
             delta = sub["drift_edge_delta_deg"].to_numpy(dtype=np.float64)
-            delta = delta[np.isfinite(delta)]
-            if delta.size == 0:
+            density, stats = _polar_density_and_stats(delta, bins)
+            if density is None:
                 continue
-            theta_half = np.radians(np.mod(delta, 180.0))
-            theta = np.mod(np.concatenate([theta_half, theta_half + np.pi]), 2.0 * np.pi)
-            counts, _ = np.histogram(theta, bins=bins, density=False)
-            density = counts.astype(float) / max(float(np.sum(counts)) * (bins[1] - bins[0]), 1.0)
-            density = _smooth_periodic(density, sigma_bins=1.4)
             color = COLORS[bracket]
-            mean_cos = float(np.nanmean(np.cos(2.0 * np.radians(delta))))
-            ax.plot(np.r_[centers, centers[0]], np.r_[density, density[0]], color=color, lw=2.0, label=f"{bracket}: {mean_cos:.2f}")
-            ax.fill(np.r_[centers, centers[0]], np.r_[density, density[0]], color=color, alpha=0.08)
+            _draw_polar_density(ax, centers, density, color=color, label=f"{bracket}: {stats['mean_cos2_delta']:.2f}")
             rows.append({
                 "stimulus": stimulus,
                 "coherence_bracket": bracket,
-                "n_windows": int(sub.shape[0]),
+                "reference": False,
+                "coherence_max": float("nan"),
                 "n_sessions": int(sub["session"].nunique()),
-                "mean_cos2_delta": mean_cos,
-                "median_abs_delta_deg": float(np.nanmedian(np.abs(delta))),
-                "fraction_within_15deg_parallel": float(np.nanmean(np.abs(delta) <= 15.0)),
-                "fraction_within_30deg_parallel": float(np.nanmean(np.abs(delta) <= 30.0)),
-                "fraction_within_30deg_orthogonal": float(np.nanmean(np.abs(np.abs(delta) - 90.0) <= 30.0)),
+                **stats,
+            })
+        ref = _no_coherence_subset(df[df["stimulus"].astype(str) == stimulus], no_coherence_max)
+        ref_density, ref_stats = _polar_density_and_stats(ref["drift_edge_delta_deg"].to_numpy(dtype=np.float64), bins)
+        if ref_density is not None:
+            _draw_polar_density(
+                ax,
+                centers,
+                ref_density,
+                color=COLORS["no_coherence"],
+                label=f"no coh <= {float(no_coherence_max):.2f}",
+                linestyle="--",
+                linewidth=1.6,
+                fill_alpha=0.0,
+            )
+            rows.append({
+                "stimulus": stimulus,
+                "coherence_bracket": "no_coherence",
+                "reference": True,
+                "coherence_max": float(no_coherence_max),
+                "n_sessions": int(ref["session"].nunique()),
+                **ref_stats,
             })
         ax.set_thetagrids([0, 90, 180, 270], ["parallel", "orthogonal", "parallel", "orthogonal"])
         ax.set_yticklabels([])
@@ -1593,6 +2154,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--condition-max-diffusion-lag-s", type=float, default=0.80)
     parser.add_argument("--condition-within-segment-max-diffusion-lag-s", type=float, default=0.20)
     parser.add_argument("--condition-min-segments-per-lag", type=int, default=20)
+    parser.add_argument(
+        "--no-coherence-max",
+        type=float,
+        default=DEFAULT_NO_COHERENCE_MAX,
+        help=(
+            "Absolute image_orientation_coherence cutoff for the dashed no-coherence reference "
+            "in polar alignment plots. Set <=0 to disable."
+        ),
+    )
     parser.add_argument("--n-bootstrap", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--recompute-traces", action=argparse.BooleanOptionalAction, default=True)
@@ -1665,10 +2235,49 @@ def run(args: argparse.Namespace) -> Path:
         show_session_lines=False,
     )
     _plot_ratio_delta(df, summary, out_dir / "candidate4_rms_allocation_ratio_delta")
-    polar = _plot_polar_alignment(df, out_dir / "candidate5_polar_alignment_by_coherence")
+    no_coherence_max = float(args.no_coherence_max)
+    polar = _plot_polar_alignment(
+        df,
+        out_dir / "candidate5_polar_alignment_by_coherence",
+        no_coherence_max=no_coherence_max,
+    )
     polar.to_csv(out_dir / "polar_alignment_by_coherence.csv", index=False)
-    animal_polar = _plot_polar_alignment_by_subject(df, out_dir / "diagnostic_animal_polar_alignment_by_coherence")
+    animal_polar = _plot_polar_alignment_by_subject(
+        df,
+        out_dir / "diagnostic_animal_polar_alignment_by_coherence",
+        no_coherence_max=no_coherence_max,
+    )
     animal_polar.to_csv(out_dir / "polar_alignment_by_coherence_by_animal.csv", index=False)
+    polar_rms = _plot_polar_rms_profile(
+        df,
+        out_dir / "candidate5b_polar_rms_profile_by_coherence",
+        no_coherence_max=no_coherence_max,
+    )
+    polar_rms.to_csv(out_dir / "polar_rms_profile_by_coherence.csv", index=False)
+    animal_polar_rms = _plot_polar_rms_profile_by_subject(
+        df,
+        out_dir / "diagnostic_animal_polar_rms_profile_by_coherence",
+        no_coherence_max=no_coherence_max,
+    )
+    animal_polar_rms.to_csv(out_dir / "polar_rms_profile_by_coherence_by_animal.csv", index=False)
+    polar_rms_ratio = _plot_polar_rms_ratio_profile(
+        df,
+        out_dir / "candidate5c_polar_rms_ratio_to_no_coherence",
+        no_coherence_max=no_coherence_max,
+    )
+    polar_rms_ratio.to_csv(out_dir / "polar_rms_ratio_to_no_coherence.csv", index=False)
+    animal_polar_rms_ratio = _plot_polar_rms_ratio_profile_by_subject(
+        df,
+        out_dir / "diagnostic_animal_polar_rms_ratio_to_no_coherence",
+        no_coherence_max=no_coherence_max,
+    )
+    animal_polar_rms_ratio.to_csv(out_dir / "polar_rms_ratio_to_no_coherence_by_animal.csv", index=False)
+    animal_polar_rms_four_panel = _plot_polar_rms_four_panel_by_subject(
+        df,
+        out_dir / "diagnostic_animal_polar_rms_four_panel",
+        no_coherence_max=no_coherence_max,
+    )
+    animal_polar_rms_four_panel.to_csv(out_dir / "polar_rms_four_panel_by_animal.csv", index=False)
 
     condition_contour, condition_contour_brackets = _condition_contour_window_table(
         df,
@@ -1718,6 +2327,7 @@ def run(args: argparse.Namespace) -> Path:
     condition_contour_polar = _plot_condition_polar_alignment_by_stimulus(
         condition_contour,
         out_dir / "candidate8_fixrsvp_backimage_polar_alignment_by_coherence",
+        no_coherence_max=no_coherence_max,
     )
     condition_contour_polar.to_csv(out_dir / "fixrsvp_backimage_polar_alignment_by_coherence.csv", index=False)
 
@@ -1770,6 +2380,7 @@ def run(args: argparse.Namespace) -> Path:
         condition_max_diffusion_lag_s=float(args.condition_max_diffusion_lag_s),
         condition_within_segment_max_diffusion_lag_s=float(args.condition_within_segment_max_diffusion_lag_s),
         condition_min_segments_per_lag=int(args.condition_min_segments_per_lag),
+        no_coherence_max=no_coherence_max,
         n_bootstrap=int(args.n_bootstrap),
         seed=int(args.seed),
         recompute_traces=bool(args.recompute_traces),
@@ -1811,6 +2422,24 @@ def run(args: argparse.Namespace) -> Path:
             "using the same Sobel structure-tensor edge-axis convention. "
             "The along/across density-contour plot is a central-window view capped at 4 arcmin per axis; "
             "the saved window table is untrimmed."
+        ),
+        "polar_no_coherence_reference_note": (
+            "Polar alignment plots show angular density, not eye speed. Dashed no-coherence references use "
+            f"windows with image_orientation_coherence <= {no_coherence_max:.3g}; set --no-coherence-max <= 0 to disable."
+        ),
+        "polar_rms_profile_note": (
+            "candidate5b/diagnostic_animal_polar_rms_profile_by_coherence use median position-cloud RMS in arcmin "
+            "as the polar radius, with 0/180 deg contour-parallel and 90/270 deg contour-normal. These panels, "
+            "not the angular-density panels, are the polar view of orthogonal motion compression."
+        ),
+        "polar_rms_ratio_note": (
+            "candidate5c/diagnostic_animal_polar_rms_ratio_to_no_coherence divide each RMS profile by the matching "
+            "no-coherence profile at the same contour-relative angle, so the dashed reference is a unit circle. "
+            "Values below 1 at 90/270 deg indicate contour-normal compression relative to no-coherence windows."
+        ),
+        "polar_rms_four_panel_note": (
+            "diagnostic_animal_polar_rms_four_panel combines absolute RMS anisotropy and RMS/no-coherence ratio "
+            "for each animal in a 2x2 layout."
         ),
     })
     print(f"Wrote contour-motion component plots to {out_dir}")

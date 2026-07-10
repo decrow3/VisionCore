@@ -1,6 +1,6 @@
 # declan Analysis Narrative
 
-Last curated: 2026-06-30.
+Last curated: 2026-07-06.
 
 This is the brief synthesis companion to `MANIFEST.md`. The manifest answers
 "where is it?" This file answers "what did we learn, what should we not claim,
@@ -47,13 +47,15 @@ active-sensing atlas, rather than a separate later active-sensing figure.
      provenance comparison. The same-axis pose-unaware hidden-sample proxy has
      negative point estimates relative to static, and OU remains audit-pending
      rather than a headline null.
-   - 4C: compact subspace supports joint eye/image decoding, in the guarded
-     sense that compact-only retains much of full joint feature recovery and
-     compact removal collapses toward zero-eye. Static PCs remain a serious
-     specificity guardrail. The joint decoder now has a completed
-     inherited-decoder audit gate: promoted calibration uses source-row-heldout
-     CV when available, supervised 4C feature decoders are source-row disjoint,
-     and cache interval integrity passes for the validated contrast files.
+   - 4C: the cleanest current observer is the endpoint-history reset:
+     32-frame histories are endpoint-aligned, only the terminal response is
+     read out, and the feature target is the endpoint image feature. In the
+     current RR100 n=128 run, known-history and joint latent-history observers
+     are numerically identical and beat zero/unknown history, response-only
+     hidden history, and static history. This supports history accounting, not
+     a strict `known > joint` ceiling. Compact-only/removed analyses remain
+     mechanism and specificity controls rather than prerequisites for the basic
+     endpoint-history claim.
    - 4D: along-edge motion benefits model feature encoding in the scoped
      matched-static feature-posterior observer. Hard-negative controls prevent a
      universal along-edge policy claim.
@@ -71,12 +73,12 @@ active-sensing atlas, rather than a separate later active-sensing figure.
 
 ## Recent Additions Since 2026-06-22
 
-- 4C now has a promoted continuous no-anchor feature-recovery observer, plus
-  candidate-free continuous feature-embedding diagnostics. The nonlinear MLP
-  and residual-tau branches show that compact moving responses contain
-  recoverable feature information above zero-eye and stabilized baselines, but
-  they are upper-bound diagnostics rather than downstream linear-readout
-  claims.
+- The pre-endpoint 4C line produced continuous no-anchor feature-recovery,
+  candidate-free feature-embedding, nonlinear MLP, and residual-tau diagnostics.
+  Those branches showed that compact moving responses can contain recoverable
+  feature information above zero-eye and stabilized baselines, but they are now
+  treated as diagnostic/mechanistic context rather than the cleanest
+  paper-facing observer definition.
 - Static-response-PC controls have hardened the non-uniqueness caveat. The 4C
   static-PC tests and one-session covariance-closure static-PC predictor run
   show compact and static-PC bases are close contenders. The safe wording is
@@ -98,6 +100,14 @@ active-sensing atlas, rather than a separate later active-sensing figure.
 - The Vernier walkthrough script and executed PDF are reproducibility aids. They
   make the old Vernier analysis legible but do not reopen the E-optotype or
   covariance-code interpretation.
+- The endpoint-history Figure 4C reset is now the cleanest active-sensing
+  observer branch. The primary n=128 RR100 run supports
+  `known = joint > zero/response-only/static` in pooled `R2_cv` using
+  endpoint-aligned histories and terminal-response readout. Empirical and
+  Brownian endpoint histories pass the weaker gates; OU is positive but less
+  stable against static. The true edge-parallel versus edge-orthogonal control
+  is directionally edge-parallel but not reliable, so it should be treated as an
+  open along/across diagnostic rather than a mechanism claim.
 
 ## Current Main Claims
 
@@ -136,7 +146,7 @@ organized around five panel claims:
 ```text
 4A: One image becomes a retinal movie.
 4B: Motion enhances feature encoding.
-4C: Compact subspace supports joint eye/image decoding.
+4C: Endpoint-history accounting supports feature recovery.
 4D: Along-edge motion benefits model feature encoding.
 4E: Real drift follows clear edges.
 ```
@@ -156,9 +166,9 @@ Do not retread the older panel ordering. The current mapping is:
 
 - 4B is the aggregate motion-rendered feature-information result, with local
   pairing as a mechanistic companion.
-- 4C is the continuous no-anchor feature-recovery observer plus compact
-  feature-posterior intervention, not only the older matched-static
-  image-identity observer.
+- 4C is the endpoint-history feature-recovery observer plus compact/static-PC
+  mechanism controls, not only the older compact-specific candidate-posterior
+  or matched-static image-identity observer.
 - 4D is the along/across model feature-posterior contrast, not merely the older
   edge-parallel preservation audit.
 - 4E is behavior following raw/local edge geometry, not model-objective
@@ -175,14 +185,24 @@ Recent results that should be represented in the companion docs:
 - 4B local: pairing and power-seed follow-ups make the strongest mechanistic
   point through local `I_z` sensitivity and `delta_mean`, not through every
   feature/readout combination.
-- 4C: the current endpoint combines the continuous no-anchor feature-recovery
-  observer with the feature-posterior compact-only / compact-removed /
-  compact-addback decomposition. Older matched-static image-identity rescue is
-  supporting history; newer continuous feature-embedding and MLP branches are
-  diagnostic/upper-bound support unless explicitly promoted in the companion.
-  The inherited-decoder audit now passes with no failures: the promoted
-  calibration gate is source-row-heldout feature cosine, while trial-id/table
-  splits are retained only as provenance context.
+- 4C: the current endpoint-history observer uses endpoint-aligned 32-frame
+  histories and terminal-response readout. The canonical RR100 n=128 run shows
+  known-history and joint latent-history observers tied at `R2_cv = -1.4739`,
+  above zero-history `-2.4618`, response-only hidden history `-2.3414`, and
+  static history `-2.1283`. The promoted wording is contrastive:
+  history-accounting improves feature recovery relative to unknown/static
+  controls. Do not claim a strict known-trajectory ceiling. The compact-only /
+  compact-removed / compact-addback decomposition remains a mechanistic
+  follow-up, and static-PC controls remain the main specificity guardrail.
+  The new edge-parallel versus edge-orthogonal endpoint-history control is
+  directionally parallel-favoring but not reliable; both axis conditions pass
+  the history-use gates. The inherited-decoder audit on the older candidate
+  branch passed with no failures, but that audit is provenance context rather
+  than the defining gate for the endpoint-history observer. The old Panel D
+  axis result also had a claim-critical `per_candidate` axis catalog: each
+  candidate patch supplied its own edge axis for the parallel/orthogonal prior,
+  whereas the endpoint-history edge-axis control is a true-source readout
+  without that candidate-conditioned hypothesis layer.
 - 4D: matched-static axis-conditioned feature posterior supports an along-edge
   gain at the selected scale/readout; known-axis, linear-Gaussian, model-family,
   hard-negative, and edge-preservation analyses define the boundary.
@@ -350,6 +370,9 @@ Current safe claims:
   feature recovery, but not unique over static response manifolds;
 - retinal motion can improve model feature/information endpoints when pose is
   known or marginalized appropriately;
+- endpoint-aligned recent history can improve terminal feature recovery when
+  accounted for as known or latent history, relative to zero-history,
+  response-only hidden-history, and static controls;
 - measured drift/fixation geometry follows clear local edges modestly and
   reliably.
 
@@ -366,6 +389,10 @@ For current Figure 4 active-sensing:
 6. For 4C/4D post-2026-06-22 details, check the companion docs and diagnostics
    under `declan/figure4_active_sensing_atlas/figures/panel_C/diagnostics/` and
    `declan/figure4_active_sensing_atlas/figures/panel_D/diagnostics/`.
+7. For the current endpoint-history 4C branch, start with
+   `declan/figure4_active_sensing_atlas/endpoint_history_workhorse_files.md`,
+   then read `endpoint_history_candidate_gate_status.md` and
+   `endpoint_history_objective_completion_audit.md`.
 
 For compact geometry / covariance closure:
 
