@@ -2,6 +2,38 @@
 
 Date: 2026-07-07
 
+## 2026-07-16 Interpretation-Limiting Bug Notice
+
+Do not treat the old BackImage contour-axis RR100 spatial-SSI outputs in this
+note as calibrated scale-1 real-FEM results until they are audited or rerun.
+
+A trace-construction bug was confirmed in the selected-window path of:
+
+```text
+declan/active_sensing_movie_information/run_backimage_contour_axis_rr100_spatial_ssi.py
+```
+
+Previous selected-window contour-axis runs compressed full 128-sample BackImage
+eye-trace windows into `n_timepoints=40` model traces. This affects motion-scale
+and diffusion-scale interpretation, and it propagates to downstream
+aligned-vs-orthogonal, orientation-stratified, rotation-crossover, and
+unit-first contour-matched summaries built from those caches.
+
+Before trusting any old contour-axis SSI result, check whether its metadata uses
+`reconstructed_trace_bank_from_selected_windows` and whether the selected source
+windows are longer than the SSI `n_timepoints`. Affected caches should be rerun
+with the corrected native-snippet source-trace contract:
+
+```text
+center_cropped_native_selected_window_trace_n_timepoints
+```
+
+Detailed incident note:
+
+```text
+declan/active_sensing_movie_information/contour_axis_trace_resampling_bug_note.md
+```
+
 ## Why This Note Exists
 
 The earlier BackImage movie-information work already has a usable spatial-SSI
@@ -798,6 +830,207 @@ rows = along-contour scale, columns = across-contour scale
 Within this coarse grid, the peak is `along=2, across=0` at `0.053097`
 bits/spike, `+0.002169` above the `0x,0x` static/trial-mean map. The strongest
 drop is at `along=2, across=2`, which falls below static at `0.048507`.
+
+## Current Unit-First Scale-Setting Candidate
+
+Status as of 2026-07-13: the live contour-axis figure candidate is no longer
+the pooled mean-map population curve. The cleanest current result uses the
+time-resolved instantaneous-map SSI contract, but changes the aggregation so
+that each unit is compared with its own static baseline before population
+averaging.
+
+The current main diagnostic is:
+
+```text
+outputs/active_sensing_movie_information/
+  backimage_contour_axis_rr100_sf_contour_alignment_long_axis30_n576_low0p05_high0p5_v1/
+    unit_first_original_only_alignment_split_v1/
+      backimage_rr100_original_only_contour_matched_across_scale_setting_main.png
+      backimage_rr100_original_only_contour_matched_across_scale_setting_main.pdf
+      unit_first_original_only_alignment_split_summary.csv
+      paired_crossover_key_1x_caption_numbers.csv
+```
+
+The broader control figure is:
+
+```text
+backimage_rr100_original_only_unit_first_alignment_2x4_high_low_overlay_refined_v2.png
+```
+
+and should be treated as a supplement/control view because it includes
+orthogonal pairings and along-axis sweeps.
+
+### Measurement Contract
+
+Use dynamic SF groups from the corrected RR100 grating-tuning readout:
+
+```text
+low SF:  preferred SF <= 0.05 cpd, n=31 RR100 units
+high SF: preferred SF >= 0.5 cpd,  n=29 RR100 units
+```
+
+For the original-only contour-matched plot, usable orientation-tuned units with
+aligned samples were:
+
+```text
+low SF:  23 units with contour-matched samples
+high SF: 22 units with contour-matched samples
+```
+
+For each fixation/window, a unit is called contour-matched when its preferred
+orientation is within the contour-alignment threshold of the local contour
+axis. The figure keeps only those contour-matched unit-window pairs. This makes
+the plot a "best case" for contour-matched responses, not a pooled
+aligned-minus-orthogonal contrast.
+
+For each unit `u`, window `f`, and motion condition `(a,l)`:
+
+```text
+I_u,f(a,l) = time-resolved spatial SSI in bits/spike
+```
+
+where `a` is the across-contour motion scale and `l` is the along-contour
+motion scale. The plotted value is computed unit-first:
+
+```text
+Delta I_u(a,l) =
+  mean_f I_u,f(a,l) over contour-matched windows
+  - mean_f I_u,f(0,0) over contour-matched fully static windows
+
+plotted curve =
+  mean_u Delta I_u(a,l)
+```
+
+Thus the motion effect is unit-matched: each unit is compared with its own
+fully static condition before averaging units. The low-SF and high-SF curves
+are still different unit groups. The shaded band in the display figure is SEM
+across units and should not be used as the paired statistical test.
+
+### Main Across-Motion Values
+
+Contour-matched, original movies only, static-subtracted SSI:
+
+```text
+along=0, sweep across:
+
+across scale   low SF    high SF
+0.00           0.0000    0.0000
+0.25           0.0086    0.0086
+0.50           0.0143    0.0170
+1.00           0.0235    0.0288
+2.00           0.0357    0.0278
+
+along=1, sweep across:
+
+across scale   low SF    high SF
+0.000          0.0127    0.0125
+0.125          0.0138    0.0135
+0.250          0.0155    0.0151
+0.500          0.0189    0.0192
+0.750          0.0221    0.0233
+1.000          0.0250    0.0259
+1.500          0.0302    0.0265
+2.000          0.0346    0.0228
+3.000          0.0391    0.0099
+```
+
+The paired unit-first crossover/bootstrap numbers for caption or text are in:
+
+```text
+paired_crossover_key_1x_caption_numbers.csv
+```
+
+Key `Delta C = C(s) - C(0)` rows:
+
+```text
+high SF pure across 1x:      +0.0113 [0.0072, 0.0158]
+high SF pure along 1x:       -0.0109 [-0.0147, -0.0071]
+high SF across+along 1x:     +0.0020 [-0.0023, 0.0062]
+
+low SF pure across 1x:       +0.0079 [0.0067, 0.0092]
+low SF pure along 1x:        -0.0067 [-0.0078, -0.0056]
+low SF across+along 1x:      +0.0014 [-0.0001, 0.0028]
+```
+
+### Interpretation
+
+The candidate story is:
+
+```text
+The contour-matched high-SF channel may set the upper useful scale of FEMs.
+```
+
+More explicitly: low-SF contour-matched information continues to increase
+beyond the natural `1x` scale, while high-SF contour-matched information is
+the first to plateau or decline near `1x`. Pure across-contour motion gives a
+high-SF plateau after `1x`; the strong high-SF turnover is clearest when an
+along-contour component is already present (`along=1`).
+
+Use "scale-setting channel" rather than "rate-limiting step." This avoids
+claiming that high-SF units limit all information. Larger motion can still help
+coarse low-SF localization while beginning to compromise fine contour-matched
+information.
+
+### Guardrails
+
+- Do not promote pooled aligned-minus-orthogonal curves as the mechanistic
+  alignment result. They are contaminated by fixed absolute-orientation
+  anisotropy in the RR100 high-SF population.
+- Keep the rotation control as robustness/diagnostic evidence: it exposes the
+  fixed-axis high-SF anisotropy, but the main figure should be understandable
+  without the original/rot90 counterfactual construction.
+- Keep orthogonal pairings and along-axis sweeps as controls. They show that
+  along-contour motion can erode the contour-matched advantage even when
+  absolute SSI increases.
+- Do not use SEM-band overlap as the significance test. Use the paired
+  unit-first aligned-minus-orthogonal crossover/bootstrap intervals.
+- The mean-map-primary section above is retained as history and a diagnostic
+  branch. It is not the live promoted metric for the scale-setting figure.
+
+### Microsaccade Snippet Scale Extension
+
+The contour-axis RR100 runner now has a microsaccade source mode for the
+analogous "scale the real motion and run the movie through the twin" question:
+
+```text
+python -m declan.active_sensing_movie_information.run_backimage_contour_axis_rr100_spatial_ssi \
+  --axis-run-dir outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_axis_conditioned_matched_static_percandidate_gpu1_n128_c4_k16_scales_0p5_1_2_bconsistent_v1 \
+  --trial-source-mode microsaccade_snippets \
+  --sweep-mode isotropic \
+  --across-scales 0,0.25,0.5,1,1.5,2,3 \
+  --n-timepoints 64
+```
+
+If `--selected-windows-csv` is not provided, this mode uses the source
+BackImage window table recorded in the axis-run metadata rather than the
+drift-filtered selected windows. It detects real microsaccade-like high-speed
+events, deduplicates overlapping source-window detections, cuts a
+pre/event/post snippet, and keeps the full post-event tail inside the source
+window by default. The default structural QC also rejects snippets with an
+additional detected event in the tail.
+
+The first smoke inventory was:
+
+```text
+outputs/active_sensing_movie_information/
+  backimage_microsaccade_snippet_rr100_spatial_ssi_dryrun_smoke/
+```
+
+That dry run scanned 2000 source windows, found 28 usable microsaccade
+snippets after deduplication and QC, and wrote a 2-snippet x 4-condition
+isotropic-scale inventory. It did not run the twin.
+
+Future scale unification: drift windows and microsaccade snippets should
+eventually be reported on the same raw arcmin axis, and also on a unit-relative
+phase axis:
+
+```text
+movement_arcmin * preferred_SF_cycles_per_arcmin
+```
+
+This would test whether high-SF units turn over at smaller raw displacements
+because the same microsaccade or drift step sweeps through more of their
+preferred spatial period.
 
 ## Practical Revival Path
 

@@ -119,6 +119,7 @@ def _reconstruct_prior_trace_map(run_dir: Path, manifest_rows: list[dict[str, st
         ),
         microsaccade_threshold_z=float(args.microsaccade_threshold_z),
         microsaccade_pad_frames=int(args.microsaccade_pad_frames),
+        trace_window_policy=str(getattr(args, "trace_window_policy", "center_crop_native")),
     )
     source_to_item = {int(item["source_row"]): item for item in trace_bank}
     trace_map: dict[str, np.ndarray] = {}

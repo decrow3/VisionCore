@@ -118,6 +118,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--motion-families", default="empirical,ou,brownian,rotated")
     parser.add_argument("--observed-rms-scales", default="0.25,0.5,1.0")
     parser.add_argument("--n-timepoints", type=int, default=40)
+    parser.add_argument(
+        "--trace-window-policy",
+        choices=("center_crop_native", "resample_full_window"),
+        default="center_crop_native",
+        help=(
+            "How empirical source windows become fixed-length rendered traces. "
+            "center_crop_native takes a native center crop when possible; "
+            "resample_full_window preserves the legacy full-window temporal compression behavior."
+        ),
+    )
     parser.add_argument("--reuse-trace-sources-across-scales", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--max-rms-deg", type=float, default=0.12)
 
@@ -168,6 +178,7 @@ def run(args: argparse.Namespace) -> Path:
         ),
         microsaccade_threshold_z=float(args.microsaccade_threshold_z),
         microsaccade_pad_frames=int(args.microsaccade_pad_frames),
+        trace_window_policy=str(args.trace_window_policy),
     )
     rows: list[dict[str, Any]] = []
     trace_arrays: dict[str, np.ndarray] = {}
@@ -234,6 +245,18 @@ def run(args: argparse.Namespace) -> Path:
                         "trace_bank_index": int(bank_index),
                         "trace_source_row": int(item["source_row"]),
                         "trace_source_session": str(item["session"]),
+                        "trace_source_render_contract": str(item.get("trace_render_contract", "")),
+                        "trace_source_window_policy_requested": str(item.get("trace_window_policy_requested", "")),
+                        "trace_source_window_policy": str(item.get("trace_window_policy", "")),
+                        "trace_source_window_n_samples": int(item.get("source_window_n_samples", -1)),
+                        "trace_source_rendered_n_samples": int(item.get("rendered_trace_n_samples", -1)),
+                        "trace_source_rendered_offset": int(item.get("rendered_trace_source_offset", -1)),
+                        "trace_source_rendered_stop_offset": int(
+                            item.get("rendered_trace_source_stop_offset", -1)
+                        ),
+                        "trace_source_to_render_time_compression": float(
+                            item.get("source_to_render_time_compression", np.nan)
+                        ),
                         "pairing_mode": "unpaired_ensemble",
                         "raw_trace_reused_across_scales": bool(args.reuse_trace_sources_across_scales),
                         "source_trace_rms_deg": float(item["observed_rms_deg"]),

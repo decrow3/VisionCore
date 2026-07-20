@@ -129,6 +129,7 @@ class LocalPairingConfig:
     center_crop_px: int
     local_field_grid: int
     n_timepoints: int
+    trace_window_policy: str
     temporal_pc_components: int
     pca_k_list: list[int]
     latent_names: list[str]
@@ -581,6 +582,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=48,
         help="Trace/movie length expected by the canonical BackImage twin stimulus path.",
     )
+    parser.add_argument(
+        "--trace-window-policy",
+        choices=("center_crop_native", "resample_full_window"),
+        default="center_crop_native",
+        help=(
+            "How empirical source windows become fixed-length rendered traces. "
+            "center_crop_native takes a native center crop when possible; "
+            "resample_full_window preserves the legacy full-window temporal compression behavior."
+        ),
+    )
     parser.add_argument("--temporal-pc-components", type=int, default=4)
     parser.add_argument("--latent-names", default="gabor_local_field,pyramid_local_field")
     parser.add_argument("--pca-k-list", default="4,8")
@@ -706,6 +717,7 @@ def run(args: argparse.Namespace) -> Path:
         center_crop_px=int(args.center_crop_px),
         local_field_grid=int(args.local_field_grid),
         n_timepoints=int(args.n_timepoints),
+        trace_window_policy=str(args.trace_window_policy),
         temporal_pc_components=int(args.temporal_pc_components),
         pca_k_list=_parse_int_list(args.pca_k_list),
         latent_names=sorted(latent_filter),
@@ -754,6 +766,7 @@ def run(args: argparse.Namespace) -> Path:
         ),
         microsaccade_threshold_z=float(args.microsaccade_threshold_z),
         microsaccade_pad_frames=int(args.microsaccade_pad_frames),
+        trace_window_policy=str(args.trace_window_policy),
     )
     by_source = {int(item["source_row"]): j for j, item in enumerate(trace_bank)}
     trace_rows = [
@@ -764,6 +777,17 @@ def run(args: argparse.Namespace) -> Path:
             "trial_idx": int(item["trial_idx"]),
             "global_start": int(item["global_start"]),
             "global_stop": int(item["global_stop"]),
+            "trace_render_contract": str(item.get("trace_render_contract", "")),
+            "trace_window_policy_requested": str(item.get("trace_window_policy_requested", "")),
+            "trace_window_policy": str(item.get("trace_window_policy", "")),
+            "source_window_n_samples": int(item.get("source_window_n_samples", -1)),
+            "rendered_trace_n_samples": int(item.get("rendered_trace_n_samples", -1)),
+            "rendered_trace_source_offset": int(item.get("rendered_trace_source_offset", -1)),
+            "rendered_trace_source_stop_offset": int(item.get("rendered_trace_source_stop_offset", -1)),
+            "source_to_render_time_compression": float(item.get("source_to_render_time_compression", np.nan)),
+            "source_window_to_rendered_duration_ratio": float(
+                item.get("source_window_to_rendered_duration_ratio", np.nan)
+            ),
             "observed_rms_deg": float(item["observed_rms_deg"]),
             "source_trace_observed_rms_deg": float(item["source_trace_observed_rms_deg"]),
             "source_rms_radius_deg": float(item["source_rms_radius_deg"]),

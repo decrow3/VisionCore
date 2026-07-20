@@ -1,6 +1,6 @@
 # declan Analysis Narrative
 
-Last curated: 2026-07-06.
+Last curated: 2026-07-16.
 
 This is the brief synthesis companion to `MANIFEST.md`. The manifest answers
 "where is it?" This file answers "what did we learn, what should we not claim,
@@ -73,6 +73,16 @@ active-sensing atlas, rather than a separate later active-sensing figure.
 
 ## Recent Additions Since 2026-06-22
 
+- 2026-07-16 interpretation-limiting bug: previous BackImage contour-axis
+  RR100 spatial-SSI analyses using selected-window traces can be affected by a
+  trace-resampling bug. Old runs with
+  `source_trace_contract = reconstructed_trace_bank_from_selected_windows`
+  compressed full 128-sample BackImage eye-trace windows to `n_timepoints=40`.
+  Treat downstream contour-axis SSI summaries, including aligned-vs-orthogonal,
+  orientation-stratified, rotation-crossover, and unit-first contour-matched
+  results, as untrusted for calibrated scale-1 or diffusion-scale claims until
+  audited or rerun. See
+  `declan/active_sensing_movie_information/contour_axis_trace_resampling_bug_note.md`.
 - The pre-endpoint 4C line produced continuous no-anchor feature-recovery,
   candidate-free feature-embedding, nonlinear MLP, and residual-tau diagnostics.
   Those branches showed that compact moving responses can contain recoverable

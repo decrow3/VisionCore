@@ -817,6 +817,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--patch-size-px", type=int, default=540)
     parser.add_argument("--min-patch-image-margin-px", type=float, default=None)
     parser.add_argument("--n-timepoints", type=int, default=40)
+    parser.add_argument(
+        "--trace-window-policy",
+        choices=("center_crop_native", "resample_full_window"),
+        default="center_crop_native",
+        help=(
+            "How empirical source windows become fixed-length rendered traces. "
+            "center_crop_native takes a native center crop when possible; "
+            "resample_full_window preserves the legacy full-window temporal compression behavior."
+        ),
+    )
     parser.add_argument("--reliable-image-coherence-min", type=float, default=0.20)
     parser.add_argument("--reliable-drift-anisotropy-min", type=float, default=0.20)
     parser.add_argument("--min-duration-s", type=float, default=0.10)
@@ -937,6 +947,7 @@ def run(args: argparse.Namespace) -> Path:
         ),
         microsaccade_threshold_z=float(args.microsaccade_threshold_z),
         microsaccade_pad_frames=int(args.microsaccade_pad_frames),
+        trace_window_policy=str(args.trace_window_policy),
     )
     if str(args.axis_source_column) in work.columns:
         axis_by_source = (
@@ -954,6 +965,17 @@ def run(args: argparse.Namespace) -> Path:
             "trace_bank_index": int(j),
             "source_row": int(item["source_row"]),
             "session": str(item["session"]),
+            "trace_render_contract": str(item.get("trace_render_contract", "")),
+            "trace_window_policy_requested": str(item.get("trace_window_policy_requested", "")),
+            "trace_window_policy": str(item.get("trace_window_policy", "")),
+            "source_window_n_samples": int(item.get("source_window_n_samples", -1)),
+            "rendered_trace_n_samples": int(item.get("rendered_trace_n_samples", -1)),
+            "rendered_trace_source_offset": int(item.get("rendered_trace_source_offset", -1)),
+            "rendered_trace_source_stop_offset": int(item.get("rendered_trace_source_stop_offset", -1)),
+            "source_to_render_time_compression": float(item.get("source_to_render_time_compression", np.nan)),
+            "source_window_to_rendered_duration_ratio": float(
+                item.get("source_window_to_rendered_duration_ratio", np.nan)
+            ),
             "observed_rms_deg": float(item["observed_rms_deg"]),
             "path_length_deg": float(item["path_length_deg"]),
             "lag1_autocorr": float(item["lag1_autocorr"]),

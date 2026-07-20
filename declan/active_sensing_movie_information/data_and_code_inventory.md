@@ -40,6 +40,31 @@ This is a starting map of existing repo assets that may support the active-sensi
     scaling all rates scales raw cumulative bits but leaves cumulative
     bits/spike unchanged.
 
+- `declan/active_sensing_movie_information/run_backimage_contour_axis_rr100_spatial_ssi.py`
+  - Contour-axis BackImage spatial-SSI runner for RR100 maps. It synthesizes
+    along/across contour-relative movies, computes time-resolved and mean-map
+    spatial SSI diagnostics, and writes per-condition/per-unit tables.
+  - Also supports `--trial-source-mode microsaccade_snippets` for event-aligned
+    real microsaccade snippets with pre-event and post-event tail, intended for
+    isotropic up/down motion-scale sweeps through the same twin path.
+  - Preferred current microsaccade control: `--microsaccade-trace-mode
+    padded_event_scaled_full_snippet`, which leaves outside-event drift at `1x`
+    and scales only the detected microsaccade-event increments.
+
+- `declan/active_sensing_movie_information/analyze_backimage_rr100_unit_first_primary_results.py`
+  - Post-hoc unit-first analysis over completed original and rot90 contour-axis
+    caches. It computes unit-first motion gain, original/rot90 crossover,
+    direct aligned-vs-orthogonal summaries, high-SF absolute-orientation
+    diagnostics, and robustness tables.
+
+- `declan/active_sensing_movie_information/analyze_backimage_rr100_rotation_crossover.py`
+  - Rotation-control diagnostic for separating contour-relative alignment from
+    fixed absolute-orientation anisotropy in the RR100 high-SF population.
+
+- `declan/active_sensing_movie_information/run_backimage_rr100_frequency_tuning_probe.py`
+  - RR100 grating-tuning probe used for static/dynamic SF grouping and
+    preferred-orientation estimates.
+
 - `check_fixrsvp_model_spatialinfo.py`
   - Prior spatial SSI entry point, if present in the checkout.
 
@@ -81,6 +106,44 @@ Use a separate output family:
 ```text
 outputs/active_sensing_movie_information/<run_label>/
 ```
+
+Current contour-axis RR100 roots to know about:
+
+```text
+outputs/active_sensing_movie_information/
+  backimage_contour_axis_rr100_sf_contour_alignment_long_axis30_n576_low0p05_high0p5_v1/
+  backimage_contour_axis_rr100_sf_contour_alignment_long_axis30_n576_low0p05_high0p5_rot90_v1/
+```
+
+Important 2026-07-16 caution: these contour-axis roots, and any downstream
+summaries built from their `contour_rr100_spatial_ssi_pairs27` caches, are
+interpretation-limited by a trace-resampling bug unless rerun or explicitly
+audited. The affected selected-window path compressed 128-sample eye-trace
+windows to `n_timepoints=40`, so old nominal `scale=1` traces are not calibrated
+native 40-frame FEM snippets. Before trusting any old contour-axis SSI result,
+check `run_metadata.json` for
+`source_trace_contract = reconstructed_trace_bank_from_selected_windows` and
+compare `n_timepoints` with `global_stop - global_start` in
+`selected_windows.csv`. See:
+
+```text
+declan/active_sensing_movie_information/contour_axis_trace_resampling_bug_note.md
+```
+
+Current unit-first contour-matched figure output:
+
+```text
+outputs/active_sensing_movie_information/
+  backimage_contour_axis_rr100_sf_contour_alignment_long_axis30_n576_low0p05_high0p5_v1/
+    unit_first_original_only_alignment_split_v1/
+      backimage_rr100_original_only_contour_matched_across_scale_setting_main.png
+      unit_first_original_only_alignment_split_summary.csv
+```
+
+This is the current main BackImage contour-axis candidate: contour-matched
+unit-window pairs, time-resolved SSI, per-unit static subtraction, and
+equal-unit averaging. Low and high SF are separate RR100 unit groups; the
+motion effect itself is unit-matched.
 
 Suggested subdirectories:
 

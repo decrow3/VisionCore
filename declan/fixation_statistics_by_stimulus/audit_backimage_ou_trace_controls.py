@@ -359,6 +359,7 @@ def _replay_generated_traces(run_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame,
         ),
         microsaccade_threshold_z=float(args.microsaccade_threshold_z),
         microsaccade_pad_frames=int(args.microsaccade_pad_frames),
+        trace_window_policy=str(getattr(args, "trace_window_policy", "center_crop_native")),
     )
     families = [str(v) for v in _as_list(args.motion_families)]
     scales = [float(v) for v in _as_list(args.observed_rms_scales)]
@@ -440,6 +441,18 @@ def _replay_generated_traces(run_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame,
                             "trace_bank_index": int(bank_index),
                             "trace_source_row": int(item["source_row"]),
                             "trace_source_session": str(item["session"]),
+                            "trace_source_render_contract": str(item.get("trace_render_contract", "")),
+                            "trace_source_window_policy_requested": str(item.get("trace_window_policy_requested", "")),
+                            "trace_source_window_policy": str(item.get("trace_window_policy", "")),
+                            "trace_source_window_n_samples": int(item.get("source_window_n_samples", -1)),
+                            "trace_source_rendered_n_samples": int(item.get("rendered_trace_n_samples", -1)),
+                            "trace_source_rendered_offset": int(item.get("rendered_trace_source_offset", -1)),
+                            "trace_source_rendered_stop_offset": int(
+                                item.get("rendered_trace_source_stop_offset", -1)
+                            ),
+                            "trace_source_to_render_time_compression": float(
+                                item.get("source_to_render_time_compression", np.nan)
+                            ),
                             "source_trace_rms_deg": float(item["observed_rms_deg"]),
                             "source_trace_path_length_deg": float(item["path_length_deg"]),
                             "source_table_path_length_deg": float(item["source_path_length_deg"]),

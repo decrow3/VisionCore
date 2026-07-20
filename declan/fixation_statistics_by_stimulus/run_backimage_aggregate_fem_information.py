@@ -158,6 +158,7 @@ class AggregateConfig:
     spatial_readout_mode: str
     spatial_readout_radius: int
     n_timepoints: int
+    trace_window_policy: str
     temporal_pc_components: int
     pca_k_list: list[int]
     latent_names: list[str]
@@ -672,6 +673,68 @@ def _resample_trace(trace: np.ndarray, n_timepoints: int) -> np.ndarray:
     return out.astype(np.float32)
 
 
+def _mean_center_finite_trace(trace: np.ndarray) -> np.ndarray:
+    out = np.asarray(trace, dtype=np.float64).copy()
+    if out.ndim != 2 or out.shape[1] != 2:
+        return np.zeros((0, 2), dtype=np.float32)
+    finite = np.isfinite(out).all(axis=1)
+    if not np.all(finite):
+        good = np.flatnonzero(finite)
+        if good.size == 0:
+            out = np.zeros_like(out)
+        else:
+            bad = np.flatnonzero(~finite)
+            for dim in range(2):
+                out[bad, dim] = np.interp(bad, good, out[good, dim])
+    out -= np.mean(out, axis=0, keepdims=True)
+    return out.astype(np.float32)
+
+
+def _native_rendered_trace(
+    source_window: np.ndarray,
+    n_timepoints: int,
+    *,
+    trace_window_policy: str = "center_crop_native",
+) -> tuple[np.ndarray, dict[str, Any]]:
+    source = np.asarray(source_window, dtype=np.float64)
+    n_available = int(source.shape[0])
+    n_timepoints = int(n_timepoints)
+    policy_requested = str(trace_window_policy)
+    if policy_requested not in {"center_crop_native", "resample_full_window"}:
+        raise ValueError(
+            "trace_window_policy must be 'center_crop_native' or "
+            f"'resample_full_window', got {policy_requested!r}"
+        )
+    if policy_requested == "resample_full_window":
+        snippet_start = 0
+        snippet_stop = int(n_available)
+        trace = _resample_trace(source, n_timepoints)
+        policy = "resampled_full_source_window_to_n_timepoints"
+        compression = float(n_available - 1) / float(max(1, n_timepoints - 1)) if n_available > 1 else float("nan")
+    elif n_available >= n_timepoints:
+        snippet_start = int((n_available - n_timepoints) // 2)
+        snippet_stop = int(snippet_start + n_timepoints)
+        trace = _mean_center_finite_trace(source[snippet_start:snippet_stop])
+        policy = "center_cropped_native_n_timepoints"
+        compression = 1.0
+    else:
+        snippet_start = 0
+        snippet_stop = int(n_available)
+        trace = _resample_trace(source, n_timepoints)
+        policy = "source_short_resampled_to_n_timepoints"
+        compression = float(n_available - 1) / float(max(1, n_timepoints - 1)) if n_available > 1 else float("nan")
+    return trace, {
+        "trace_window_policy_requested": policy_requested,
+        "trace_window_policy": policy,
+        "trace_render_contract": policy,
+        "source_window_n_samples": int(n_available),
+        "rendered_trace_n_samples": int(trace.shape[0]),
+        "rendered_trace_source_offset": int(snippet_start),
+        "rendered_trace_source_stop_offset": int(snippet_stop),
+        "source_to_render_time_compression": float(compression),
+    }
+
+
 def _scale_to_rms(trace: np.ndarray, target_rms: float, *, max_rms_deg: float) -> tuple[np.ndarray, dict[str, Any]]:
     trace = np.asarray(trace, dtype=np.float64)
     base_rms = _trace_rms(trace)
@@ -813,13 +876,15 @@ def _build_trace_bank(
     microsaccade_speed_threshold_dps: float | None,
     microsaccade_threshold_z: float,
     microsaccade_pad_frames: int,
+    trace_window_policy: str = "center_crop_native",
 ) -> list[dict[str, Any]]:
     bank: list[dict[str, Any]] = []
     for _, row in work.iterrows():
         eyepos = eyepos_by_session[str(row["session"])]
         start = int(row["global_start"])
         stop = int(row["global_stop"])
-        source_trace = _resample_trace(eyepos[start:stop], max(2, int(stop - start)))
+        source_window = np.asarray(eyepos[start:stop], dtype=np.float64)
+        source_trace = _resample_trace(source_window, max(2, int(stop - start)))
         duration_s = float(row.get("duration_s", np.nan))
         source_dt = (
             duration_s / float(max(1, source_trace.shape[0] - 1))
@@ -833,7 +898,11 @@ def _build_trace_bank(
             threshold_z=float(microsaccade_threshold_z),
             pad_frames=int(microsaccade_pad_frames),
         )
-        trace = _resample_trace(eyepos[start:stop], int(n_timepoints))
+        trace, trace_contract = _native_rendered_trace(
+            source_window,
+            int(n_timepoints),
+            trace_window_policy=str(trace_window_policy),
+        )
         rendered_ms = _microsaccade_stats(
             trace,
             dt=1.0 / 120.0,
@@ -841,6 +910,7 @@ def _build_trace_bank(
             threshold_z=float(microsaccade_threshold_z),
             pad_frames=int(microsaccade_pad_frames),
         )
+        rendered_duration_s = float(max(0, trace.shape[0] - 1)) / 120.0
         bank.append(
             {
                 "source_row": int(row["source_row"]),
@@ -848,6 +918,14 @@ def _build_trace_bank(
                 "trial_idx": int(row.get("trial_idx", -1)),
                 "global_start": int(start),
                 "global_stop": int(stop),
+                **trace_contract,
+                "source_window_duration_s": duration_s,
+                "rendered_trace_duration_s": rendered_duration_s,
+                "source_window_to_rendered_duration_ratio": (
+                    duration_s / rendered_duration_s
+                    if np.isfinite(duration_s) and duration_s > 0.0 and rendered_duration_s > 0.0
+                    else float("nan")
+                ),
                 "mean_x_deg": float(row.get("mean_x_deg", np.nan)),
                 "mean_y_deg": float(row.get("mean_y_deg", np.nan)),
                 "trace": trace,
@@ -1810,6 +1888,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Radius, in 51x51 rate-map bins, for center_mean and trace_registered_center_mean pooling.",
     )
     parser.add_argument("--n-timepoints", type=int, default=40)
+    parser.add_argument(
+        "--trace-window-policy",
+        choices=("center_crop_native", "resample_full_window"),
+        default="center_crop_native",
+        help=(
+            "How empirical source windows become fixed-length rendered traces. "
+            "center_crop_native takes a native center crop when possible; "
+            "resample_full_window preserves the legacy full-window temporal compression behavior."
+        ),
+    )
     parser.add_argument("--temporal-pc-components", type=int, default=4)
     parser.add_argument(
         "--latent-names",
@@ -1993,6 +2081,7 @@ def run(args: argparse.Namespace) -> Path:
         spatial_readout_mode=str(args.spatial_readout_mode),
         spatial_readout_radius=int(args.spatial_readout_radius),
         n_timepoints=int(args.n_timepoints),
+        trace_window_policy=str(args.trace_window_policy),
         temporal_pc_components=int(args.temporal_pc_components),
         pca_k_list=_parse_int_list(args.pca_k_list),
         latent_names=sorted(latent_filter),
@@ -2060,6 +2149,7 @@ def run(args: argparse.Namespace) -> Path:
         ),
         microsaccade_threshold_z=float(args.microsaccade_threshold_z),
         microsaccade_pad_frames=int(args.microsaccade_pad_frames),
+        trace_window_policy=str(args.trace_window_policy),
     )
     trace_rows = [
         {
@@ -2069,6 +2159,17 @@ def run(args: argparse.Namespace) -> Path:
             "trial_idx": int(item["trial_idx"]),
             "global_start": int(item["global_start"]),
             "global_stop": int(item["global_stop"]),
+            "trace_render_contract": str(item.get("trace_render_contract", "")),
+            "trace_window_policy_requested": str(item.get("trace_window_policy_requested", "")),
+            "trace_window_policy": str(item.get("trace_window_policy", "")),
+            "source_window_n_samples": int(item.get("source_window_n_samples", -1)),
+            "rendered_trace_n_samples": int(item.get("rendered_trace_n_samples", -1)),
+            "rendered_trace_source_offset": int(item.get("rendered_trace_source_offset", -1)),
+            "rendered_trace_source_stop_offset": int(item.get("rendered_trace_source_stop_offset", -1)),
+            "source_to_render_time_compression": float(item.get("source_to_render_time_compression", np.nan)),
+            "source_window_to_rendered_duration_ratio": float(
+                item.get("source_window_to_rendered_duration_ratio", np.nan)
+            ),
             "observed_rms_deg": float(item["observed_rms_deg"]),
             "source_trace_observed_rms_deg": float(item["source_trace_observed_rms_deg"]),
             "source_rms_radius_deg": float(item["source_rms_radius_deg"]),
