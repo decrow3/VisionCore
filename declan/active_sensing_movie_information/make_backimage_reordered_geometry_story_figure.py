@@ -410,6 +410,40 @@ def _format_p_label(value: float) -> str:
     return f"p={float(value):.3f}"
 
 
+def _add_bracket(
+    ax: plt.Axes,
+    *,
+    x0: float,
+    x1: float,
+    y: float,
+    text: str,
+    color: str,
+    linestyle: str | tuple[int, tuple[float, ...]] = "-",
+    text_x: float | None = None,
+    text_ha: str = "center",
+) -> None:
+    tick = 0.7
+    ax.plot([x0, x0, x1, x1], [y - tick, y, y, y - tick], color=color, lw=1.0, ls=linestyle, zorder=6)
+    ax.text(
+        0.5 * (x0 + x1) if text_x is None else text_x,
+        y + 0.45,
+        text,
+        ha=text_ha,
+        va="bottom",
+        color=color,
+        fontsize=7.2,
+        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.78, "pad": 0.6},
+        zorder=7,
+    )
+
+
+def _first_drift_row(rows: pd.DataFrame, x_col: str) -> pd.Series | None:
+    drift = rows[rows["context"].eq("drift_only")].sort_values(x_col)
+    if drift.empty:
+        return None
+    return drift.iloc[0]
+
+
 def _plot_component_series_with_ci(
     ax: plt.Axes,
     rows: pd.DataFrame,
@@ -425,12 +459,11 @@ def _plot_component_series_with_ci(
     drift = rows[rows["context"].eq("drift_only")].sort_values("component_median_arcmin")
     if zero.empty or drift.empty:
         return None
-    joined = pd.concat([zero.iloc[:1], drift], ignore_index=True)
-    x = _x_broken_log(joined["component_median_arcmin"], min_pos=min_pos, max_pos=max_pos)
-    y = joined["population_ssi_percent_vs_stabilized"].to_numpy(dtype=float)
+    drift_x = _x_broken_log(drift["component_median_arcmin"], min_pos=min_pos, max_pos=max_pos)
+    drift_y = drift["population_ssi_percent_vs_stabilized"].to_numpy(dtype=float)
     ax.plot(
-        x,
-        y,
+        drift_x,
+        drift_y,
         color=color,
         linestyle=linestyle,
         linewidth=2.1,
@@ -438,8 +471,8 @@ def _plot_component_series_with_ci(
         zorder=3,
     )
     ax.scatter(
-        [x[0]],
-        [y[0]],
+        [0.0],
+        [0.0],
         marker=marker,
         s=30,
         facecolors="white",
@@ -447,8 +480,6 @@ def _plot_component_series_with_ci(
         linewidths=1.35,
         zorder=5,
     )
-    drift_x = _x_broken_log(drift["component_median_arcmin"], min_pos=min_pos, max_pos=max_pos)
-    drift_y = drift["population_ssi_percent_vs_stabilized"].to_numpy(dtype=float)
     ci_low = drift["population_delta_percent_ci95_low_image_boot"].to_numpy(dtype=float)
     ci_high = drift["population_delta_percent_ci95_high_image_boot"].to_numpy(dtype=float)
     yerr = np.vstack([drift_y - ci_low, ci_high - drift_y])
@@ -482,12 +513,11 @@ def _plot_total_series_with_ci(
     drift = rows[rows["context"].eq("drift_only")].sort_values("path_median_arcmin")
     if zero.empty or drift.empty:
         return None
-    joined = pd.concat([zero.iloc[:1], drift], ignore_index=True)
-    x = _x_broken_log(joined["path_median_arcmin"], min_pos=min_pos, max_pos=max_pos)
-    y = joined["population_ssi_percent_vs_stabilized"].to_numpy(dtype=float)
+    drift_x = _x_broken_log(drift["path_median_arcmin"], min_pos=min_pos, max_pos=max_pos)
+    drift_y = drift["population_ssi_percent_vs_stabilized"].to_numpy(dtype=float)
     ax.plot(
-        x,
-        y,
+        drift_x,
+        drift_y,
         color="0.38",
         linestyle="-",
         linewidth=2.0,
@@ -498,8 +528,16 @@ def _plot_total_series_with_ci(
         label="full trajectory",
         zorder=2,
     )
-    drift_x = _x_broken_log(drift["path_median_arcmin"], min_pos=min_pos, max_pos=max_pos)
-    drift_y = drift["population_ssi_percent_vs_stabilized"].to_numpy(dtype=float)
+    ax.scatter(
+        [0.0],
+        [0.0],
+        marker="D",
+        s=28,
+        facecolors="white",
+        edgecolors="0.38",
+        linewidths=1.15,
+        zorder=5,
+    )
     ci_low = drift["population_delta_percent_ci95_low_image_boot"].to_numpy(dtype=float)
     ci_high = drift["population_delta_percent_ci95_high_image_boot"].to_numpy(dtype=float)
     yerr = np.vstack([drift_y - ci_low, ci_high - drift_y])
@@ -646,6 +684,8 @@ def _panel_component(
     title: str,
     show_ylabel: bool = True,
     autoscale_y: bool = True,
+    stat_style: str = "text",
+    fixed_ylim: tuple[float, float] | None = None,
 ) -> None:
     source = comp[(comp["relation"].eq(relation)) & (comp["sf_group"].eq("high_sf"))].copy()
     total_source = total[(total["relation"].eq(relation)) & (total["sf_group"].eq("high_sf"))].copy()
@@ -674,18 +714,36 @@ def _panel_component(
         if stat_label is not None:
             stat_labels.append(stat_label)
     _format_axis(ax, ticks=LOWER_TICKS, min_pos=LOWER_MIN_POS, max_pos=LOWER_MAX_POS)
+    x_sources = [
+        total_source.loc[total_source["context"].eq("drift_only"), "path_median_arcmin"],
+        source.loc[source["context"].eq("drift_only"), "component_median_arcmin"],
+    ]
+    max_x = max(
+        [
+            float(pd.to_numeric(values, errors="coerce").max())
+            for values in x_sources
+            if not values.empty and pd.notna(pd.to_numeric(values, errors="coerce").max())
+        ],
+        default=float(max(LOWER_TICKS)),
+    )
+    ax.set_xlim(
+        -0.12,
+        _x_broken_log([max(max_x, max(LOWER_TICKS))], min_pos=LOWER_MIN_POS, max_pos=LOWER_MAX_POS)[0] + 0.28,
+    )
     _style_axis(ax)
     ax.set_title(title, fontsize=11.3, pad=8)
     ax.set_ylabel("SSI change (%)" if show_ylabel else "")
     ax.set_xlabel("path length (arcmin; log scale after break)")
     y = source["population_ssi_percent_vs_stabilized"].to_numpy(dtype=float)
     finite = y[np.isfinite(y)]
-    if autoscale_y and finite.size:
+    if fixed_ylim is not None:
+        ax.set_ylim(*fixed_ylim)
+    elif autoscale_y and finite.size:
         lo = min(0.0, float(finite.min()))
         hi = max(0.0, float(finite.max()))
         span = max(hi - lo, 1.0)
         ax.set_ylim(lo - 0.12 * span, hi + 0.14 * span)
-    if stat_labels:
+    if stat_labels and stat_style == "text":
         ax.text(
             0.03,
             0.94,
@@ -697,6 +755,58 @@ def _panel_component(
             color="0.25",
             bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.74, "pad": 1.2},
         )
+    elif stat_style == "bracket":
+        total_first = _first_drift_row(total_source, "path_median_arcmin")
+        across_first = _first_drift_row(
+            source[source["component_metric"].eq("across_path_arcmin")],
+            "component_median_arcmin",
+        )
+        along_first = _first_drift_row(
+            source[source["component_metric"].eq("along_path_arcmin")],
+            "component_median_arcmin",
+        )
+        y_lo, y_top = ax.get_ylim()
+        y_span = max(y_top - y_lo, 1.0)
+        if total_first is not None:
+            x1 = _x_broken_log(
+                [float(total_first["path_median_arcmin"])],
+                min_pos=LOWER_MIN_POS,
+                max_pos=LOWER_MAX_POS,
+            )[0]
+            _add_bracket(
+                ax,
+                x0=0.0,
+                x1=float(x1),
+                y=y_top - 0.035 * y_span,
+                text="full " + _format_p_label(
+                    float(total_first["population_delta_p_image_bootstrap_sign"])
+                ),
+                color="0.38",
+                linestyle="-",
+            )
+        if across_first is not None and along_first is not None:
+            component_first_x = max(
+                float(across_first["component_median_arcmin"]),
+                float(along_first["component_median_arcmin"]),
+            )
+            x1 = _x_broken_log([component_first_x], min_pos=LOWER_MIN_POS, max_pos=LOWER_MAX_POS)[0]
+            label = (
+                "across "
+                + _format_p_label(float(across_first["population_delta_p_image_bootstrap_sign"]))
+                + "\nalong "
+                + _format_p_label(float(along_first["population_delta_p_image_bootstrap_sign"]))
+            )
+            _add_bracket(
+                ax,
+                x0=0.0,
+                x1=float(x1),
+                y=y_top - 0.14 * y_span,
+                text=label,
+                color=SF_COLORS["high_sf"],
+                linestyle="-",
+                text_x=float(x1) + 0.10,
+                text_ha="left",
+            )
     ax.legend(frameon=False, fontsize=8.0, loc="lower left")
 
 
@@ -740,6 +850,31 @@ def _panel_label(ax: plt.Axes, label: str) -> None:
         fontsize=16,
         fontweight="bold",
     )
+
+
+def _save_panel_c_standalone(total: pd.DataFrame, comp: pd.DataFrame) -> tuple[Path, Path]:
+    fig, ax = plt.subplots(figsize=(5.0, 4.3))
+    ylim = _component_shared_ylim(comp, total, ["contour_matched"])
+    span = max(ylim[1] - ylim[0], 1.0)
+    ylim = (ylim[0], ylim[1] + 0.10 * span)
+    _panel_component(
+        ax,
+        comp,
+        total,
+        relation="contour_matched",
+        title="Aligned high-SF units",
+        show_ylabel=True,
+        autoscale_y=False,
+        stat_style="bracket",
+        fixed_ylim=ylim,
+    )
+    fig.tight_layout()
+    png = OUT_DIR / "backimage_real_trace_panel_c_aligned_high_sf_no_zero_bridge.png"
+    pdf = OUT_DIR / "backimage_real_trace_panel_c_aligned_high_sf_no_zero_bridge.pdf"
+    fig.savefig(png, dpi=230, bbox_inches="tight")
+    fig.savefig(pdf, bbox_inches="tight")
+    plt.close(fig)
+    return png, pdf
 
 
 def main() -> None:
@@ -816,8 +951,11 @@ def main() -> None:
     fig.savefig(png, dpi=230, bbox_inches="tight")
     fig.savefig(pdf, bbox_inches="tight")
     plt.close(fig)
+    standalone_png, standalone_pdf = _save_panel_c_standalone(total, comp)
     print(png)
     print(pdf)
+    print(standalone_png)
+    print(standalone_pdf)
 
 
 if __name__ == "__main__":

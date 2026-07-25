@@ -67,6 +67,13 @@ COLORS = {
     "no_coherence": "#333333",
 }
 
+COMBINED_RMS_RATIO_COLORS = {
+    "no_coherence": "#242a2f",
+    "low": "#8e9aa6",
+    "mid": "#6f7a83",
+    "high": "#3366aa",
+}
+
 
 @dataclass(frozen=True)
 class ComponentPlotConfig:
@@ -956,7 +963,7 @@ def _plot_polar_rms_ratio_profile(df: pd.DataFrame, out_path: Path, *, no_cohere
         ax,
         centers,
         np.ones_like(centers, dtype=np.float64),
-        color=COLORS["no_coherence"],
+        color=COMBINED_RMS_RATIO_COLORS["no_coherence"],
         label=f"no coh <= {float(no_coherence_max):.2f}",
         linestyle="--",
         linewidth=1.6,
@@ -984,7 +991,7 @@ def _plot_polar_rms_ratio_profile(df: pd.DataFrame, out_path: Path, *, no_cohere
             f"{bracket}: par {ratio_stats['parallel_rms_ratio_to_no_coherence']:.2f}, "
             f"orth {ratio_stats['orthogonal_rms_ratio_to_no_coherence']:.2f}"
         )
-        _draw_polar_rms_profile(ax, centers, ratio, color=COLORS[bracket], label=label)
+        _draw_polar_rms_profile(ax, centers, ratio, color=COMBINED_RMS_RATIO_COLORS[bracket], label=label)
         rows.append({
             "coherence_bracket": bracket,
             "reference": False,
