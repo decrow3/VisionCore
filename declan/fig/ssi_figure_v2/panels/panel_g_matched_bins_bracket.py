@@ -286,7 +286,11 @@ def draw_panel(
         ci_low = drift["population_delta_percent_ci95_low_image_boot"].to_numpy(dtype=float)
         ci_high = drift["population_delta_percent_ci95_high_image_boot"].to_numpy(dtype=float)
         yerr = np.vstack([y - ci_low, ci_high - y])
-        ax.plot(x, y, color=ORANGE, linestyle=linestyle, linewidth=1.65, label=series_label, zorder=3)
+        is_across = metric_col == "across_path_arcmin"
+        line_zorder = 7 if is_across else 3
+        marker_zorder = 8 if is_across else 4
+        zero_zorder = 9 if is_across else 5
+        ax.plot(x, y, color=ORANGE, linestyle=linestyle, linewidth=1.65, label=series_label, zorder=line_zorder)
         ax.errorbar(
             x,
             y,
@@ -299,7 +303,7 @@ def draw_panel(
             markeredgewidth=1.0,
             elinewidth=0.9,
             capsize=1.8,
-            zorder=4,
+            zorder=marker_zorder,
         )
         ax.scatter(
             [0.0],
@@ -309,7 +313,7 @@ def draw_panel(
             facecolors="white",
             edgecolors=ORANGE,
             linewidths=1.1,
-            zorder=5,
+            zorder=zero_zorder,
         )
         first_rows[metric_col] = drift.iloc[0]
         last_rows[metric_col] = drift.iloc[-1]

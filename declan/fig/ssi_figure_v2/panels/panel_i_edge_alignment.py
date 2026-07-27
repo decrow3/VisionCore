@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Panel I: edge-following alignment by local image coherence.
+"""Panel I: drift-cloud/edge alignment by local image coherence.
 
 This is a compact copy of the 4E candidate-3A plotting logic from
 ``declan/figure4_active_sensing_atlas/scripts/build_panel_e_single_panel_candidates.py``.
@@ -112,7 +112,7 @@ def draw_panel(
     ax: plt.Axes,
     *,
     label: str = "I",
-    title: str = "Edge alignment",
+    title: str = "Drift-cloud alignment",
     values: pd.DataFrame | None = None,
     show_counts: bool = True,
 ) -> pd.DataFrame:
@@ -158,7 +158,7 @@ def draw_panel(
     y_top = max(0.38, float(np.nanmax(hi)) + 0.025)
     ax.set_ylim(-0.04, y_top)
     ax.set_xlabel("local edge coherence")
-    ax.set_ylabel("edge-following alignment")
+    ax.set_ylabel("spread-axis edge alignment")
     ax.grid(axis="y", color=GRID, lw=0.8)
     ax.set_axisbelow(True)
     ax.set_title(f"{label}  {title}", loc="left", fontsize=9.0, fontweight="bold", pad=4, color=INK)

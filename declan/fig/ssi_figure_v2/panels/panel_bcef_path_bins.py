@@ -75,21 +75,21 @@ PANEL_SPECS = {
         "sf_group": "high_ge0p75",
         "relation": "strong_contours_no_osi",
         "color": ORANGE,
-        "ylabel": None,
+        "ylabel": "SSI change (%)",
     },
     "E": {
-        "title": "Low-SF aligned",
+        "title": "Low-SF aligned units",
         "sf_group": "low_lt0p5",
         "relation": "contour_matched",
         "color": BLUE,
-        "ylabel": None,
+        "ylabel": "SSI change (%)",
     },
     "F": {
-        "title": "High-SF aligned",
+        "title": "High-SF aligned units",
         "sf_group": "high_ge0p75",
         "relation": "contour_matched",
         "color": ORANGE,
-        "ylabel": None,
+        "ylabel": "SSI change (%)",
     },
 }
 
@@ -266,17 +266,53 @@ def _add_support_note(ax: plt.Axes, frame: pd.DataFrame) -> None:
         return
     n_units = int(pd.to_numeric(frame["n_selected_units"], errors="coerce").dropna().iloc[0])
     n_pairs = int(pd.to_numeric(frame["n_selected_unit_image_pairs"], errors="coerce").dropna().iloc[0])
+    # Upper-left, not upper-right: these series start near SSI=0 at path=0
+    # and only grow larger later, so the top-right corner is exactly where
+    # the last (often highest) data point and this note used to collide.
     ax.text(
-        0.985,
+        0.045,
         0.930,
         f"{n_units} units\n{n_pairs} pairs",
         transform=ax.transAxes,
-        ha="right",
+        ha="left",
         va="top",
         fontsize=5.7,
         color=GRAY,
         linespacing=1.0,
         bbox=dict(boxstyle="round,pad=0.18", facecolor="white", edgecolor="none", alpha=0.82),
+    )
+
+
+def _draw_two_color_title(ax: plt.Axes, label: str, title: str, *, color: str) -> None:
+    """Panel letter in black (matching every other lettered panel in the
+    figure) with the descriptive title text in the population color, as two
+    separate Text artists -- ax.set_title only takes one color for the
+    whole string."""
+    y = 1.020
+    ax.text(0.0, y, label, transform=ax.transAxes, ha="left", va="bottom", fontsize=8.6, fontweight="bold", color=INK)
+    ax.text(
+        0.085, y, title, transform=ax.transAxes, ha="left", va="bottom", fontsize=8.6, fontweight="bold", color=color
+    )
+
+
+def _add_microsaccade_legend(ax: plt.Axes, *, color: str) -> None:
+    from matplotlib.lines import Line2D
+
+    handles = [
+        Line2D(
+            [0], [0], color=color, marker="o", markerfacecolor="white", markeredgewidth=1.1, lw=1.4, label="drift only"
+        ),
+        Line2D([0], [0], color=color, marker="o", markerfacecolor=color, markeredgewidth=1.1, lw=1.4, label="microsaccade"),
+    ]
+    ax.legend(
+        handles=handles,
+        frameon=False,
+        fontsize=5.6,
+        loc="lower right",
+        handlelength=1.5,
+        labelspacing=0.3,
+        borderaxespad=0.2,
+        handletextpad=0.4,
     )
 
 
@@ -291,6 +327,7 @@ def draw_panel(
     ylabel: str | None,
     values: pd.DataFrame | None = None,
     ylim: tuple[float, float] | None = None,
+    show_microsaccade_legend: bool = False,
 ) -> pd.DataFrame:
     values = load_panel_values() if values is None else values.copy()
     frame = values[values["sf_group"].eq(sf_group) & values["relation"].eq(relation)].copy()
@@ -301,10 +338,12 @@ def draw_panel(
     format_broken_path_axis(ax, xlim_right=path_xlimit_right(frame))
     ax.axhline(0.0, color="0.35", lw=0.85, ls=":")
     ax.set_ylim(*(shared_ylim(values) if ylim is None else ylim))
-    ax.set_title(f"{label}  {title}", loc="left", color=color, fontsize=8.6, fontweight="bold", pad=3)
+    _draw_two_color_title(ax, label, title, color=color)
     if ylabel:
         ax.set_ylabel(ylabel)
     _add_support_note(ax, frame)
+    if show_microsaccade_legend:
+        _add_microsaccade_legend(ax, color=color)
     ax.tick_params(labelsize=6.8)
     ax.xaxis.label.set_size(6.9)
     ax.yaxis.label.set_size(7.0)
