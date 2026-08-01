@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
-"""Standalone build for Panel D (contour-relative stimulus + crop +
-coherence gallery).
+"""Standalone build for Panel G (reference crop + zoomed aperture + the
+across/along RMS-excursion explainer).
 
 v3 architecture: every panel is its own independently-rendered figure,
 composited onto the final page at a measured position (see
-compose_ssi_figure_v3.py). E/F used to live as insets inside D's own axes
-(there was unused space there); now that D is independently sized/placed,
-E and F become their own top-level panels too (see
-panels/panel_bcef_path_bins.py's single-panel build), so this only draws
-D itself -- draw_ef_insets=False. The drawing logic is otherwise unchanged
-and still lives in generate_ssi_figure_v2.draw_panel_a.
+compose_ssi_figure_v3.py). The drawing logic is unchanged and still lives
+in generate_ssi_figure_v2.draw_contour_components_panel.
 
-AX_BOX reserves headroom for the panel letter+title (drawn via
-draw_panel_header, above the axes' own y=1 edge) inside a *fixed* figsize
-page, instead of letting bbox_inches="tight" grow the saved page to fit --
-same fix as Panel A/G, needed so panel_d_layout_boxes.py's box export/
-import has a deterministic axes-fraction -> page-point mapping to invert.
+AX_BOX reserves headroom for the panel title (matplotlib's native
+ax.set_title, which draws above the axes' own y=1 edge) inside a *fixed*
+figsize page, instead of letting bbox_inches="tight" grow the saved page
+to fit (it needed about 0.21in/6% of this panel's own height) -- same fix
+as Panel A/D, needed so panel_g_layout_boxes.py's box export/import has a
+deterministic axes-fraction -> page-point mapping to invert.
 """
 
 from __future__ import annotations
@@ -39,12 +36,11 @@ import generate_ssi_figure_v2 as figure  # noqa: E402
 from panels import reference_layout_v3 as layout  # noqa: E402
 
 OUT_DIR = ROOT / "outputs" / "fig" / "ssi_figure_v2" / "panels_v3"
-DEFAULT_FIGSIZE = layout.PANEL_BOXES["D"][2:4]
+DEFAULT_FIGSIZE = layout.PANEL_BOXES["G"][2:4]
 
-LAYOUT_OVERRIDES_JSON = ROOT / "outputs" / "fig" / "ssi_figure_v2" / "panels" / "cache" / "panel_d_layout_overrides.json"
+LAYOUT_OVERRIDES_JSON = ROOT / "outputs" / "fig" / "ssi_figure_v2" / "panels" / "cache" / "panel_g_layout_overrides.json"
 
-AX_BOX = (0.0, 0.0, 1.0, 0.86)  # left, bottom, width, height (figure-fraction)
-TITLE_Y_OFFSET = 0.020
+AX_BOX = (0.0, 0.0, 1.0, 0.925)  # left, bottom, width, height (figure-fraction)
 
 
 def data_frac_to_page_pt(x_frac: float, y_frac: float, figsize: tuple[float, float]) -> tuple[float, float]:
@@ -72,13 +68,7 @@ def load_layout_overrides() -> dict[str, tuple[float, float, float, float]] | No
     return {name: tuple(box) for name, box in raw.items()}
 
 
-def build_panel(
-    figsize: tuple[float, float] = DEFAULT_FIGSIZE,
-    out_dir: Path = OUT_DIR,
-    *,
-    panel_label: str = "D",
-    panel_title: str = "Local contours define\nthe relevant image axis",
-) -> Path:
+def build_panel(figsize: tuple[float, float] = DEFAULT_FIGSIZE, out_dir: Path = OUT_DIR) -> Path:
     figure.configure_matplotlib()
     out_dir.mkdir(parents=True, exist_ok=True)
     schematic_payload = figure.read_schematic_payload()
@@ -86,17 +76,13 @@ def build_panel(
     fig = plt.figure(figsize=figsize)
     ax = fig.add_axes(list(AX_BOX))
     ax.set_axis_off()
-    figure.draw_panel_a(
+    figure.draw_contour_components_panel(
         ax,
         schematic_payload=schematic_payload,
-        draw_ef_insets=False,
         layout_overrides=load_layout_overrides(),
-        header_label=panel_label,
-        header_title=panel_title,
-        header_title_y_offset=TITLE_Y_OFFSET,
     )
 
-    out_path = out_dir / "panel_d.pdf"
+    out_path = out_dir / "panel_g.pdf"
     fig.savefig(out_path, transparent=True)
     plt.close(fig)
     return out_path
@@ -104,17 +90,16 @@ def build_panel(
 
 def compute_current_boxes(figsize: tuple[float, float] = DEFAULT_FIGSIZE) -> dict[str, tuple[float, float, float, float]]:
     """The resolved (default-merged-with-override) boxes, without a full
-    build_panel() side effect -- used by panel_d_layout_boxes.py's exporter,
+    build_panel() side effect -- used by panel_g_layout_boxes.py's exporter,
     which calls build_panel() separately to get a fresh background render."""
     figure.configure_matplotlib()
     schematic_payload = figure.read_schematic_payload()
     fig = plt.figure(figsize=figsize)
     ax = fig.add_axes(list(AX_BOX))
     ax.set_axis_off()
-    boxes = figure.draw_panel_a(
+    boxes = figure.draw_contour_components_panel(
         ax,
         schematic_payload=schematic_payload,
-        draw_ef_insets=False,
         layout_overrides=load_layout_overrides(),
     )
     plt.close(fig)

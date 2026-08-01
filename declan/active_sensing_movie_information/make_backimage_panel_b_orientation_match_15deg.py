@@ -87,7 +87,7 @@ def _legend_handles() -> list[Line2D]:
 
 def _plot_panel_b(panel_b: pd.DataFrame) -> plt.Figure:
     fig, axes = plt.subplots(1, 4, figsize=(11.4, 3.35), sharey=True)
-    b_ylim = story._shared_ylim([panel_b["ssi_percent_vs_cell_baseline"]], pad_low=0.13, pad_high=0.17)
+    b_ylim = story._shared_ylim(story._ylim_series(panel_b), pad_low=0.13, pad_high=0.17)
     for idx, (sf_group, relation, title) in enumerate(story.B_PANEL_SPECS):
         ax = axes[idx]
         frame = panel_b[panel_b["sf_group"].eq(sf_group) & panel_b["relation"].eq(relation)].copy()
@@ -153,7 +153,7 @@ def _plot_high_sf_matched(panel_b: pd.DataFrame) -> plt.Figure:
         xlabel="trajectory path (arcmin)",
     )
     ax.axhline(0.0, color="0.35", lw=0.9, ls=":")
-    ax.set_ylim(*story._shared_ylim([frame["ssi_percent_vs_cell_baseline"]], pad_low=0.16, pad_high=0.18))
+    ax.set_ylim(*story._shared_ylim(story._ylim_series(frame), pad_low=0.16, pad_high=0.18))
     n_units = int(frame["n_selected_units"].iloc[0]) if not frame.empty else 0
     n_pairs = int(frame["n_selected_unit_image_pairs"].iloc[0]) if not frame.empty else 0
     ax.set_title(

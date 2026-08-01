@@ -428,7 +428,12 @@ def _compute_family(
     medians = _pooled_medians(metrics, drift_mask, str(family["across"]), str(family["along"]), edges)
     rng = np.random.default_rng(BOOTSTRAP_SEED + 10_000 * int(population_index) + 1000 * int(family_index))
     rows: list[dict[str, Any]] = []
-    last_populations: dict[str, dict[str, Any]] = {}
+    # Contrast populations for the true final bin (used by the untruncated
+    # option sheet) and the second-to-last bin (used by any panel, like
+    # panel_g_rms_excursion.py, that hides the noisy final bin via
+    # EXCLUDE_LAST_BINS=1 -- that panel needs a bracket describing whichever
+    # bin is actually its rightmost visible one, not the hidden one).
+    contrast_populations: dict[int, dict[str, dict[str, Any]]] = {}
 
     for component, component_label, linestyle, marker, axis_key in COMPONENT_SPECS:
         metric_col = str(family[axis_key])
@@ -488,29 +493,34 @@ def _compute_family(
                     "marker": str(marker),
                 }
             )
-            if bin_index == len(edges) - 2:
-                last_populations[component] = pop
+            if bin_index >= len(edges) - 3:
+                contrast_populations.setdefault(bin_index, {})[component] = pop
 
-    contrast = _bootstrap_residual_difference(
-        last_populations["across"],
-        last_populations["along"],
-        rng=np.random.default_rng(BOOTSTRAP_SEED + 10_000 * int(population_index) + 1000 * int(family_index) + 7),
-    )
-    contrast.update(
-        {
-            "population_key": str(population["key"]),
-            "population_title": str(population["title"]),
-            "metric_family": str(family["key"]),
-            "metric_family_title": str(family["title"]),
-            "last_bin_across_metric": str(family["across"]),
-            "last_bin_along_metric": str(family["along"]),
-        }
-    )
+    contrast_rng = np.random.default_rng(BOOTSTRAP_SEED + 10_000 * int(population_index) + 1000 * int(family_index) + 7)
+    contrasts: list[dict[str, Any]] = []
+    for bin_index in sorted(contrast_populations):
+        pops = contrast_populations[bin_index]
+        if not {"across", "along"}.issubset(pops):
+            continue
+        contrast = _bootstrap_residual_difference(pops["across"], pops["along"], rng=contrast_rng)
+        contrast.update(
+            {
+                "population_key": str(population["key"]),
+                "population_title": str(population["title"]),
+                "metric_family": str(family["key"]),
+                "metric_family_title": str(family["title"]),
+                "component_bin_order": int(bin_index + 1),
+                "last_bin_across_metric": str(family["across"]),
+                "last_bin_along_metric": str(family["along"]),
+            }
+        )
+        contrasts.append(contrast)
+
     meta = {
         "metric_family": str(family["key"]),
         "edges": edges,
         "pooled_medians": medians,
-        "contrast": contrast,
+        "contrast": contrasts,
     }
     return pd.DataFrame(rows), meta
 
@@ -596,7 +606,11 @@ def _plot_sheet(
                 capsize=2.0,
             )
             last_rows[component] = sub.iloc[-1]
-        contrast = contrasts[contrasts["metric_family"].astype(str).eq(str(family["key"]))].iloc[0]
+        # This sheet always shows every bin, so it always wants the true
+        # final bin's contrast (the largest component_bin_order), unlike
+        # panel_g_option_sheet.py's truncated dose panels.
+        family_contrasts = contrasts[contrasts["metric_family"].astype(str).eq(str(family["key"]))]
+        contrast = family_contrasts.loc[family_contrasts["component_bin_order"].idxmax()]
         x_values = frame["plot_median"].to_numpy(dtype=float)
         finite_x = x_values[np.isfinite(x_values)]
         if finite_x.size:
@@ -672,7 +686,7 @@ def build(out_dir: Path = OUT_DIR) -> dict[str, Path]:
                     **{key: value for key, value in family_meta.items() if key != "contrast"},
                 }
             )
-            contrasts.append(family_meta["contrast"])
+            contrasts.extend(family_meta["contrast"])
     values = pd.concat(frames, ignore_index=True)
     contrast_df = pd.DataFrame(contrasts)
     population_df = pd.DataFrame(population_rows)
@@ -739,7 +753,7 @@ def build(out_dir: Path = OUT_DIR) -> dict[str, Path]:
             "bootstrap": {
                 "n_bootstrap": N_BOOTSTRAP,
                 "seed": BOOTSTRAP_SEED,
-                "unit": "paired image bootstrap; error bars are moving-vs-cell baseline; brackets are across-minus-along in the final bin",
+                "unit": "paired image bootstrap; error bars are moving-vs-cell baseline; brackets are across-minus-along, computed at both the true final bin and the second-to-last bin so panels that hide the final bin (EXCLUDE_LAST_BINS>0) can still show a bracket at their own rightmost visible bin",
             },
             "outputs": {
                 "pdf": pdf,

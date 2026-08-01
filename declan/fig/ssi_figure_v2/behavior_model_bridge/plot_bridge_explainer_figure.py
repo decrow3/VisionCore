@@ -63,6 +63,7 @@ COHERENCE_SUMMARY_CSV = OUT_DIR / "behavior_model_bridge_random_rotation_predict
 # Same palette as generate_ssi_figure_v2.py: BLUE = low-SF, ORANGE = high-SF.
 BLUE = "#0072B2"
 ORANGE = "#D55E00"
+MUTED_ORANGE = "#A9714B"
 GRAY = "#6B6F75"
 INK = "#111111"
 PALE_GRID = "#E7E7E7"
@@ -76,14 +77,14 @@ HEADLINE_POPULATION_ORDER = (
     "low_sf_all",
 )
 # All high-SF populations are shades of ORANGE (full strength for the aligned
-# headline result, lighter for the looser alignment splits, gray for the
-# unfiltered aggregate); low-SF stays BLUE. This is the same color-means-SF
-# convention as B/C/E/F/G, just applied to five populations instead of two.
+# headline result, lighter/muted for looser or pooled high-SF groups);
+# low-SF stays BLUE. This is the same color-means-SF convention as B/C/E/F/G,
+# just applied to five populations instead of two.
 POPULATION_COLORS = {
     "high_sf_aligned": ORANGE,
     "high_sf_oblique": "#E8956B",
     "high_sf_orthogonal": "#F2C6A0",
-    "high_sf_all": GRAY,
+    "high_sf_all": MUTED_ORANGE,
     "low_sf_all": BLUE,
 }
 POPULATION_MARKERS = {

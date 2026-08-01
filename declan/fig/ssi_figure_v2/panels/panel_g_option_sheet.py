@@ -55,6 +55,7 @@ POPULATION_KEY = "high_sf_aligned"
 BRIDGE_SUBSET_KEY = "coh_ge_0p2"
 
 ORANGE = "#D55E00"
+DIRECTION_COLOR = ORANGE
 INK = "#111111"
 GRAY = "#6B6F75"
 GRID = "#E7E7E7"
@@ -145,29 +146,25 @@ def _format_axis_local(ax: plt.Axes, *, ticks: list[float], min_pos: float, max_
 
 
 def _draw_broken_axis_break(ax: plt.Axes, *, zero_gap: float) -> None:
-    """Diagonal double-tick break mark, scaled to sit just after the zero anchor.
-
-    Proportions (27%/82%/54.5% of the zero-to-first-tick gap) match the real
-    Panel G's fixed break geometry so the mark looks the same, just rescaled
-    to a narrower (or wider) gap.
-    """
-    break_left = 0.27 * zero_gap
-    break_right = 0.82 * zero_gap
+    """Diagonal double-tick break mark, fixed visually across broken axes."""
     break_center = 0.545 * zero_gap
-    tick_half = 0.035 * zero_gap
-    tick_offset = 0.040 * zero_gap
+    tick_half = 0.040
+    tick_offset = 0.048
+    tick_half_height = 0.035
+    left_slash_x = break_center - tick_offset
+    right_slash_x = break_center + tick_offset
     for text in list(ax.texts):
         if text.get_text() == "//":
             text.remove()
     ax.spines["bottom"].set_visible(False)
     trans = ax.get_xaxis_transform()
     x_left, x_right = ax.get_xlim()
-    ax.plot([x_left, break_left], [0.0, 0.0], transform=trans, color="black", lw=0.8, clip_on=False, zorder=10)
-    ax.plot([break_right, x_right], [0.0, 0.0], transform=trans, color="black", lw=0.8, clip_on=False, zorder=10)
+    ax.plot([x_left, left_slash_x], [0.0, 0.0], transform=trans, color="black", lw=0.8, clip_on=False, zorder=10)
+    ax.plot([right_slash_x, x_right], [0.0, 0.0], transform=trans, color="black", lw=0.8, clip_on=False, zorder=10)
     for offset in (-tick_offset, tick_offset):
         ax.plot(
             [break_center + offset - tick_half, break_center + offset + tick_half],
-            [-0.033, 0.033],
+            [-tick_half_height, tick_half_height],
             transform=trans,
             color="black",
             lw=1.05,
@@ -188,6 +185,7 @@ def _draw_dose_panel(
     ylim: tuple[float, float],
     exclude_last_bins: int = 0,
     axis_override: dict | None = None,
+    final_bracket_x_offset: float = 0.0,
 ) -> str | None:
     """Draw one candidate dose-axis panel; returns a note if bins were dropped."""
     axis_spec = axis_override if axis_override is not None else METRIC_AXIS[metric_family]
@@ -205,6 +203,7 @@ def _draw_dose_panel(
 
     frame = values[values["metric_family"].eq(metric_family) & values["population_key"].eq(POPULATION_KEY)].copy()
     dropped_note: str | None = None
+    last_visible_bin_order = int(frame["component_bin_order"].max()) if not frame.empty else None
     if exclude_last_bins > 0 and not frame.empty:
         max_bin_order = int(frame["component_bin_order"].max())
         keep_through = max_bin_order - exclude_last_bins
@@ -214,6 +213,7 @@ def _draw_dose_panel(
             unit = METRIC_UNITS[metric_family]
             dropped_note = f"tail omitted (>{dose_lo:.1f} {unit})"
         frame = frame[frame["component_bin_order"] <= keep_through]
+        last_visible_bin_order = keep_through
 
     ref_row = reference[reference["metric_family"].eq(metric_family)]
     if not ref_row.empty:
@@ -237,19 +237,19 @@ def _draw_dose_panel(
         ci_lo = sub["population_delta_percent_ci95_low_image_boot"].to_numpy(dtype=float)
         ci_hi = sub["population_delta_percent_ci95_high_image_boot"].to_numpy(dtype=float)
         yerr = np.vstack([y - ci_lo, ci_hi - y])
-        ax.plot(x, y, color=ORANGE, linestyle=style["linestyle"], linewidth=1.6, label=style["label"], zorder=3)
+        ax.plot(x, y, color=DIRECTION_COLOR, linestyle=style["linestyle"], linewidth=1.6, label=style["label"], zorder=3)
         ax.errorbar(
             x,
             y,
             yerr=yerr,
-            color=ORANGE,
+            color=DIRECTION_COLOR,
             linestyle="none",
             marker=style["marker"],
             markersize=4.0,
             markerfacecolor="white",
             markeredgewidth=1.05,
             elinewidth=0.9,
-            capsize=2.0,
+            capsize=0,
             zorder=4,
         )
         # Artificially stabilized / zero-motion anchor: by construction
@@ -260,7 +260,7 @@ def _draw_dose_panel(
             marker=style["marker"],
             s=26,
             facecolors="white",
-            edgecolors=ORANGE,
+            edgecolors=DIRECTION_COLOR,
             linewidths=1.2,
             zorder=5,
         )
@@ -301,20 +301,24 @@ def _draw_dose_panel(
             x1=x1,
             y=y_hi - 0.185 * y_span,
             text=text,
-            color=ORANGE,
+            color=DIRECTION_COLOR,
             text_x=x1 + 0.07 * zero_gap,
             text_ha="left",
         )
 
-    # The final-bin bracket's pp/p-value comes from last_bin_contrasts, which
-    # is always computed against the *true* final bin -- if that bin has been
-    # dropped from view, the label would no longer describe the bin the
-    # bracket is pointing at, so skip it rather than show a mismatched number.
-    if exclude_last_bins == 0 and {"across", "along"}.issubset(last_rows):
-        contrast_row = last_bin_contrasts.loc[
-            (last_bin_contrasts["population_key"] == POPULATION_KEY)
-            & (last_bin_contrasts["metric_family"] == metric_family)
-        ].iloc[0]
+    # The bracket's pp/p-value comes from last_bin_contrasts, which is
+    # computed at both the true final bin and the second-to-last bin (see
+    # panel_g_alternative_x_axes_diagnostic.py::_compute_family) -- pick
+    # whichever one matches this panel's actual rightmost *visible* bin, so
+    # a panel that hides the final bin (EXCLUDE_LAST_BINS>0) still gets a
+    # correctly-labeled bracket instead of losing it entirely.
+    matching_contrast = last_bin_contrasts.loc[
+        (last_bin_contrasts["population_key"] == POPULATION_KEY)
+        & (last_bin_contrasts["metric_family"] == metric_family)
+        & (last_bin_contrasts["component_bin_order"] == last_visible_bin_order)
+    ]
+    if not matching_contrast.empty and {"across", "along"}.issubset(last_rows):
+        contrast_row = matching_contrast.iloc[0]
         pp = float(contrast_row["across_minus_along_percent_point"])
         p_val = float(contrast_row["contrast_p_image_bootstrap_sign"])
         x_last = float(
@@ -324,11 +328,11 @@ def _draw_dose_panel(
         )
         _add_vertical_bracket(
             ax,
-            x=x_last,
+            x=x_last + final_bracket_x_offset,
             y0=float(last_rows["across"]["ssi_percent_vs_cell_baseline"]),
             y1=float(last_rows["along"]["ssi_percent_vs_cell_baseline"]),
             label=f"{pp:+.1f} pp\n{_format_p_label(p_val)}",
-            color=ORANGE,
+            color=DIRECTION_COLOR,
         )
 
     # Top-right, matching the real Panel G, so it never collides with a
@@ -350,9 +354,13 @@ def _draw_dose_panel(
 
 
 def _evidence_chip_text(metric_family: str, contrasts: pd.DataFrame, bridge: pd.DataFrame) -> str:
-    model_row = contrasts.loc[
+    # Always the true final bin's contrast, regardless of what any one
+    # panel chooses to hide from view -- this chip is a fixed decision-support
+    # summary, not tied to a specific panel's visible x-range.
+    family_contrasts = contrasts.loc[
         (contrasts["population_key"] == POPULATION_KEY) & (contrasts["metric_family"] == metric_family)
-    ].iloc[0]
+    ]
+    model_row = family_contrasts.loc[family_contrasts["component_bin_order"].idxmax()]
     model_pp = float(model_row["across_minus_along_percent_point"])
     model_p = float(model_row["contrast_p_image_bootstrap_sign"])
 

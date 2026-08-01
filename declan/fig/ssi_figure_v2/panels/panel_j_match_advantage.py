@@ -36,6 +36,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.lines import Line2D
 
 ROOT = Path(__file__).resolve().parents[4]
 if str(ROOT) not in sys.path:
@@ -43,6 +44,10 @@ if str(ROOT) not in sys.path:
 
 from declan.fig.ssi_figure_v2.behavior_model_bridge import plot_bridge_explainer_figure as explainer
 from declan.fig.ssi_figure_v2.behavior_model_bridge import run_behavior_model_bridge as bridge
+try:  # noqa: E402
+    from panels import panel_header
+except ModuleNotFoundError:  # pragma: no cover - package import path.
+    from declan.fig.ssi_figure_v2.panels import panel_header
 
 OUT_DIR = ROOT / "outputs" / "fig" / "ssi_figure_v2" / "panels"
 COHERENCE_SUMMARY_CSV = explainer.COHERENCE_SUMMARY_CSV
@@ -79,7 +84,7 @@ SHORT_POPULATION_LABELS = {
 }
 
 
-TITLE = "Real (vs. randomly rotated)\nFEM trajectories preferentially\nbenefit aligned high-SF units"
+TITLE = "Contour-matched FEMs\nbeat rotations for\naligned high-SF units"
 
 
 def draw_panel(
@@ -93,73 +98,138 @@ def draw_panel(
     values = load_values() if values is None else values.copy()
     x = np.arange(len(bridge.COHERENCE_ORDER), dtype=float)
 
-    ax.axhspan(0.0, 0.25, color=explainer.ORANGE, alpha=0.07, lw=0)
-    ax.axhspan(-0.25, 0.0, color=explainer.GRAY, alpha=0.08, lw=0)
     ax.axhline(0.0, color=explainer.INK, lw=0.9, ls=":", alpha=0.6)
 
+    # Significance is encoded on the marker itself -- filled when the 95% CI
+    # excludes zero, open (white) when it doesn't -- rather than floating
+    # asterisks: three overlapping series with per-point jittered text got
+    # cluttered fast, whereas filled/open reuses an element already in the
+    # plot and reads at a glance without extra ink.
     for population_key in PLOT_POPULATION_ORDER:
         sub = values[values["population_key"].astype(str).eq(population_key)].sort_values("coherence_bin")
         y = sub["observed_minus_rotated"].to_numpy(dtype=float)
         lo = sub["observed_minus_rotated_ci95_low"].to_numpy(dtype=float)
         hi = sub["observed_minus_rotated_ci95_high"].to_numpy(dtype=float)
         is_aligned = population_key == "high_sf_aligned"
+        color = explainer.POPULATION_COLORS[population_key]
+        marker = explainer.POPULATION_MARKERS[population_key]
         ax.errorbar(
             x,
             y,
             yerr=np.vstack([y - lo, hi - y]),
-            color=explainer.POPULATION_COLORS[population_key],
-            marker=explainer.POPULATION_MARKERS[population_key],
-            markersize=3.4,
-            markerfacecolor="white",
-            markeredgewidth=1.0,
+            color=color,
+            marker="none",
             lw=2.0 if is_aligned else 1.5,
-            capsize=1.8,
+            capsize=0,
             zorder=4 if is_aligned else 3,
-            label=SHORT_POPULATION_LABELS[population_key],
+        )
+        significant = (lo > 0.0) | (hi < 0.0)
+        face = np.where(significant, color, "white")
+        ax.scatter(
+            x,
+            y,
+            marker=marker,
+            s=17.0,
+            facecolors=face,
+            edgecolors=color,
+            linewidths=1.0,
+            zorder=5 if is_aligned else 4,
         )
 
     ax.set_xlim(-0.45, len(bridge.COHERENCE_ORDER) - 0.55)
     ax.set_xticks(x)
-    ax.set_xticklabels(bridge.COHERENCE_ORDER, fontsize=5.6, rotation=38, ha="right")
+    ax.set_xticklabels(bridge.COHERENCE_ORDER, fontsize=5.6, rotation=0, ha="center")
     ax.set_xlabel("local edge coherence", labelpad=1.5)
-    ax.set_ylabel("observed − random rotated\n(pp SSI, RMS excursion)")
+    # Single line, not the original 2-line "observed - random rotated\n(pp
+    # SSI, RMS excursion)": a rotated ylabel's line-stacking direction
+    # becomes horizontal once rotated 90 degrees, so a 2-line label costs
+    # roughly double the width of a 1-line one -- real money in J's narrow
+    # column. The title already establishes "real vs. randomly rotated" and
+    # this whole panel row is RMS-excursion-based, so neither needs repeating
+    # here.
+    ax.set_ylabel("SSI advantage (pp)", labelpad=2.0)
     ax.grid(axis="y", color=explainer.PALE_GRID, lw=0.75)
     ax.set_axisbelow(True)
-    ax.set_title(
-        f"{label}  {title}", loc="left", fontsize=7.4, fontweight="bold", pad=5, color=explainer.INK, linespacing=1.25
+    panel_header.draw_bottom_row_header(
+        ax,
+        label,
+        title,
+        title_linespacing=panel_header.PANEL_TITLE_LINESPACING,
+        color=explainer.INK,
     )
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+    # Explicit handles, not the plotted artists' own labels: the errorbar
+    # (line only, marker="none") and scatter (varies facecolor per point)
+    # calls above aren't set up to hand the legend a clean single swatch per
+    # population -- these mirror them, filled to match a "significant" point.
+    population_handles = [
+        Line2D(
+            [0],
+            [0],
+            color=explainer.POPULATION_COLORS[key],
+            marker=explainer.POPULATION_MARKERS[key],
+            markersize=4.2,
+            markerfacecolor=explainer.POPULATION_COLORS[key],
+            markeredgewidth=1.0,
+            lw=2.0 if key == "high_sf_aligned" else 1.5,
+            label=SHORT_POPULATION_LABELS[key],
+        )
+        for key in PLOT_POPULATION_ORDER
+    ]
+    significance_handle = Line2D(
+        [0],
+        [0],
+        color=explainer.INK,
+        marker="o",
+        markersize=4.2,
+        markerfacecolor="white",
+        markeredgewidth=1.0,
+        lw=0.0,
+        label="open: CI includes 0",
+    )
     ax.legend(
+        handles=[*population_handles, significance_handle],
         frameon=False,
-        fontsize=5.8,
+        fontsize=5.4,
         loc="lower left",
         handlelength=1.2,
-        labelspacing=0.3,
+        labelspacing=0.28,
         borderaxespad=0.2,
         handletextpad=0.4,
     )
+    ax.tick_params(axis="y", labelsize=6.8)
+    ax.tick_params(axis="x", labelsize=5.6, pad=2.0)
+    ax.xaxis.label.set_size(6.9)
+    ax.yaxis.label.set_size(7.0)
+    panel_header.align_bottom_row_xlabel(ax)
 
     return values
 
 
-def build_panel(out_dir: Path = OUT_DIR) -> dict[str, Path]:
+def build_panel(
+    out_dir: Path = OUT_DIR,
+    *,
+    figsize: tuple[float, float] = FIGSIZE,
+    label: str = "J",
+    title: str = TITLE,
+) -> dict[str, Path]:
     configure_matplotlib()
     out_dir.mkdir(parents=True, exist_ok=True)
     values = load_values()
     values.to_csv(out_dir / "panel_j_match_advantage_values.csv", index=False)
 
-    fig, ax = plt.subplots(figsize=FIGSIZE, constrained_layout=False)
-    draw_panel(ax, values=values)
-    fig.tight_layout(pad=0.55)
+    fig = plt.figure(figsize=figsize, constrained_layout=False)
+    ax = panel_header.add_bottom_row_axes(fig)
+    draw_panel(ax, label=label, title=title, values=values)
     paths = {
         "png": out_dir / "panel_j_match_advantage.png",
         "pdf": out_dir / "panel_j_match_advantage.pdf",
         "svg": out_dir / "panel_j_match_advantage.svg",
     }
-    fig.savefig(paths["png"], dpi=220, bbox_inches="tight")
-    fig.savefig(paths["pdf"], bbox_inches="tight")
-    fig.savefig(paths["svg"], bbox_inches="tight")
+    fig.savefig(paths["png"], dpi=220, transparent=True)
+    fig.savefig(paths["pdf"], transparent=True)
+    fig.savefig(paths["svg"], transparent=True)
     plt.close(fig)
     return paths
 

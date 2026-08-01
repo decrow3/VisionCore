@@ -875,6 +875,7 @@ def trace_weighted_parts(stats: dict[str, Any], unit_indices: np.ndarray) -> tup
 def panel_c_orientation_relation_specs(args: argparse.Namespace) -> tuple[dict[str, Any], ...]:
     match_max = float(args.panel_c_match_max_deg)
     orthogonal_min = float(args.panel_c_orthogonal_min_deg)
+    sf_label = panel_c_sf_label(str(args.panel_c_sf_group))
     if not (0.0 <= match_max < orthogonal_min <= 90.0):
         raise ValueError(
             "Orientation split thresholds must satisfy "
@@ -884,19 +885,19 @@ def panel_c_orientation_relation_specs(args: argparse.Namespace) -> tuple[dict[s
         {
             "relation": "contour_matched",
             "relation_label": "contour-aligned",
-            "relation_title": "Contour-aligned high-SF units",
+            "relation_title": f"Contour-aligned {sf_label} units",
             "relation_rank": 0,
         },
         {
             "relation": "contour_intermediate",
             "relation_label": "oblique-to-contour",
-            "relation_title": "Oblique high-SF units",
+            "relation_title": f"Oblique {sf_label} units",
             "relation_rank": 1,
         },
         {
             "relation": "contour_orthogonal",
             "relation_label": "contour-orthogonal",
-            "relation_title": "Contour-orthogonal high-SF units",
+            "relation_title": f"Contour-orthogonal {sf_label} units",
             "relation_rank": 2,
         },
     )

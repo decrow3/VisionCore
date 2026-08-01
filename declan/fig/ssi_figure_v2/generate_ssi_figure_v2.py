@@ -21,7 +21,14 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib import cm as mpl_cm
+from matplotlib import colors as mpl_colors
 from matplotlib import patches
+
+try:  # noqa: E402
+    from panels import panel_header
+except ModuleNotFoundError:  # pragma: no cover - package import path.
+    from declan.fig.ssi_figure_v2.panels import panel_header
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -92,10 +99,9 @@ COMPONENT_VALUES_CSV = PLOT_COLLECTION_DIR / f"{STORY_STEM}_component_values.csv
 BLUE = "#0072B2"
 CYAN = "#00A9C8"
 ORANGE = "#D55E00"
-# Eye-trace color in D/G's crop images -- deliberately not BLUE, which means
-# "low-SF population" everywhere else in this figure (B/C/E/F/I/J); a reader
-# who's learned that convention shouldn't also read this trace as low-SF.
-TRACE_COLOR = "#6A3D9A"
+TRACE_COLOR = "#8B1E3F"
+EYE_TRAJECTORY_COLOR = TRACE_COLOR
+UNIT_TUNING_COLOR = TRACE_COLOR
 GRAY = "#6B6F75"
 INK = "#111111"
 PALE_GRID = "#E7E7E7"
@@ -106,10 +112,17 @@ ZOOM_BOX = "#E8118A"  # vivid magenta -- center-zoom marker box, connectors, and
 CROP_BORDER_LW = 2.6
 CENTER_ZOOM_HALF_DEG = 0.25
 CENTER_ZOOM_TRACE_PAD_DEG = 0.04
+CONTOUR_AXIS_DASH = (0, (2.1, 1.5))
 D_IMAGE_LABEL_FS = 5.8
+D_FULL_IMAGE_LABEL_Y = 0.659
+D_CROP_IMAGE_LABEL_X_FRAC = 0.63
+D_CROP_IMAGE_LABEL_Y = 0.556
+D_CENTER_ZOOM_BOX_LW = 1.05
+D_ZOOM_CROP_BORDER_LW = 1.9
 D_TRACE_LABEL_FS = 6.2
 D_SUBHEAD_FS = 7.0
-D_CONNECTOR_LW = 0.65
+D_CONNECTOR_LW = 0.95
+D_ZOOM_OVERLAY_SCALE = 0.88
 # E/F now live as insets inside D's own axes (data coords, D's xlim/ylim are
 # (0, 1)) rather than as separate gridspec cells -- this is the region that
 # used to hold D's unfinished "Contour-carried signal" placeholder, which
@@ -118,13 +131,14 @@ D_CONNECTOR_LW = 0.65
 # axes) match B/C's exactly -- 0.355/0.4454 of D's data-x/y range ==
 # B/C's real gridspec-cell width/height (1.955in / 1.337in), computed
 # directly via gridspec instantiation. AXES_SHRINK (see B/C below, applied
-# via _shrink_axes_center there) scales both down by the same ~10% here,
+# via _shrink_axes_center there) scales both by the same factor here,
 # re-centered on the same midpoint each occupied at scale 1.0, to keep B/C
-# and E/F matched at the smaller size too.
+# and E/F matched to each other at whatever size AXES_SHRINK picks. Back at
+# 1.0 (full size) -- an earlier ~10% shrink read as too small in review.
 _EF_FULL_X, _EF_FULL_W = 0.620, 0.355
 _EF_FULL_F_Y, _EF_FULL_F_H = 0.020, 0.4454
 _EF_FULL_E_Y, _EF_FULL_E_H = 0.660, 0.4454
-AXES_SHRINK = 0.90
+AXES_SHRINK = 1.0
 EF_INSET_W = _EF_FULL_W * AXES_SHRINK
 EF_INSET_X = _EF_FULL_X + (_EF_FULL_W - EF_INSET_W) / 2
 EF_INSET_F_H = _EF_FULL_F_H * AXES_SHRINK
@@ -181,7 +195,7 @@ PANEL_BOX_LABELS = {
     "A": "Motion schematic",
     "B": "Low-SF units",
     "C": "High-SF units",
-    "D": "Contour-relative stimulus",
+    "D": "Unit tuning interacts with local image content",
     "E": "Low-SF aligned",
     "F": "High-SF aligned",
     "G": "Local contour detail (crop ref. + zoom, from D)",
@@ -661,28 +675,236 @@ def add_contour_window_to_crop_axis(crop_ax: plt.Axes, metadata: dict[str, float
     crop_ax.plot(
         [center - dx * local_half, center + dx * local_half],
         [center - dy * local_half, center + dy * local_half],
-        color=CYAN,
-        lw=1.55,
+        color="white",
+        lw=1.5,
+        ls=CONTOUR_AXIS_DASH,
         alpha=0.95,
         solid_capstyle="round",
         zorder=9,
     )
+
+
+def add_contour_axis_line_to_crop_axis(
+    crop_ax: plt.Axes,
+    metadata: dict[str, float | str],
+    *,
+    zoomed: bool = False,
+) -> None:
+    """Draw only the local contour axis line, useful for the zoomed crop."""
+    n = _finite_float(metadata.get("crop_size_px"), 151.0)
+    center = 0.5 * (n - 1.0)
+    radius = _finite_float(metadata.get("radius_px"), 38.0)
+    half = radius * 0.84
+    if zoomed:
+        half = min(half, _finite_float(metadata.get("center_zoom_half_px"), half) * 0.78)
+    dx, dy = _axis_vector_image(_finite_float(metadata.get("axis_image_deg"), 10.352312))
+    norm = math.hypot(dx, dy)
+    if norm <= 0:
+        dx, dy = 1.0, 0.0
+    else:
+        dx, dy = dx / norm, dy / norm
     crop_ax.plot(
-        [center, center + radius],
-        [center, center],
-        color=CONTOUR_WINDOW,
-        lw=0.72,
+        [center - dx * half, center + dx * half],
+        [center - dy * half, center + dy * half],
+        color="white",
+        lw=1.5,
+        ls=CONTOUR_AXIS_DASH,
+        alpha=0.95,
         solid_capstyle="round",
-        zorder=10,
+        zorder=22,
     )
+
+
+def add_unit_tuning_indicator_to_crop_axis(crop_ax: plt.Axes, metadata: dict[str, float | str]) -> None:
+    """Draw the example unit's preferred orientation on the local crop."""
+    n = _finite_float(metadata.get("crop_size_px"), 151.0)
+    center = 0.5 * (n - 1.0)
+    radius = _finite_float(metadata.get("radius_px"), 38.0)
+    dx, dy = _axis_vector_image(_finite_float(metadata.get("axis_image_deg"), 10.352312))
+    direction = np.array([dx, dy], dtype=np.float64)
+    norm = float(np.linalg.norm(direction))
+    if norm <= 0:
+        direction = np.array([1.0, 0.0], dtype=np.float64)
+    else:
+        direction = direction / norm
+    half = radius * 0.34
+    xs = [center - direction[0] * half, center + direction[0] * half]
+    ys = [center - direction[1] * half, center + direction[1] * half]
+    crop_ax.plot(xs, ys, color="white", lw=3.0, alpha=0.80, solid_capstyle="round", zorder=15)
+    crop_ax.plot(xs, ys, color=UNIT_TUNING_COLOR, lw=1.65, solid_capstyle="round", zorder=16)
     crop_ax.scatter(
         [center],
         [center],
-        s=18,
+        s=26,
         facecolor="white",
-        edgecolor=INK,
-        linewidth=0.65,
-        zorder=11,
+        edgecolor=UNIT_TUNING_COLOR,
+        linewidth=1.1,
+        zorder=17,
+    )
+
+
+def add_trace_path_without_marker(ax: plt.Axes, center: np.ndarray, trace_xy_px: object, color: str, *, lw: float, zorder: float) -> None:
+    """Draw the eye trajectory path without the endpoint dot used upstream."""
+    trace = np.asarray(trace_xy_px, dtype=np.float64)
+    if trace.ndim != 2 or trace.shape[1] != 2 or trace.shape[0] < 2:
+        return
+    points = np.asarray(center, dtype=np.float64)[None, :] + trace
+    ax.plot(
+        points[:, 0],
+        points[:, 1],
+        color="white",
+        lw=float(lw) + 0.85,
+        alpha=0.72,
+        solid_capstyle="round",
+        zorder=zorder - 0.1,
+    )
+    ax.plot(
+        points[:, 0],
+        points[:, 1],
+        color=color,
+        lw=float(lw),
+        alpha=0.92,
+        solid_capstyle="round",
+        zorder=zorder,
+    )
+
+
+def add_contour_axis_labels_to_crop_axis(
+    crop_ax: plt.Axes,
+    metadata: dict[str, float | str],
+    *,
+    zoomed: bool = False,
+) -> None:
+    """Small in-crop labels for the contour-relative frame used by G."""
+    n = _finite_float(metadata.get("crop_size_px"), 151.0)
+    center = 0.5 * (n - 1.0)
+    radius = _finite_float(metadata.get("radius_px"), 38.0)
+    label_span = radius
+    if zoomed:
+        label_span = min(radius, _finite_float(metadata.get("center_zoom_half_px"), radius) * 0.82)
+    dx, dy = _axis_vector_image(_finite_float(metadata.get("axis_image_deg"), 10.352312))
+    tangent = np.array([dx, dy], dtype=np.float64)
+    norm = float(np.linalg.norm(tangent))
+    if norm <= 0:
+        tangent = np.array([1.0, 0.0], dtype=np.float64)
+    else:
+        tangent = tangent / norm
+    normal = np.array([-tangent[1], tangent[0]], dtype=np.float64)
+    label_style = dict(
+        fontsize=5.4,
+        color="white",
+        ha="center",
+        va="center",
+        bbox=dict(boxstyle="round,pad=0.12", facecolor="black", edgecolor="none", alpha=0.45),
+        zorder=30,
+    )
+    along = np.array([center, center], dtype=np.float64) - tangent * label_span * 0.56 - normal * label_span * 0.24
+    across = np.array([center, center], dtype=np.float64) - normal * label_span * 0.52 + tangent * label_span * 0.22
+    crop_ax.text(float(along[0]), float(along[1]), "along", **label_style)
+    crop_ax.text(float(across[0]), float(across[1]), "across", **label_style)
+
+
+def add_trajectory_span_arrows_to_crop_axis(
+    crop_ax: plt.Axes,
+    metadata: dict[str, float | str],
+    motion_eye: dict | None,
+) -> None:
+    """Draw double-headed along/across arrows spanning the displayed trace."""
+    if not isinstance(motion_eye, dict) or "large_xy_px" not in motion_eye:
+        return
+    trace = np.asarray(motion_eye["large_xy_px"], dtype=np.float64)
+    if trace.ndim != 2 or trace.shape[1] != 2:
+        return
+    trace = trace[np.all(np.isfinite(trace), axis=1)]
+    if trace.shape[0] < 2:
+        return
+
+    n = _finite_float(metadata.get("crop_size_px"), 151.0)
+    center = np.array([0.5 * (n - 1.0), 0.5 * (n - 1.0)], dtype=np.float64)
+    dx, dy = _axis_vector_image(_finite_float(metadata.get("axis_image_deg"), 10.352312))
+    tangent = np.array([dx, dy], dtype=np.float64)
+    norm = float(np.linalg.norm(tangent))
+    if norm <= 0:
+        tangent = np.array([1.0, 0.0], dtype=np.float64)
+    else:
+        tangent = tangent / norm
+    normal = np.array([-tangent[1], tangent[0]], dtype=np.float64)
+
+    along = trace @ tangent
+    across = trace @ normal
+    along_span = max(float(np.nanmax(along) - np.nanmin(along)), 1.5)
+    across_span = max(float(np.nanmax(across) - np.nanmin(across)), 1.5)
+    half_px = _finite_float(metadata.get("center_zoom_half_px"), 18.8) * 0.82
+
+    along_min = max(float(np.nanmin(along) - 0.08 * along_span), -half_px)
+    along_max = min(float(np.nanmax(along) + 0.08 * along_span), half_px)
+    along_cross = float(np.nanmedian(across) - 0.34 * across_span)
+    along_cross = float(np.clip(along_cross, -half_px * 0.62, half_px * 0.62))
+
+    across_min = max(float(np.nanmin(across) - 0.12 * across_span), -half_px)
+    across_max = min(float(np.nanmax(across) + 0.12 * across_span), half_px)
+    across_along = float(np.nanmax(along) + 0.34 * along_span)
+    across_along = float(np.clip(across_along, -half_px * 0.62, half_px * 0.76))
+
+    def point(a: float, c: float) -> tuple[float, float]:
+        p = center + tangent * a + normal * c
+        return float(p[0]), float(p[1])
+
+    def display_angle(vector: np.ndarray) -> float:
+        origin_disp = crop_ax.transData.transform(center)
+        end_disp = crop_ax.transData.transform(center + vector)
+        angle = math.degrees(math.atan2(end_disp[1] - origin_disp[1], end_disp[0] - origin_disp[0]))
+        if angle > 90.0:
+            angle -= 180.0
+        elif angle < -90.0:
+            angle += 180.0
+        return angle
+
+    def shift_up(point_xy: tuple[float, float], amount_px: float) -> tuple[float, float]:
+        return (point_xy[0], point_xy[1] - amount_px)
+
+    def shift_right(point_xy: tuple[float, float], amount_px: float) -> tuple[float, float]:
+        return (point_xy[0] + amount_px, point_xy[1])
+
+    def arrow(start: tuple[float, float], end: tuple[float, float]) -> None:
+        for color, lw, alpha, zorder in [("black", 2.7, 0.62, 27), ("white", 1.25, 0.98, 28)]:
+            crop_ax.annotate(
+                "",
+                xy=end,
+                xytext=start,
+                arrowprops=dict(arrowstyle="<->", color=color, lw=lw, mutation_scale=8, shrinkA=0, shrinkB=0),
+                alpha=alpha,
+                zorder=zorder,
+            )
+
+    along_up_shift = min(half_px * 0.24, 4.6)
+    across_right_shift = min(half_px * 0.16, 3.4)
+    along_start = shift_up(point(along_min, along_cross), along_up_shift)
+    along_end = shift_up(point(along_max, along_cross), along_up_shift)
+    across_start = shift_right(point(across_along, across_min), across_right_shift)
+    across_end = shift_right(point(across_along, across_max), across_right_shift)
+    arrow(along_start, along_end)
+    arrow(across_start, across_end)
+
+    label_style = dict(
+        fontsize=5.8,
+        color="white",
+        ha="center",
+        va="center",
+        rotation_mode="anchor",
+        clip_on=False,
+        zorder=31,
+    )
+    along_label = shift_up(point(0.5 * (along_min + along_max), along_cross - 0.15 * across_span), along_up_shift)
+    crop_ax.text(*along_label, "along", rotation=display_angle(tangent), **label_style)
+    crop_ax.text(
+        1.075,
+        0.46,
+        "across",
+        transform=crop_ax.transAxes,
+        color=INK,
+        rotation=display_angle(normal),
+        **{key: value for key, value in label_style.items() if key != "color"},
     )
 
 
@@ -724,7 +946,7 @@ def add_center_zoom_box_to_crop_axis(crop_ax: plt.Axes, metadata: dict[str, floa
             2.0 * half_px,
             fill=False,
             edgecolor=ZOOM_BOX,
-            linewidth=0.85,
+            linewidth=D_CENTER_ZOOM_BOX_LW,
             zorder=12,
         )
     )
@@ -751,14 +973,56 @@ def draw_plain_crop(
     n = int(image.shape[0])
     crop_ax.imshow(image, cmap="gray", interpolation="bicubic")
     crop_ax.set_aspect("equal", adjustable="box")
-    crop_ax.set_axis_off()
+    hide_axis_completely(crop_ax)
     crop_ax.set_xlim(0, n - 1)
     crop_ax.set_ylim(n - 1, 0)
     crop_ax.add_patch(patches.Rectangle((0, 0), n - 1, n - 1, fill=False, lw=1.0, ec=INK))
     if trace_xy_px is not None and trace_color is not None:
         axis_center = np.array([0.5 * (n - 1), 0.5 * (n - 1)], dtype=np.float64)
-        ssi_schematic.add_panel_a_trace_path(crop_ax, axis_center, trace_xy_px, trace_color, lw=1.85, zorder=4)
+        add_trace_path_without_marker(crop_ax, axis_center, trace_xy_px, trace_color, lw=1.85, zorder=4)
     return n
+
+
+def add_upper_left_image_label(image_ax: plt.Axes, label: str) -> None:
+    """Caption an inset image from its rendered upper-left corner."""
+    x_left = float(image_ax.get_xlim()[0])
+    y_top = float(image_ax.get_ylim()[1])
+    image_ax.annotate(
+        label,
+        xy=(x_left, y_top),
+        xycoords="data",
+        xytext=(0, 3.6),
+        textcoords="offset points",
+        fontsize=D_IMAGE_LABEL_FS,
+        color=GRAY,
+        ha="left",
+        va="bottom",
+        linespacing=0.95,
+        annotation_clip=False,
+        clip_on=False,
+        zorder=40,
+    )
+
+
+def add_lower_left_image_label(image_ax: plt.Axes, label: str) -> None:
+    """Caption an inset image from its rendered lower-left corner."""
+    x_left = float(image_ax.get_xlim()[0])
+    y_bottom = float(image_ax.get_ylim()[0])
+    image_ax.annotate(
+        label,
+        xy=(x_left, y_bottom),
+        xycoords="data",
+        xytext=(0, -3.6),
+        textcoords="offset points",
+        fontsize=D_IMAGE_LABEL_FS,
+        color=GRAY,
+        ha="left",
+        va="top",
+        linespacing=0.95,
+        annotation_clip=False,
+        clip_on=False,
+        zorder=40,
+    )
 
 
 def add_zoomed_crop_view(
@@ -768,6 +1032,8 @@ def add_zoomed_crop_view(
     metadata: dict[str, float | str],
     *,
     trace_color: str = TRACE_COLOR,
+    border_color: str = ZOOM_BOX,
+    border_lw: float = CROP_BORDER_LW,
 ) -> None:
     """Draw the crop again, zoomed to the central +/-0.25 deg window."""
     if ssi_schematic is None:
@@ -785,12 +1051,11 @@ def add_zoomed_crop_view(
             2.0 * half_px,
             2.0 * half_px,
             fill=False,
-            edgecolor=INK,
-            linewidth=0.85,
+            edgecolor=border_color,
+            linewidth=border_lw,
             zorder=20,
         )
     )
-    zoom_ax.scatter([center], [center], s=22, facecolor="white", edgecolor=INK, linewidth=0.65, zorder=21)
 
 
 def add_center_zoom_parent_overlay(
@@ -835,7 +1100,7 @@ def add_zoom_connectors(
         lw=D_CONNECTOR_LW,
         ls=(0, (3, 3)),
         alpha=0.58,
-        zorder=6,
+        zorder=15,
     )
     ax.plot(
         [source_x + source_w, target_x],
@@ -844,8 +1109,98 @@ def add_zoom_connectors(
         lw=D_CONNECTOR_LW,
         ls=(0, (3, 3)),
         alpha=0.58,
-        zorder=6,
+        zorder=15,
     )
+
+
+def add_roi_to_crop_connectors(
+    ax: plt.Axes,
+    full_ax: plt.Axes,
+    crop_ax: plt.Axes,
+    crop_center_xy: object,
+    crop_size_px: object,
+    *,
+    color: str = CYAN,
+) -> None:
+    """Connect the source-image ROI square to the rendered crop border."""
+    center = np.asarray(crop_center_xy, dtype=np.float64).reshape(-1)
+    if center.size < 2:
+        return
+    size = _finite_float(crop_size_px, np.nan)
+    if not np.isfinite(size) or size <= 0:
+        return
+
+    cx, cy = float(center[0]), float(center[1])
+    right = cx + size / 2.0
+    top = cy - size / 2.0
+    bottom = cy + size / 2.0
+
+    crop_x_left = float(crop_ax.get_xlim()[0])
+    crop_y_bottom, crop_y_top = [float(v) for v in crop_ax.get_ylim()]
+    endpoint_pairs = [
+        ((right, top), (crop_x_left, crop_y_top)),
+        ((right, bottom), (crop_x_left, crop_y_bottom)),
+    ]
+    for source_xy, target_xy in endpoint_pairs:
+        connector = patches.ConnectionPatch(
+            xyA=source_xy,
+            xyB=target_xy,
+            coordsA="data",
+            coordsB="data",
+            axesA=full_ax,
+            axesB=crop_ax,
+            arrowstyle="-",
+            color=color,
+            lw=D_CONNECTOR_LW,
+            ls=(0, (3, 3)),
+            alpha=0.58,
+            clip_on=False,
+            zorder=3,
+        )
+        ax.add_artist(connector)
+
+
+def add_center_zoom_to_zoom_connectors(
+    ax: plt.Axes,
+    crop_ax: plt.Axes,
+    zoom_ax: plt.Axes,
+    metadata: dict[str, float | str],
+    *,
+    color: str = ZOOM_BOX,
+) -> None:
+    """Connect the center zoom box to the rendered zoomed-crop border."""
+    n = _finite_float(metadata.get("crop_size_px"), 151.0)
+    center = 0.5 * (n - 1.0)
+    half_px = _finite_float(metadata.get("center_zoom_half_px"), CENTER_ZOOM_HALF_DEG * 37.50476617)
+    if not np.isfinite(half_px) or half_px <= 0:
+        return
+
+    source_right = center + half_px
+    source_top = center - half_px
+    source_bottom = center + half_px
+    target_left = float(zoom_ax.get_xlim()[0])
+    target_bottom, target_top = [float(v) for v in zoom_ax.get_ylim()]
+    endpoint_pairs = [
+        ((source_right, source_top), (target_left, target_top)),
+        ((source_right, source_bottom), (target_left, target_bottom)),
+    ]
+    for source_xy, target_xy in endpoint_pairs:
+        connector = patches.ConnectionPatch(
+            xyA=source_xy,
+            xyB=target_xy,
+            coordsA="data",
+            coordsB="data",
+            axesA=crop_ax,
+            axesB=zoom_ax,
+            arrowstyle="-",
+            color=color,
+            lw=D_CONNECTOR_LW,
+            ls=(0, (3, 3)),
+            alpha=0.70,
+            clip_on=False,
+            zorder=7,
+        )
+        ax.add_artist(connector)
 
 
 def add_contour_window_parent_overlay(
@@ -928,14 +1283,23 @@ def add_contour_window_callout(
     )
 
 
-def schematic_response_maps(payload: dict | None) -> tuple[dict[str, object], tuple[float, float] | None]:
+def schematic_response_maps(
+    payload: dict | None,
+) -> tuple[dict[str, object], tuple[float, float] | None, dict[str, float]]:
+    """Real/stabilized response maps for panel A, plus the scalar SSI (bits
+    per spike) for each -- schematic_rr100_final_map_unit_metrics.csv's
+    real_final_map_ssi_bits_per_spike / stable_final_map_ssi_bits_per_spike
+    columns for whichever unit choose_right_panel_real_unit selected. SSI is
+    one number per map, not a per-pixel quantity -- the map's own pixels are
+    the model's predicted firing rate (spikes/s), mean-centered for display.
+    """
     if ssi_schematic is None or payload is None:
-        return {}, None
+        return {}, None, {}
     maps = payload.get("schematic_rr100_final_maps")
     condition_ids = payload.get("schematic_rr100_final_condition_id")
     unit_row = ssi_schematic.choose_right_panel_real_unit(payload)
     if maps is None or condition_ids is None or unit_row is None:
-        return {}, None
+        return {}, None, {}
     try:
         ids = [str(x) for x in condition_ids]
         real_idx = ids.index("real_trace_final")
@@ -945,9 +1309,13 @@ def schematic_response_maps(payload: dict | None) -> tuple[dict[str, object], tu
             "fem": maps[real_idx, unit_idx],
             "stable": maps[stable_idx, unit_idx],
         }
-        return real_maps, ssi_schematic.panel_b_map_pair_limits(real_maps.values())
+        ssi_bits_per_spike = {
+            "fem": _finite_float(unit_row.get("real_final_map_ssi_bits_per_spike"), float("nan")),
+            "stable": _finite_float(unit_row.get("stable_final_map_ssi_bits_per_spike"), float("nan")),
+        }
+        return real_maps, ssi_schematic.panel_b_map_pair_limits(real_maps.values()), ssi_bits_per_spike
     except Exception:
-        return {}, None
+        return {}, None, {}
 
 
 def shared_story_ylim(frame: pd.DataFrame, *, fallback: tuple[float, float]) -> tuple[float, float]:
@@ -982,28 +1350,42 @@ def add_support_note(ax: plt.Axes, frame: pd.DataFrame) -> None:
     )
 
 
-def draw_panel_header(ax: plt.Axes, letter: str, title: str, *, y: float = 1.025) -> None:
-    ax.text(
-        0.000,
-        y,
+def hide_axis_completely(ax: plt.Axes) -> None:
+    """``ax.set_axis_off()`` hides ticks/spines visually, but the default
+    tick-label Text artists it leaves behind (e.g. an untouched 0-1 axes
+    still carries '0.0'..'1.0' tick labels) keep reporting real bounding
+    boxes to ``fig.get_tightbbox()`` -- matplotlib's axis-off draw path
+    skips *drawing* them but doesn't check visibility when measuring tight
+    bbox. In this file's v3 per-panel builds that made ``bbox_inches="tight"``
+    silently grow a panel's saved page well past its intended size (e.g.
+    panel D grew 0.51in taller from an invisible x-axis sitting below its
+    own y=0), pushing it into whichever neighbor happened to be composited
+    on top. Clearing the ticks outright (not just hiding the axis) removes
+    the phantom Text artists so nothing is left to measure.
+    """
+    ax.set_axis_off()
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+
+def draw_panel_header(
+    ax: plt.Axes,
+    letter: str,
+    title: str,
+    *,
+    y: float = 1.025,
+    title_linespacing: float = panel_header.MIDDLE_ROW_TITLE_LINESPACING,
+    title_y_offset: float = 0.0,
+    title_y_offset_pt: float = 0.0,
+) -> None:
+    panel_header.draw_panel_header(
+        ax,
         letter,
-        transform=ax.transAxes,
-        ha="left",
-        va="bottom",
-        fontsize=14,
-        fontweight="bold",
-        clip_on=False,
-    )
-    ax.text(
-        0.052,
-        y,
         title,
-        transform=ax.transAxes,
-        ha="left",
-        va="bottom",
-        fontsize=12.0,
-        fontweight="bold",
-        clip_on=False,
+        y=y,
+        title_linespacing=title_linespacing,
+        title_y_offset=title_y_offset,
+        title_y_offset_pt=title_y_offset_pt,
     )
 
 
@@ -1015,6 +1397,7 @@ def set_panel_title(
     color: str = INK,
     fontsize: float = 8.6,
     pad: float = 3.0,
+    linespacing: float = 1.0,
 ) -> None:
     ax.set_title(
         f"{label}  {title}",
@@ -1023,6 +1406,7 @@ def set_panel_title(
         fontsize=fontsize,
         fontweight="bold",
         pad=pad,
+        linespacing=linespacing,
     )
 
 
@@ -1172,7 +1556,9 @@ def draw_schematic_movie_block(
 
 
 def draw_model_icon(ax: plt.Axes, x: float, y: float, sx: float = 1.0, sy: float | None = None) -> None:
-    """Draw the compact core/conv/RF-readout icon.
+    """Draw the compact single-unit-readout icon: a small feedforward
+    network sketch (the "model") feeding into the position-readout diamond
+    stack (unchanged from before -- still built from the same rf_x anchor).
 
     ``sx``/``sy`` scale the icon's horizontal and vertical extent
     independently (``sy`` defaults to ``sx``) so it can be squeezed
@@ -1180,52 +1566,27 @@ def draw_model_icon(ax: plt.Axes, x: float, y: float, sx: float = 1.0, sy: float
     movie-cube and response-map images either side of it.
     """
     sy = sx if sy is None else sy
-    # The core box's own width uses a gentler compression (sqrt of sx) than
-    # the rest of the icon -- squeezing it by the full sx leaves too little
-    # room for the "Core"/"Conv" labels at a legible size.
-    core_sx = sx**0.5
-    core = patches.FancyBboxPatch(
-        (x, y),
-        0.058 * core_sx,
-        0.155 * sy,
-        boxstyle="round,pad=0.006,rounding_size=0.010",
-        facecolor="#DDE2E0",
-        edgecolor="#AAB1AE",
-        lw=0.8,
-    )
-    ax.add_patch(core)
-    ax.text(x + 0.029 * core_sx, y + 0.127 * sy, "Core", ha="center", va="center", fontsize=5.2)
-    ax.text(x + 0.029 * core_sx, y + 0.105 * sy, "Conv", ha="center", va="center", fontsize=4.4)
-    for i, color in enumerate(["#E97B68", "#8FC9CF", "#F0C06C", "#E6A34E"]):
-        yy = y + 0.029 * sy + i * 0.025 * sy
-        ax.add_patch(
-            patches.Rectangle(
-                (x + 0.012 * core_sx, yy),
-                0.030 * core_sx,
-                0.014 * sy,
-                facecolor=color,
-                edgecolor="none",
-                alpha=0.9,
-            )
-        )
-    ax.text(x + 0.029 * core_sx, y - 0.014 * sy, "model", ha="center", va="top", fontsize=5.2, color=GRAY)
+    net_w = 0.075 * sx
+    net_h = 0.150 * sy
+    left_x, right_x = x, x + net_w
+    left_ys = [y + f * net_h for f in (0.0, 0.33, 0.67, 1.0)]
+    right_ys = [y + f * net_h for f in (0.12, 0.50, 0.88)]
+    for ly in left_ys:
+        for ry in right_ys:
+            ax.plot([left_x, right_x], [ly, ry], color="#B9BFC6", lw=0.5, alpha=0.75, zorder=1)
+    for nx, nys in ((left_x, left_ys), (right_x, right_ys)):
+        for ny in nys:
+            ax.scatter([nx], [ny], s=26 * sx, color=GRAY, zorder=2, edgecolor="none")
 
-    stack_x = x + 0.106 * sx
-    add_flow_arrow(ax, (x + 0.058 * core_sx + 0.006, y + 0.077 * sy), (stack_x - 0.006, y + 0.077 * sy))
-    for j, color in enumerate(["#E66A52", "#56B4AE", "#F0C05A", "#79A96B"]):
-        ax.add_patch(
-            patches.Rectangle(
-                (stack_x + 0.006 * j * sx, y + 0.062 * sy + 0.004 * j * sy),
-                0.040 * sx,
-                0.029 * sy,
-                facecolor="white",
-                edgecolor=color,
-                linewidth=0.75,
-            )
-        )
-    add_flow_arrow(ax, (x + 0.160 * sx, y + 0.077 * sy), (x + 0.189 * sx, y + 0.077 * sy))
+    label_x = x + net_w * 0.5
+    ax.text(label_x, y + net_h + 0.050 * sy, "single unit", ha="center", va="bottom", fontsize=5.4, color=INK)
+    ax.text(label_x, y + net_h + 0.030 * sy, "readout", ha="center", va="bottom", fontsize=5.4, color=INK)
+    ax.plot(
+        [label_x, label_x], [y + net_h * 0.60, y + net_h + 0.026 * sy], color=INK, lw=0.6, zorder=3
+    )
 
     rf_x = x + 0.204 * sx
+    add_flow_arrow(ax, (right_x + 0.006, y + 0.077 * sy), (rf_x - 0.010, y + 0.077 * sy))
     for j in range(3):
         ax.add_patch(
             patches.Rectangle(
@@ -1244,6 +1605,44 @@ def draw_model_icon(ax: plt.Axes, x: float, y: float, sx: float = 1.0, sy: float
     ax.text(rf_x + 0.040 * sx, y + 0.017 * sy, "one response\nper position", ha="center", va="top", fontsize=4.7, color=GRAY)
 
 
+# Must match make_ssi_contour_schematic.py's own choice for
+# PANEL_B_ACTIVATION_MAP_STYLE == "mean_centered_diverging" (the style this
+# figure actually uses) -- that module doesn't expose its colormap/limits
+# through add_spatial_activation_map's return value, so the colorbar here is
+# built independently from the same vmin/vmax already computed for it.
+RESPONSE_MAP_CMAP = "RdBu_r"
+
+
+def add_response_map_colorbar(ax: plt.Axes, x: float, y: float, h: float, vlim: tuple[float, float] | None) -> None:
+    """A slim vertical colorbar to the right of a response map, aligned to
+    its full height. This is a per-pixel firing-rate scale (mean-centered
+    for display), NOT the map's scalar SSI -- see draw_response_placeholder
+    for that separate number. Labeled with its real units so it doesn't get
+    mistaken for one.
+    """
+    if vlim is None:
+        return
+    vmin, vmax = vlim
+    cbar_w = 0.020
+    cbar_ax = ax.inset_axes([x, y, cbar_w, h], transform=ax.transData)
+    sm = mpl_cm.ScalarMappable(cmap=RESPONSE_MAP_CMAP, norm=mpl_colors.Normalize(vmin=vmin, vmax=vmax))
+    sm.set_array([])
+    cbar = ax.figure.colorbar(sm, cax=cbar_ax, orientation="vertical", ticks=[vmin, 0.0, vmax])
+    cbar.ax.set_yticklabels([f"{vmin:+.2f}", "0", f"{vmax:+.2f}"], fontsize=4.4)
+    cbar.outline.set_linewidth(0.5)
+    cbar.ax.tick_params(length=2.0, width=0.5, pad=1.0)
+    ax.text(
+        x + cbar_w / 2,
+        y + h + 0.010,
+        "Δ rate\n(spikes/s)",
+        ha="center",
+        va="bottom",
+        fontsize=4.6,
+        color=INK,
+        linespacing=1.05,
+    )
+
+
 def draw_response_placeholder(
     ax: plt.Axes,
     x: float,
@@ -1254,9 +1653,11 @@ def draw_response_placeholder(
     *,
     real_map=None,
     map_vlim: tuple[float, float] | None = None,
+    ssi_bits_per_spike: float | None = None,
 ) -> None:
     if ssi_schematic is not None and real_map is not None:
-        map_ax = ax.inset_axes([x, y, w, h], transform=ax.transData)
+        img_w = data_width_for_physical_aspect(ax, h, 1.0)
+        map_ax = ax.inset_axes([x, y, img_w, h], transform=ax.transData)
         ssi_schematic.add_spatial_activation_map(
             map_ax,
             "fem",
@@ -1264,7 +1665,7 @@ def draw_response_placeholder(
             map_vlim=map_vlim,
         )
         ax.text(
-            x + w / 2,
+            x + img_w / 2,
             y - 0.020,
             label.replace("\n", " "),
             ha="center",
@@ -1272,7 +1673,20 @@ def draw_response_placeholder(
             fontsize=5.7,
             color=GRAY,
         )
-        ax.text(x - 0.018, y + 0.012, "map\npixel", ha="right", va="bottom", fontsize=5.3, color=GRAY)
+        # SSI is one scalar per map (bits/spike), not a per-pixel quantity --
+        # that's what the colorbar to the right shows instead (firing rate).
+        if ssi_bits_per_spike is not None and math.isfinite(ssi_bits_per_spike):
+            ax.text(
+                x + img_w / 2,
+                y - 0.048,
+                f"SSI = {ssi_bits_per_spike:.2f} bits/spike",
+                ha="center",
+                va="top",
+                fontsize=6.0,
+                color=INK,
+                fontweight="bold",
+            )
+        add_response_map_colorbar(ax, x + img_w + 0.018, y, h, map_vlim)
         return
     placeholder_box(
         ax,
@@ -1285,101 +1699,361 @@ def draw_response_placeholder(
         hatch="xx",
         label_size=6.7,
     )
-    ax.text(x - 0.018, y + 0.012, "map\npixel", ha="right", va="bottom", fontsize=5.3, color=GRAY)
 
 
-def draw_panel_b(ax: plt.Axes, *, schematic_payload: dict | None = None) -> None:
-    ax.set_axis_off()
+def panel_a_default_layout_boxes() -> dict[str, tuple[float, float, float, float]]:
+    """Default Panel A block-layout geometry, as named boxes ``(x, y, w, h)``
+    in this panel's own 0..1 axes-fraction coordinates (bottom-left origin,
+    matching ``ax.set_xlim(0, 1)``/``ax.set_ylim(0, 1)`` in draw_panel_b).
+
+    This is the single source of truth draw_panel_b falls back to when no
+    ``layout_overrides`` is given, and what
+    panels/panel_a_layout_boxes.py exports as an editable SVG template (one
+    rect per box, drawn over a raster preview of the current render) and
+    re-imports after manual dragging/resizing -- see that module's
+    docstring for the whole round trip.
+
+    v3 note: these fractions are tuned directly against this panel's own
+    measured box (not against the reference PDF's internal proportions --
+    the reference is a hand-edited Illustrator artifact and isn't a
+    reliable source for sub-panel layout).
+    """
+    movie_w, movie_h = 0.376, 0.496
+    content_y_shift = 0.079
+    top_label_y, bottom_label_y = 0.900 + content_y_shift, 0.450 + content_y_shift
+    # movie_overlap_above: how far the movie box's top edge sits above its
+    # own row label's baseline. Was pushed to +0.100 as a one-off test of
+    # overlapping the label on purpose, then back down to -0.025 (clear of
+    # it), then halfway back up to split the difference.
+    movie_overlap_above = 0.0375
+    movie_x = 0.045
+    top_movie_y = top_label_y + movie_overlap_above - movie_h
+    bottom_movie_y = bottom_label_y + movie_overlap_above - movie_h
+
+    # icon_sx/icon_sy are draw_model_icon's own scale factors (for v2's
+    # matplotlib reproduction of the icon; v3 stamps a real vector asset
+    # instead -- see panels/panel_a_motion_schematic.py -- but still uses
+    # this box's w/h to size and place it). icon_w/icon_h are just those
+    # scale factors converted to the same box units everything else uses.
+    icon_sx, icon_sy = 0.42, 1.05
+    icon_w = 0.285 * icon_sx  # matches draw_model_icon's own right-edge extent (rf box end) at scale sx
+    icon_h = 0.150 * icon_sy
+    map_w, map_h = 0.260, 0.290
+    # Wider gap than movie->icon: the icon's own "one response per position"
+    # caption and the response map's caption both live in this gap and
+    # collide if it's too tight.
+    icon_x = movie_x + movie_w + 0.025
+    map_x = icon_x + icon_w + 0.060
+    # Response maps anchor at the pre-overlap label position (not the movie
+    # box's own top edge, which can sit above or below the label depending
+    # on movie_overlap_above) so the map/colorbar never gets dragged around
+    # by the cube's own vertical position -- see draw_panel_b.
+    map_top_anchor = 0.025
+    top_map_y = top_label_y - map_top_anchor - map_h
+    bottom_map_y = bottom_label_y - map_top_anchor - map_h
+    top_icon_y = top_movie_y + 0.1275 * movie_h
+    bottom_icon_y = bottom_movie_y + 0.1275 * movie_h
+
+    return {
+        "label_fem": (movie_x, top_label_y, 0.150, 0.001),
+        "label_stable": (movie_x, bottom_label_y, 0.150, 0.001),
+        "movie_fem": (movie_x, top_movie_y, movie_w, movie_h),
+        "movie_stable": (movie_x, bottom_movie_y, movie_w, movie_h),
+        "icon_fem": (icon_x, top_icon_y, icon_w, icon_h),
+        "icon_stable": (icon_x, bottom_icon_y, icon_w, icon_h),
+        "map_fem": (map_x, top_map_y, map_w, map_h),
+        "map_stable": (map_x, bottom_map_y, map_w, map_h),
+    }
+
+
+def draw_panel_b(
+    ax: plt.Axes,
+    *,
+    schematic_payload: dict | None = None,
+    include_network_icon: bool = True,
+    layout_overrides: dict[str, tuple[float, float, float, float]] | None = None,
+    header_label: str = "A",
+    header_title: str = "FEMs sharpen spatial coding",
+    header_y: float = 1.010,
+    header_title_y_offset: float = 0.0,
+    header_title_y_offset_pt: float = 0.0,
+) -> dict[str, dict[str, float]]:
+    """Draw Panel A's two movie-cube/network-icon/response-map rows.
+
+    ``include_network_icon=False`` skips drawing the matplotlib
+    single-unit-readout icon (and its icon->map flow arrow, which the
+    extracted icon already includes as its own trailing arrow) so a caller
+    can stamp a vector asset there instead -- see
+    panels/panel_a_motion_schematic.py and
+    panels/extract_panel_a_network_icon.py. The returned dict always reports
+    where that icon slot is, in this axes' own 0..1 data coordinates, keyed
+    by row ("fem"/"stable") with x/y/w/h/sx/sy fields, regardless of whether
+    it was actually drawn.
+
+    ``layout_overrides`` replaces individual boxes from
+    panel_a_default_layout_boxes() by name ("label_fem", "label_stable",
+    "movie_fem", "movie_stable", "icon_fem", "icon_stable", "map_fem",
+    "map_stable") -- see panels/panel_a_layout_boxes.py. Each box is fully
+    independent once overridden (e.g. moving movie_fem does not also drag
+    icon_fem along with it) -- the *defaults* are what's derived from the
+    movie box via fixed gaps, not a live relationship.
+    """
+    hide_axis_completely(ax)
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
-    real_maps, real_map_vlim = schematic_response_maps(schematic_payload)
-    draw_panel_header(ax, "A", "Motion sharpens unit activations across space", y=1.010)
+    real_maps, real_map_vlim, real_map_ssi = schematic_response_maps(schematic_payload)
+    draw_panel_header(
+        ax,
+        header_label,
+        header_title,
+        y=header_y,
+        title_y_offset=header_title_y_offset,
+        title_y_offset_pt=header_title_y_offset_pt,
+    )
 
-    # Movie cubes are the real, primary images here, so they get the bulk of
-    # both the width budget (icon compressed further, response map trimmed
-    # back a little) and the height budget (rows now span label-to-label
-    # with no per-cube caption eating into it -- see draw_schematic_movie_block).
-    movie_x, movie_w, movie_h = 0.045, 0.390, 0.360
-    top_label_y, bottom_label_y = 0.900, 0.450
-    top_movie_y = top_label_y - 0.025 - movie_h
-    # The response map's caption sits ~0.02 below its own y -- keep
-    # bottom_movie_y off y=0 (rather than flush with it) so that caption
-    # stays inside this axes instead of spilling into the row0/row1 gutter,
-    # where D's E/F insets are independently reaching for the same space.
-    bottom_movie_y = bottom_label_y - 0.025 - movie_h
-    icon_x, icon_sx, icon_sy = movie_x + movie_w + 0.035, 0.50, 1.15
-    icon_w = 0.285 * icon_sx  # matches draw_model_icon's own right-edge extent (rf box end) at scale sx
-    # Wider gap than movie->icon: the icon's own "one response per position"
-    # caption and the response map's "map pixel" caption both live in this
-    # gap and collide if it's too tight.
-    map_x, map_w, map_h = icon_x + icon_w + 0.075, 0.280, movie_h
-    icon_y_offset = 0.1275 * movie_h
-    top_icon_y, bottom_icon_y = top_movie_y + icon_y_offset, bottom_movie_y + icon_y_offset
+    boxes = {**panel_a_default_layout_boxes(), **(layout_overrides or {})}
+    label_fem_x, top_label_y = boxes["label_fem"][:2]
+    label_stable_x, bottom_label_y = boxes["label_stable"][:2]
+    top_movie_x, top_movie_y, top_movie_w, top_movie_h = boxes["movie_fem"]
+    bottom_movie_x, bottom_movie_y, bottom_movie_w, bottom_movie_h = boxes["movie_stable"]
+    top_icon_x, top_icon_y, top_icon_w, top_icon_h = boxes["icon_fem"]
+    bottom_icon_x, bottom_icon_y, bottom_icon_w, bottom_icon_h = boxes["icon_stable"]
+    top_map_x, top_map_y, top_map_w, top_map_h = boxes["map_fem"]
+    bottom_map_x, bottom_map_y, bottom_map_w, bottom_map_h = boxes["map_stable"]
 
-    ax.text(movie_x, top_label_y, "FEM jittered movie", fontsize=11.0, ha="left", va="bottom")
-    ax.text(movie_x, bottom_label_y, "Stabilized movie", fontsize=11.0, ha="left", va="bottom")
-    map_note = "warm/cool = above/below map mean" if real_maps else "reserved for above/below-mean maps"
-    ax.text(map_x + map_w / 2, top_label_y - 0.006, map_note, fontsize=6.4, color=GRAY, ha="center")
+    # draw_model_icon (v2's matplotlib reproduction of the icon; v3 stamps a
+    # real vector asset over this same slot instead) takes scale factors,
+    # not a box -- recover them from each row's own icon box so an override
+    # still sizes it correctly.
+    top_icon_sx, top_icon_sy = top_icon_w / 0.285, top_icon_h / 0.150
+    bottom_icon_sx, bottom_icon_sy = bottom_icon_w / 0.285, bottom_icon_h / 0.150
+
+    ax.text(label_fem_x, top_label_y, "FEM jittered movie", fontsize=11.0, ha="left", va="bottom")
+    ax.text(label_stable_x, bottom_label_y, "Stabilized movie", fontsize=11.0, ha="left", va="bottom")
 
     draw_schematic_movie_block(
         ax,
-        movie_x,
+        top_movie_x,
         top_movie_y,
-        movie_w,
-        movie_h,
+        top_movie_w,
+        top_movie_h,
         schematic_payload=schematic_payload,
         trace_key="stimulus_real_trace_lag32",
-        trace_color=BLUE,
+        trace_color=EYE_TRAJECTORY_COLOR,
         fallback_jittered=True,
     )
-    draw_model_icon(ax, icon_x, top_icon_y, sx=icon_sx, sy=icon_sy)
-    add_flow_arrow(ax, (icon_x + icon_w + 0.008, top_icon_y + 0.077 * icon_sy), (map_x - 0.008, top_icon_y + 0.077 * icon_sy))
+    if include_network_icon:
+        draw_model_icon(ax, top_icon_x, top_icon_y, sx=top_icon_sx, sy=top_icon_sy)
+        add_flow_arrow(
+            ax,
+            (top_icon_x + top_icon_w + 0.008, top_icon_y + 0.077 * top_icon_sy),
+            (top_map_x - 0.008, top_icon_y + 0.077 * top_icon_sy),
+        )
     draw_response_placeholder(
         ax,
-        map_x,
-        top_movie_y,
-        map_w,
-        map_h,
+        top_map_x,
+        top_map_y,
+        top_map_w,
+        top_map_h,
         "FEM response\nmap",
         real_map=real_maps.get("fem"),
         map_vlim=real_map_vlim,
-    )
-    ax.text(
-        icon_x + 0.34 * icon_w,
-        top_movie_y + movie_h - 0.048,
-        "same spatial kernel, shifted center",
-        fontsize=5.4,
-        color=GRAY,
-        ha="center",
+        ssi_bits_per_spike=real_map_ssi.get("fem"),
     )
 
     draw_schematic_movie_block(
         ax,
-        movie_x,
+        bottom_movie_x,
         bottom_movie_y,
-        movie_w,
-        movie_h,
+        bottom_movie_w,
+        bottom_movie_h,
         schematic_payload=schematic_payload,
         trace_key="stimulus_endpoint_stabilized_trace_lag32",
         trace_color=GRAY,
         fallback_jittered=False,
     )
-    draw_model_icon(ax, icon_x, bottom_icon_y, sx=icon_sx, sy=icon_sy)
-    add_flow_arrow(
-        ax,
-        (icon_x + icon_w + 0.008, bottom_icon_y + 0.077 * icon_sy),
-        (map_x - 0.008, bottom_icon_y + 0.077 * icon_sy),
-    )
+    if include_network_icon:
+        draw_model_icon(ax, bottom_icon_x, bottom_icon_y, sx=bottom_icon_sx, sy=bottom_icon_sy)
+        add_flow_arrow(
+            ax,
+            (bottom_icon_x + bottom_icon_w + 0.008, bottom_icon_y + 0.077 * bottom_icon_sy),
+            (bottom_map_x - 0.008, bottom_icon_y + 0.077 * bottom_icon_sy),
+        )
     draw_response_placeholder(
         ax,
-        map_x,
-        bottom_movie_y,
-        map_w,
-        map_h,
+        bottom_map_x,
+        bottom_map_y,
+        bottom_map_w,
+        bottom_map_h,
         "stabilized response\nmap",
         real_map=real_maps.get("stable"),
         map_vlim=real_map_vlim,
+        ssi_bits_per_spike=real_map_ssi.get("stable"),
     )
+
+    return {
+        "fem": {"x": top_icon_x, "y": top_icon_y, "w": top_icon_w, "h": top_icon_h, "sx": top_icon_sx, "sy": top_icon_sy},
+        "stable": {
+            "x": bottom_icon_x,
+            "y": bottom_icon_y,
+            "w": bottom_icon_w,
+            "h": bottom_icon_h,
+            "sx": bottom_icon_sx,
+            "sy": bottom_icon_sy,
+        },
+    }
+
+
+def panel_d_default_layout_boxes(
+    ax: plt.Axes, schematic_payload: dict | None = None
+) -> dict[str, tuple[float, float, float, float]]:
+    """Default Panel D block-layout geometry, as named boxes ``(x, y, w, h)``
+    in this panel's own 0..1 axes-fraction coordinates -- the single source
+    of truth draw_panel_a falls back to when no ``layout_overrides`` is
+    given, and what panels/panel_d_layout_boxes.py exports/imports as an
+    editable SVG template (same pattern as Panel A's
+    panel_a_default_layout_boxes()/panel_a_layout_boxes.py).
+
+    full_stimulus/crop's widths are derived from their heights via
+    data_width_for_physical_aspect (so the real image isn't stretched),
+    which needs ``ax`` already positioned/limited as draw_panel_a leaves it
+    -- this is why, unlike Panel A's boxes, this function takes ``ax``
+    rather than being computable in isolation.
+    """
+    full_x, full_y, full_h = 0.012, 0.545, 0.420
+    full_w = data_width_for_physical_aspect(ax, full_h, stimulus_canvas_aspect(schematic_payload))
+    crop_y, crop_h = 0.500, 0.385
+    crop_w = data_width_for_physical_aspect(ax, crop_h, 1.0)
+    # Small overlap with the full-stimulus image, cascaded-photos style.
+    crop_x = full_x + full_w - 0.075
+    return {
+        "full_stimulus": (full_x, full_y, full_w, full_h),
+        "crop": (crop_x, crop_y, crop_w, crop_h),
+        "gallery": (0.060, 0.075, 0.540, 0.200),
+    }
+
+
+def draw_spread_example(
+    example_ax: plt.Axes,
+    *,
+    broad_across: bool,
+    color: str = EYE_TRAJECTORY_COLOR,
+) -> None:
+    hide_axis_completely(example_ax)
+    example_ax.set_xlim(-1.0, 1.0)
+    example_ax.set_ylim(-0.72, 0.72)
+    example_ax.plot([-0.88, 0.88], [0.0, 0.0], color=GRAY, lw=0.9, ls=(0, (4, 3)), alpha=0.75, zorder=1)
+    t = np.linspace(0.0, 1.0, 120)
+    x = -0.80 + 1.60 * t
+    if broad_across:
+        y = 0.33 * np.sin(2.0 * np.pi * t - 0.45) + 0.16 * np.sin(5.0 * np.pi * t + 0.25)
+    else:
+        y = 0.055 * np.sin(4.0 * np.pi * t + 0.20) + 0.025 * np.sin(11.0 * np.pi * t)
+    example_ax.plot(x, y, color=color, lw=1.45, zorder=3)
+    example_ax.scatter([x[0]], [y[0]], s=15, facecolor="white", edgecolor=INK, linewidth=0.65, zorder=4)
+    example_ax.annotate(
+        "",
+        xy=(x[-1], y[-1]),
+        xytext=(x[-7], y[-7]),
+        arrowprops=dict(arrowstyle="-|>", color=color, lw=1.2, mutation_scale=8),
+        zorder=5,
+    )
+
+
+def draw_d_trajectory_spread_explainer(
+    ax: plt.Axes,
+    *,
+    x0: float,
+    y0: float,
+    w: float,
+    h: float,
+) -> None:
+    """Lower Panel-D key: the geometry G used to explain before the H plot."""
+    legend_w = min(0.20, w * 0.28)
+    legend_x = x0
+    legend_y_top = y0 + h * 0.78
+    sample_x = legend_x + 0.008
+    text_x = legend_x + 0.075
+
+    ax.plot([sample_x, sample_x + 0.055], [legend_y_top, legend_y_top], color=GRAY, lw=1.0, ls=(0, (4, 3)))
+    ax.text(text_x, legend_y_top, "image axis", fontsize=6.0, color=INK, ha="left", va="center")
+
+    y_unit = legend_y_top - h * 0.25
+    ax.plot([sample_x, sample_x + 0.055], [y_unit, y_unit], color=UNIT_TUNING_COLOR, lw=1.45)
+    ax.scatter([sample_x + 0.028], [y_unit], s=18, facecolor="white", edgecolor=UNIT_TUNING_COLOR, linewidth=1.0, zorder=4)
+    ax.text(text_x, y_unit + 0.012, "unit tuning", fontsize=6.0, color=INK, ha="left", va="center")
+    ax.text(text_x, y_unit - 0.035, "pref. orientation", fontsize=5.1, color=GRAY, ha="left", va="center")
+
+    y_eye = legend_y_top - h * 0.55
+    eye_x = np.array([sample_x, sample_x + 0.018, sample_x + 0.035, sample_x + 0.055])
+    eye_y = np.array([y_eye, y_eye + 0.018, y_eye - 0.006, y_eye + 0.010])
+    ax.plot(eye_x, eye_y, color=EYE_TRAJECTORY_COLOR, lw=1.45)
+    ax.scatter([eye_x[0]], [eye_y[0]], s=18, facecolor=EYE_TRAJECTORY_COLOR, edgecolor=EYE_TRAJECTORY_COLOR, zorder=4)
+    ax.annotate(
+        "",
+        xy=(eye_x[-1], eye_y[-1]),
+        xytext=(eye_x[-2], eye_y[-2]),
+        arrowprops=dict(arrowstyle="-|>", color=EYE_TRAJECTORY_COLOR, lw=1.0, mutation_scale=8),
+    )
+    ax.text(text_x, y_eye, "eye trajectory", fontsize=6.0, color=INK, ha="left", va="center")
+
+    box_x = x0 + legend_w + 0.030
+    box_y = y0 + h * 0.03
+    box_w = max(0.10, x0 + w - box_x)
+    box_h = h * 0.92
+    ax.add_patch(
+        patches.FancyBboxPatch(
+            (box_x, box_y),
+            box_w,
+            box_h,
+            boxstyle="round,pad=0.010,rounding_size=0.014",
+            facecolor="none",
+            edgecolor=GRAY,
+            linewidth=0.75,
+            linestyle=(0, (3, 2)),
+            alpha=0.85,
+            zorder=0,
+        )
+    )
+    ax.text(
+        box_x + box_w / 2,
+        box_y + box_h * 0.88,
+        "same path length,\ndifferent spread",
+        fontsize=5.8,
+        color=INK,
+        ha="center",
+        va="center",
+        linespacing=0.95,
+    )
+    col_w = box_w * 0.41
+    left_x = box_x + box_w * 0.08
+    right_x = box_x + box_w * 0.52
+    label_y = box_y + box_h * 0.70
+    for label_x, heading, subheading in [
+        (left_x + col_w / 2, "mostly\nalong", "low across spread"),
+        (right_x + col_w / 2, "broad\nacross", "high across spread"),
+    ]:
+        ax.text(
+            label_x,
+            label_y,
+            heading,
+            fontsize=5.7,
+            color=EYE_TRAJECTORY_COLOR,
+            fontweight="bold",
+            ha="center",
+            va="center",
+            linespacing=0.90,
+        )
+        ax.text(label_x, label_y - box_h * 0.15, subheading, fontsize=5.0, color=INK, ha="center", va="center")
+
+    ex_y = box_y + box_h * 0.21
+    ex_h = box_h * 0.31
+    left_ax = ax.inset_axes([left_x, ex_y, col_w, ex_h], transform=ax.transData)
+    draw_spread_example(left_ax, broad_across=False)
+    right_ax = ax.inset_axes([right_x, ex_y, col_w, ex_h], transform=ax.transData)
+    draw_spread_example(right_ax, broad_across=True)
+    ax.text(left_x + col_w / 2, box_y + box_h * 0.10, "path length = x", fontsize=5.1, color=INK, ha="center")
+    ax.text(right_x + col_w / 2, box_y + box_h * 0.10, "path length = x", fontsize=5.1, color=INK, ha="center")
 
 
 def draw_panel_a(
@@ -1389,24 +2063,34 @@ def draw_panel_a(
     draw_ef_insets: bool = True,
     panel_b_values: pd.DataFrame | None = None,
     ef_ylim: tuple[float, float] = (-32, 24),
-    header_title: str = "Contour-relative stimulus",
+    header_label: str = "D",
+    header_title: str = "Local contours define\nthe relevant image axis",
+    header_y: float = 1.050,
+    header_title_y_offset: float = 0.0,
     xlim: tuple[float, float] = (0.0, 1.0),
-) -> None:
-    ax.set_axis_off()
+    layout_overrides: dict[str, tuple[float, float, float, float]] | None = None,
+) -> dict[str, tuple[float, float, float, float]]:
+    hide_axis_completely(ax)
     ax.set_xlim(*xlim)
     ax.set_ylim(0, 1)
-    draw_panel_header(ax, "D", header_title, y=1.020)
+    draw_panel_header(ax, header_label, header_title, y=header_y, title_y_offset=header_title_y_offset)
 
-    full_x, full_y, full_h = 0.012, 0.545, 0.420
-    full_w = data_width_for_physical_aspect(ax, full_h, stimulus_canvas_aspect(schematic_payload))
-    crop_y, crop_h = 0.500, 0.385
-    crop_w = data_width_for_physical_aspect(ax, crop_h, 1.0)
-    # Small overlap with the full-stimulus image, cascaded-photos style. This
-    # used to also have to dodge a third "zoom" image pinned further right
-    # (by EF_INSET_X); that zoom moved to panel G (see
-    # draw_contour_components_panel), so the dodge is gone.
-    crop_x = full_x + full_w - 0.075
+    boxes = {**panel_d_default_layout_boxes(ax, schematic_payload), **(layout_overrides or {})}
+    full_x, full_y, full_w, full_h = boxes["full_stimulus"]
+    crop_x, crop_y, crop_w, crop_h = boxes["crop"]
     window_metadata = contour_window_metadata(schematic_payload)
+    axis_image_deg = _finite_float((schematic_payload or {}).get("contour_axis_image_deg"), 10.352312)
+    motion_eye: dict | None = None
+    if ssi_schematic is not None and schematic_payload is not None:
+        try:
+            synthetic_left = ssi_schematic.make_synthetic_left_side(
+                schematic_payload.get("patch"),
+                schematic_payload.get("contour_axis_image_deg", 10.352312),
+            )
+            motion_eye = restore_trace_orientation(synthetic_left.get("eye"))
+            window_metadata = trace_fit_center_zoom_metadata(window_metadata, motion_eye)
+        except Exception:
+            motion_eye = None
     has_real_schematic = False
     if ssi_schematic is not None and schematic_payload is not None:
         try:
@@ -1422,13 +2106,12 @@ def draw_panel_a(
             full_ax.set_zorder(2)
             crop_ax = ax.inset_axes([crop_x, crop_y, crop_w, crop_h], transform=ax.transData)
             crop_ax.set_zorder(4)
-            # No trace overlay and no center-zoom marker box here -- both the
-            # real FEM traces and the zoomed detail they'd point to now live
-            # in panel G, where there's room to actually see them (see
-            # draw_contour_components_panel). D just shows the crop itself
-            # plus the local-contour aperture (still relevant here since the
-            # coherence gallery below draws on the same aperture concept).
-            draw_plain_crop(crop_ax, schematic_payload.get("patch"))
+            draw_plain_crop(
+                crop_ax,
+                schematic_payload.get("patch"),
+                trace_xy_px=motion_eye.get("large_xy_px") if isinstance(motion_eye, dict) else None,
+                trace_color=EYE_TRAJECTORY_COLOR,
+            )
             crop_ax.set_anchor("NW")
             crop_box_edge = getattr(ssi_schematic, "FIG3_CYAN", CYAN)
             crop_x1, crop_y1 = crop_ax.get_xlim()[1], crop_ax.get_ylim()[0]
@@ -1444,6 +2127,35 @@ def draw_panel_a(
                 )
             )
             add_contour_window_to_crop_axis(crop_ax, window_metadata)
+            add_center_zoom_box_to_crop_axis(crop_ax, window_metadata)
+            add_roi_to_crop_connectors(
+                ax,
+                full_ax,
+                crop_ax,
+                schematic_payload["stimulus_crop_center_xy"],
+                schematic_payload["stimulus_crop_size_px"],
+                color=crop_box_edge,
+            )
+
+            zoom_w = crop_w * D_ZOOM_OVERLAY_SCALE
+            zoom_h = crop_h * D_ZOOM_OVERLAY_SCALE
+            zoom_x = crop_x + crop_w * 0.68
+            zoom_y = crop_y - crop_h * 0.060
+            zoom_ax = ax.inset_axes([zoom_x, zoom_y, zoom_w, zoom_h], transform=ax.transData)
+            zoom_ax.set_zorder(8)
+            add_zoomed_crop_view(
+                zoom_ax,
+                schematic_payload,
+                motion_eye,
+                window_metadata,
+                trace_color=EYE_TRAJECTORY_COLOR,
+                border_color=ZOOM_BOX,
+                border_lw=D_ZOOM_CROP_BORDER_LW,
+            )
+            add_center_zoom_to_zoom_connectors(ax, crop_ax, zoom_ax, window_metadata, color=ZOOM_BOX)
+            add_contour_axis_line_to_crop_axis(zoom_ax, window_metadata, zoomed=True)
+            add_trajectory_span_arrows_to_crop_axis(zoom_ax, window_metadata, motion_eye)
+            zoom_ax.set_anchor("NW")
             has_real_schematic = True
         except Exception:
             has_real_schematic = False
@@ -1464,18 +2176,31 @@ def draw_panel_a(
             )
         add_contour_window_parent_overlay(ax, crop_x, crop_y, crop_w, crop_h, window_metadata)
     else:
-        ax.plot([full_x + full_w, crop_x], [full_y + full_h * 0.74, crop_y + crop_h], color=CYAN, lw=D_CONNECTOR_LW, ls=(0, (3, 3)), alpha=0.58)
-        ax.plot([full_x + full_w, crop_x], [full_y + full_h * 0.26, crop_y], color=CYAN, lw=D_CONNECTOR_LW, ls=(0, (3, 3)), alpha=0.58)
-        ax.text(full_x + full_w / 2, full_y - 0.022, "full stimulus", fontsize=D_IMAGE_LABEL_FS, color=GRAY, ha="center", va="top")
-        ax.text(crop_x + 0.34 * crop_w, crop_y - 0.022, "151 x 151 crop", fontsize=D_IMAGE_LABEL_FS, color=GRAY, ha="center", va="top")
+        add_upper_left_image_label(full_ax, "full stimulus")
+        add_lower_left_image_label(crop_ax, "gaze-centered\npatch")
 
-    # D's lower-left used to show the FEM short/long-path trace legend; the
-    # real traces now live in G, at a scale where they're actually legible.
-    # This space instead demonstrates what different local edge coherence
-    # values look like as real image crops -- see
-    # panels/panel_d_coherence_gallery.py and
-    # panels/build_coherence_gallery_cache.py.
-    gallery_kwargs = dict(x0=0.060, y0=0.075, w=0.540, h=0.200, gap=0.028, header_y=0.300)
+    # D's lower block reinforces the local-image-content axis; trajectory
+    # spread is only split quantitatively in G.
+    gallery_x, gallery_y, gallery_w, gallery_h = boxes["gallery"]
+    ax.text(
+        gallery_x,
+        gallery_y + gallery_h + 0.082,
+        "Per fixation: local contour axis\nand strength (coherence) vary",
+        fontsize=7.8,
+        color=INK,
+        ha="left",
+        va="top",
+        linespacing=1.06,
+    )
+    gallery_kwargs = dict(
+        x0=gallery_x,
+        y0=gallery_y,
+        w=gallery_w,
+        h=gallery_h,
+        gap=0.028,
+        header_y=gallery_y + gallery_h + 0.030,
+        header_text=None,
+    )
     drew_gallery = False
     if panel_d_coherence_gallery is not None:
         try:
@@ -1486,10 +2211,10 @@ def draw_panel_a(
         if panel_d_coherence_gallery is not None:
             panel_d_coherence_gallery.draw_gallery_placeholder(ax, **gallery_kwargs)
         else:
-            ax.text(0.060, 0.300, "local edge coherence", fontsize=D_SUBHEAD_FS, color=GRAY, ha="left")
+            ax.text(gallery_x, gallery_y + 0.225, "local edge coherence", fontsize=D_SUBHEAD_FS, color=GRAY, ha="left")
 
     if not draw_ef_insets:
-        return
+        return boxes
 
     # E/F: same path-length dose curves as always, now living inside D's
     # axes (where the unfinished "Contour-carried signal" placeholder used
@@ -1518,6 +2243,7 @@ def draw_panel_a(
         ylabel="SSI change (%)",
         ylim=ef_ylim,
     )
+    return boxes
 
 
 def draw_rms_excursion_explainer(
@@ -1538,7 +2264,7 @@ def draw_rms_excursion_explainer(
     if not isinstance(motion_eye, dict) or "large_xy_px" not in motion_eye:
         return False
     diagram_ax = ax.inset_axes([x0, y0, w, h], transform=ax.transData)
-    diagram_ax.set_axis_off()
+    hide_axis_completely(diagram_ax)
 
     dx, dy = _axis_vector_image(axis_image_deg)
     norm = math.hypot(dx, dy)
@@ -1564,7 +2290,7 @@ def draw_rms_excursion_explainer(
     # This is a schematic, not a ruler, so a stretched trace is an
     # acceptable trade for both brackets rendering at a legible size.
     diagram_ax.axhline(0.0, color=CYAN, lw=1.3, ls=(0, (4, 3)), alpha=0.85, zorder=2)
-    diagram_ax.plot(along_arcmin, across_arcmin, color=BLUE, lw=1.3, zorder=3)
+    diagram_ax.plot(along_arcmin, across_arcmin, color=EYE_TRAJECTORY_COLOR, lw=1.3, zorder=3)
     diagram_ax.scatter([0], [0], s=14, facecolor="white", edgecolor=INK, linewidth=0.6, zorder=4)
 
     bracket_y = -half_span * 1.08
@@ -1598,13 +2324,35 @@ def draw_rms_excursion_explainer(
     return True
 
 
+def panel_g_default_layout_boxes(
+    ax: plt.Axes, schematic_payload: dict | None = None
+) -> dict[str, tuple[float, float, float, float]]:
+    """Default Panel G block-layout geometry, as named boxes ``(x, y, w, h)``
+    -- the panel_d_default_layout_boxes() counterpart for G. crop/zoom's
+    widths derive from height via data_width_for_physical_aspect, hence the
+    ``ax`` argument (see that function's own docstring).
+    """
+    crop_x, crop_y, crop_h = 0.060, 0.560, 0.320
+    crop_w = data_width_for_physical_aspect(ax, crop_h, 1.0)
+    zoom_h = 0.857 * crop_h  # matches D's original zoom_h / crop_h ratio (0.330 / 0.385)
+    zoom_w = data_width_for_physical_aspect(ax, zoom_h, 1.0)
+    zoom_x = crop_x + crop_w * (1.0 - 0.262)  # matches D's original (crop_w - 0.055) / crop_w overlap fraction
+    zoom_y = crop_y - 0.117 * crop_h  # matches D's original (crop_y - zoom_y) / crop_h offset fraction
+    return {
+        "crop": (crop_x, crop_y, crop_w, crop_h),
+        "zoom": (zoom_x, zoom_y, zoom_w, zoom_h),
+        "rms_explainer": (0.14, 0.145, 0.72, 0.180),
+    }
+
+
 def draw_contour_components_panel(
     ax: plt.Axes,
     *,
     label: str = "G",
-    title: str = "Local contour detail",
+    title: str = "Effects of FEMs depend\non both content and tuning",
     schematic_payload: dict | None = None,
-) -> None:
+    layout_overrides: dict[str, tuple[float, float, float, float]] | None = None,
+) -> dict[str, tuple[float, float, float, float]]:
     """Reference crop plus the zoomed local-contour aperture, moved from D.
 
     D's cascade used to be full stimulus -> 151x151 crop -> zoomed detail,
@@ -1616,17 +2364,14 @@ def draw_contour_components_panel(
     of the crop's own size, since this axes has a different physical aspect
     than D's (tall and narrow here vs. D's short and wide).
     """
-    ax.set_axis_off()
+    hide_axis_completely(ax)
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 1.0)
-    set_panel_title(ax, label, title, fontsize=9.0, pad=4)
+    set_panel_title(ax, label, title, fontsize=7.0, pad=2, linespacing=1.05)
 
-    crop_x, crop_y, crop_h = 0.060, 0.560, 0.320
-    crop_w = data_width_for_physical_aspect(ax, crop_h, 1.0)
-    zoom_h = 0.857 * crop_h  # matches D's original zoom_h / crop_h ratio (0.330 / 0.385)
-    zoom_w = data_width_for_physical_aspect(ax, zoom_h, 1.0)
-    zoom_x = crop_x + crop_w * (1.0 - 0.262)  # matches D's original (crop_w - 0.055) / crop_w overlap fraction
-    zoom_y = crop_y - 0.117 * crop_h  # matches D's original (crop_y - zoom_y) / crop_h offset fraction
+    boxes = {**panel_g_default_layout_boxes(ax, schematic_payload), **(layout_overrides or {})}
+    crop_x, crop_y, crop_w, crop_h = boxes["crop"]
+    zoom_x, zoom_y, zoom_w, zoom_h = boxes["zoom"]
 
     window_metadata = contour_window_metadata(schematic_payload)
     axis_image_deg = _finite_float((schematic_payload or {}).get("contour_axis_image_deg"), 10.352312)
@@ -1651,7 +2396,7 @@ def draw_contour_components_panel(
                 trace_color=TRACE_COLOR,
             )
             crop_ax.set_anchor("NW")
-            crop_box_edge = ZOOM_BOX
+            crop_box_edge = getattr(ssi_schematic, "FIG3_CYAN", CYAN)
             crop_x1, crop_y1 = crop_ax.get_xlim()[1], crop_ax.get_ylim()[0]
             crop_ax.add_patch(
                 patches.Rectangle(
@@ -1710,8 +2455,9 @@ def draw_contour_components_panel(
     # components H's dose curve reports as separate lines, so a reader sees
     # what "across" and "along" mean geometrically before H uses them.
     ax.text(0.02, 0.335, "RMS excursion, by direction", fontsize=7.0, color=GRAY, ha="left")
+    rms_x, rms_y, rms_w, rms_h = boxes["rms_explainer"]
     drew_explainer = draw_rms_excursion_explainer(
-        ax, x0=0.14, y0=0.145, w=0.72, h=0.180, motion_eye=motion_eye, axis_image_deg=axis_image_deg
+        ax, x0=rms_x, y0=rms_y, w=rms_w, h=rms_h, motion_eye=motion_eye, axis_image_deg=axis_image_deg
     )
     if not drew_explainer:
         ax.text(
@@ -1724,6 +2470,7 @@ def draw_contour_components_panel(
             fontsize=6.0,
             color=GRAY,
         )
+    return boxes
 
 
 def format_placeholder_plot(
@@ -2055,20 +2802,6 @@ def draw_overall_title(fig: plt.Figure, *, has_existing_panels: bool) -> None:
         va="top",
         fontsize=13.5,
         fontweight="bold",
-    )
-    subtitle = (
-        "Draft composition; B/C/E/F/H/I/J and schematic image/map assets reuse existing BackImage/Figure 4 data"
-        if has_existing_panels
-        else "Draft composition scaffold; quantitative/result panels are placeholders"
-    )
-    fig.text(
-        0.50,
-        0.967,
-        subtitle,
-        ha="center",
-        va="top",
-        fontsize=8.5,
-        color=GRAY,
     )
 
 

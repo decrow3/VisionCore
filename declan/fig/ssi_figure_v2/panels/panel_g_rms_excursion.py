@@ -50,11 +50,20 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from declan.fig.ssi_figure_v2.panels import panel_g_option_sheet as options
+try:  # noqa: E402
+    from panels import panel_header
+except ModuleNotFoundError:  # pragma: no cover - package import path.
+    from declan.fig.ssi_figure_v2.panels import panel_header
 
 OUT_DIR = ROOT / "outputs" / "fig" / "ssi_figure_v2" / "panels"
 METRIC_FAMILY = "component_rms"
 EXCLUDE_LAST_BINS = 1
 AXIS_OVERRIDE = {"min_pos": 0.9, "max_pos": 3.3, "ticks": [0, 1, 2, 3], "zero_gap": 0.5}
+YLIM_PAD_LOW = 0.08
+YLIM_PAD_HIGH = 0.20
+FINAL_BRACKET_X_OFFSET = 0.32
+DEFAULT_PANEL_LABEL = "H"
+DEFAULT_PANEL_TITLE = "High-SF aligned units' information\ndepends on trajectory shape"
 # The real ssi_figure_v2 gs[2, 0] cell (MAIN_GRID_KWARGS at FIGURE_SIZE_IN =
 # (8.5, 11.0)), not the earlier 2.45in x 2.35in standalone-preview approximation.
 FIGSIZE = (2.563, 2.432)
@@ -94,11 +103,16 @@ def _panel_ylim(values: pd.DataFrame) -> tuple[float, float]:
         vals.extend(arr[np.isfinite(arr)].tolist())
     lo, hi = min(vals), max(vals)
     span = max(hi - lo, 1.0)
-    # Same pad convention as the original path-based Panel G.
-    return (lo - 0.16 * span, hi + 0.36 * span)
+    return (lo - YLIM_PAD_LOW * span, hi + YLIM_PAD_HIGH * span)
 
 
-def draw_panel(ax: plt.Axes, **_kwargs: object) -> None:
+def draw_panel(
+    ax: plt.Axes,
+    *,
+    panel_label: str = DEFAULT_PANEL_LABEL,
+    panel_title: str = DEFAULT_PANEL_TITLE,
+    **_kwargs: object,
+) -> None:
     """Draw Panel G (RMS excursion) onto an existing axes.
 
     Accepts and ignores extra keyword arguments so it is a drop-in
@@ -117,22 +131,23 @@ def draw_panel(ax: plt.Axes, **_kwargs: object) -> None:
         ylim=ylim,
         exclude_last_bins=EXCLUDE_LAST_BINS,
         axis_override=AXIS_OVERRIDE,
+        final_bracket_x_offset=FINAL_BRACKET_X_OFFSET,
     )
-    ax.set_title(
-        "H  High-SF aligned units' information\ndepends on trajectory shape",
-        loc="left",
-        fontsize=7.8,
-        fontweight="bold",
-        pad=5,
+    panel_header.draw_middle_row_header(
+        ax,
+        panel_label,
+        panel_title,
+        title_linespacing=panel_header.MIDDLE_ROW_TITLE_LINESPACING,
         color=options.INK,
-        linespacing=1.25,
     )
-    ax.set_ylabel("SSI change (%)")
+    ax.set_ylabel("SSI change (%)", labelpad=2.0)
+    panel_header.align_middle_row_ylabel(ax)
     if dropped_note is not None:
         ax.set_xlabel(f"{ax.get_xlabel()}\n{dropped_note}")
     ax.tick_params(labelsize=6.8)
     ax.xaxis.label.set_size(6.9)
     ax.yaxis.label.set_size(7.0)
+    panel_header.align_middle_row_xlabel(ax)
 
     handles, labels = ax.get_legend_handles_labels()
     if handles:
@@ -151,7 +166,7 @@ def draw_panel(ax: plt.Axes, **_kwargs: object) -> None:
 
 def load_provenance() -> dict:
     return {
-        "panels": ["H"],
+        "panels": [DEFAULT_PANEL_LABEL],
         "metric_family": METRIC_FAMILY,
         "population_key": options.POPULATION_KEY,
         "source_script": _relative(Path(__file__)),
@@ -162,6 +177,9 @@ def load_provenance() -> dict:
         "source_random_rotation_match_null_csv": _relative(options.MATCH_NULL_SUMMARY_CSV),
         "exclude_last_bins": EXCLUDE_LAST_BINS,
         "axis_override": AXIS_OVERRIDE,
+        "ylim_pad_low": YLIM_PAD_LOW,
+        "ylim_pad_high": YLIM_PAD_HIGH,
+        "final_bracket_x_offset": FINAL_BRACKET_X_OFFSET,
         "rationale": (
             "Switched from unsigned component path to RMS excursion because the random-rotation "
             "null (behavior_model_bridge_random_rotation_match_null_summary.csv) found no "
@@ -172,23 +190,32 @@ def load_provenance() -> dict:
     }
 
 
-def build_panel(out_dir: Path = OUT_DIR) -> dict[str, Path]:
+def build_panel(
+    out_dir: Path = OUT_DIR,
+    *,
+    figsize: tuple[float, float] = FIGSIZE,
+    panel_label: str = DEFAULT_PANEL_LABEL,
+    panel_title: str = DEFAULT_PANEL_TITLE,
+) -> dict[str, Path]:
     configure_matplotlib()
     out_dir.mkdir(parents=True, exist_ok=True)
-    fig, ax = plt.subplots(figsize=FIGSIZE, constrained_layout=False)
-    draw_panel(ax)
-    fig.tight_layout(pad=0.55)
+    fig = plt.figure(figsize=figsize, constrained_layout=False)
+    ax = panel_header.add_middle_row_axes(fig)
+    draw_panel(ax, panel_label=panel_label, panel_title=panel_title)
     paths = {
         "png": out_dir / "panel_g_rms_excursion.png",
         "pdf": out_dir / "panel_g_rms_excursion.pdf",
         "svg": out_dir / "panel_g_rms_excursion.svg",
     }
-    fig.savefig(paths["png"], dpi=220)
-    fig.savefig(paths["pdf"], dpi=300)
-    fig.savefig(paths["svg"], dpi=300)
+    fig.savefig(paths["png"], dpi=220, transparent=True)
+    fig.savefig(paths["pdf"], transparent=True)
+    fig.savefig(paths["svg"], transparent=True)
     plt.close(fig)
+    provenance = load_provenance()
+    provenance["displayed_panel_label"] = panel_label
+    provenance["displayed_panel_title"] = panel_title
     (out_dir / "panel_g_rms_excursion_provenance.json").write_text(
-        json.dumps(load_provenance(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     return paths
 

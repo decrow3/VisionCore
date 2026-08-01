@@ -42,6 +42,7 @@ from declan.active_sensing_movie_information.plot_backimage_real_trace_unit_firs
     axis_delta_deg,
     baseline_rows_by_image,
     load_dataset,
+    ratio_delta_stats,
 )
 
 
@@ -57,6 +58,16 @@ N_DRIFT_BINS = 8
 N_MICROSACCADE_BINS = 5
 N_COMPONENT_BINS = 8
 EPS = 1e-12
+
+# Image-level paired bootstrap of the moving-vs-cell-baseline ratio delta,
+# same convention as make_backimage_panel_c_sf05_cell_baseline_errorbars.py:
+# each bin's point estimate is a spike-weighted ratio pooled over every
+# (unit, image, trajectory-row) triple, so units aren't independent replicates
+# to resample -- images are the exchangeable, randomly-drawn design axis, and
+# per-image sums already fold in whatever units/trajectory-draws landed on
+# each image within the bin.
+N_BOOTSTRAP = 10_000
+BOOTSTRAP_SEED = 47
 
 B_MIN_POS = 88.0
 B_MAX_POS = 180.0
@@ -214,6 +225,8 @@ def _cell_residual_values(
     baseline_lookup: dict[int, int],
     unit_to_images: dict[int, np.ndarray],
     n_images: int,
+    rng: np.random.Generator,
+    n_bootstrap: int = N_BOOTSTRAP,
 ) -> dict[str, Any]:
     moving_pop = accumulate_population_movie_rows(
         ssi=data["ssi"],
@@ -234,15 +247,40 @@ def _cell_residual_values(
     )
     moving = _population_values(moving_pop)
     cell = _population_values(cell_pop)
+    ssi_percent = _pct_delta(
+        moving["population_ssi_bits_per_spike"],
+        cell["population_ssi_bits_per_spike"],
+    )
+    delta_stats = ratio_delta_stats(
+        moving_pop["per_image_num"],
+        moving_pop["per_image_den"],
+        cell_pop["per_image_num"],
+        cell_pop["per_image_den"],
+        n_resamples=n_bootstrap,
+        rng=rng,
+    )
+    delta_low = float(delta_stats["population_delta_ci95_low_image_boot"])
+    delta_high = float(delta_stats["population_delta_ci95_high_image_boot"])
+    cell_ssi_bps = cell["population_ssi_bits_per_spike"]
+    percent_ci_low = (
+        100.0 * delta_low / cell_ssi_bps
+        if math.isfinite(delta_low) and math.isfinite(cell_ssi_bps) and abs(cell_ssi_bps) > EPS
+        else float("nan")
+    )
+    percent_ci_high = (
+        100.0 * delta_high / cell_ssi_bps
+        if math.isfinite(delta_high) and math.isfinite(cell_ssi_bps) and abs(cell_ssi_bps) > EPS
+        else float("nan")
+    )
     return {
         "n_movie_samples": int(moving_pop["n_movie_samples"]),
         "n_images_contributing": int(moving_pop["n_images_contributing"]),
         "moving_population_ssi_bits_per_spike": moving["population_ssi_bits_per_spike"],
         "cell_baseline_population_ssi_bits_per_spike": cell["population_ssi_bits_per_spike"],
-        "ssi_percent_vs_cell_baseline": _pct_delta(
-            moving["population_ssi_bits_per_spike"],
-            cell["population_ssi_bits_per_spike"],
-        ),
+        "ssi_percent_vs_cell_baseline": ssi_percent,
+        "ssi_percent_ci95_low_image_boot": percent_ci_low,
+        "ssi_percent_ci95_high_image_boot": percent_ci_high,
+        "ssi_delta_p_image_bootstrap_sign": float(delta_stats["population_delta_p_image_bootstrap_sign"]),
         "moving_information_bits_per_sample": moving["information_bits_per_sample"],
         "cell_baseline_information_bits_per_sample": cell["information_bits_per_sample"],
         "information_percent_vs_cell_baseline": _pct_delta(
@@ -281,6 +319,7 @@ def _compute_panel_b(data: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFrame]:
     row_path_bin = movie["path_bin"].astype(str).to_numpy()
     baseline_lookup = baseline_rows_by_image(data["image"], data["baseline_table"])
     n_images = int(data["stabilized_ssi"].shape[0])
+    rng = np.random.default_rng(BOOTSTRAP_SEED)
     rows: list[dict[str, Any]] = []
     selection_rows: list[dict[str, Any]] = []
     panel_keys = {(sf_group, relation) for sf_group, relation, _title in B_PANEL_SPECS}
@@ -307,6 +346,7 @@ def _compute_panel_b(data: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFrame]:
                 baseline_lookup=baseline_lookup,
                 unit_to_images=unit_to_images,
                 n_images=n_images,
+                rng=rng,
             )
             rows.append(
                 {
@@ -333,6 +373,7 @@ def _compute_component_panel(data: dict[str, Any]) -> tuple[pd.DataFrame, pd.Dat
     drift_mask = metrics["context"].astype(str).eq("drift_only").to_numpy(dtype=bool)
     baseline_lookup = baseline_rows_by_image(data["image"], data["baseline_table"])
     n_images = int(data["stabilized_ssi"].shape[0])
+    rng = np.random.default_rng(BOOTSTRAP_SEED)
     rows: list[dict[str, Any]] = []
     selection_rows: list[dict[str, Any]] = []
 
@@ -365,6 +406,7 @@ def _compute_component_panel(data: dict[str, Any]) -> tuple[pd.DataFrame, pd.Dat
                     baseline_lookup=baseline_lookup,
                     unit_to_images=unit_to_images,
                     n_images=n_images,
+                    rng=rng,
                 )
                 rows.append(
                     {
@@ -406,6 +448,23 @@ def _plot_b_series(ax: plt.Axes, frame: pd.DataFrame, *, color: str) -> None:
             continue
         x = _x_broken_log(sub["path_median_arcmin"], min_pos=B_MIN_POS, max_pos=B_MAX_POS)
         y = sub["ssi_percent_vs_cell_baseline"].to_numpy(dtype=float)
+        if "ssi_percent_ci95_low_image_boot" in sub.columns:
+            ci_low = pd.to_numeric(sub["ssi_percent_ci95_low_image_boot"], errors="coerce").to_numpy(dtype=float)
+            ci_high = pd.to_numeric(sub["ssi_percent_ci95_high_image_boot"], errors="coerce").to_numpy(dtype=float)
+            has_ci = np.isfinite(ci_low) & np.isfinite(ci_high) & np.isfinite(y)
+            if np.any(has_ci):
+                yerr_low = np.clip(y[has_ci] - ci_low[has_ci], 0.0, None)
+                yerr_high = np.clip(ci_high[has_ci] - y[has_ci], 0.0, None)
+                ax.errorbar(
+                    x[has_ci],
+                    y[has_ci],
+                    yerr=[yerr_low, yerr_high],
+                    color=color,
+                    linestyle="none",
+                    elinewidth=1.1,
+                    capsize=0,
+                    zorder=3,
+                )
         ax.plot(x, y, color=color, linewidth=1.75, zorder=2)
         ax.scatter(
             x,
@@ -462,6 +521,16 @@ def _panel_label(ax: plt.Axes, label: str) -> None:
     )
 
 
+def _ylim_series(frame: pd.DataFrame, col: str = "ssi_percent_vs_cell_baseline") -> list[pd.Series]:
+    """Point estimate plus bootstrap CI bounds (if present), so shared y-limits
+    aren't clipping the error bars this function's callers go on to draw."""
+    series = [frame[col]]
+    for ci_col in ("ssi_percent_ci95_low_image_boot", "ssi_percent_ci95_high_image_boot"):
+        if ci_col in frame.columns:
+            series.append(frame[ci_col])
+    return series
+
+
 def _shared_ylim(values: list[pd.Series], *, pad_low: float = 0.12, pad_high: float = 0.14) -> tuple[float, float]:
     arrs = [pd.to_numeric(series, errors="coerce").to_numpy(dtype=float) for series in values if not series.empty]
     vals = [0.0]
@@ -487,7 +556,7 @@ def _plot_figure(panel_b: pd.DataFrame, component: pd.DataFrame) -> plt.Figure:
     )
     sub_b = gs[0, 0].subgridspec(1, 4, wspace=0.18)
     axes_b = [fig.add_subplot(sub_b[0, idx]) for idx in range(4)]
-    b_ylim = _shared_ylim([panel_b["ssi_percent_vs_cell_baseline"]], pad_low=0.11, pad_high=0.14)
+    b_ylim = _shared_ylim(_ylim_series(panel_b), pad_low=0.11, pad_high=0.14)
     for idx, (sf_group, relation, title) in enumerate(B_PANEL_SPECS):
         ax = axes_b[idx]
         frame = panel_b[panel_b["sf_group"].eq(sf_group) & panel_b["relation"].eq(relation)].copy()
@@ -513,7 +582,7 @@ def _plot_figure(panel_b: pd.DataFrame, component: pd.DataFrame) -> plt.Figure:
 
     lower = gs[1, :].subgridspec(1, 3, wspace=0.25)
     axes_cde = [fig.add_subplot(lower[0, idx]) for idx in range(3)]
-    cde_ylim = _shared_ylim([component["ssi_percent_vs_cell_baseline"]], pad_low=0.13, pad_high=0.15)
+    cde_ylim = _shared_ylim(_ylim_series(component), pad_low=0.13, pad_high=0.15)
     for idx, (relation, title) in enumerate(LOWER_PANEL_SPECS):
         ax = axes_cde[idx]
         frame = component[component["relation"].eq(relation)].copy()

@@ -96,39 +96,72 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(_json_ready(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _flat_bootstrap_ci(
+    values: np.ndarray,
+    *,
+    rng: np.random.Generator,
+    n_bootstrap: int,
+) -> tuple[float, float, float]:
+    """Single-stage bootstrap treating every fixation window as an
+    independent, exchangeable observation, with no session clustering --
+    the CI is meant to convey uncertainty from the finite sample of
+    fixations/local image content, not from the finite sample of recording
+    sessions. Session effects are a separate question, checked elsewhere,
+    not something this error bar marginalizes over."""
+    vals = np.asarray(values, dtype=np.float64)
+    vals = vals[np.isfinite(vals)]
+    if vals.size == 0:
+        return float("nan"), float("nan"), float("nan")
+    point = float(np.mean(vals))
+    if vals.size <= 1 or n_bootstrap <= 0:
+        return point, float("nan"), float("nan")
+    draw = rng.integers(0, vals.size, size=(int(n_bootstrap), vals.size))
+    boot = vals[draw].mean(axis=1)
+    lo, hi = np.nanpercentile(boot, [2.5, 97.5])
+    return point, float(lo), float(hi)
+
+
+def _permutation_p(obs_global: float, null_by_draw: np.ndarray) -> tuple[float, float, int]:
+    """Two-sided and one-sided permutation p from a null distribution built
+    one value per null draw (one rotation angle, or one scramble partner),
+    pooled across sessions/windows for that draw. A separate diagnostic from
+    the plotted CI -- always session-pooled, needs the per-draw axis the
+    window-level nested bootstrap collapses away."""
+    null_vals = null_by_draw[np.isfinite(null_by_draw)]
+    if not (math.isfinite(obs_global) and null_vals.size):
+        return float("nan"), float("nan"), int(null_vals.size)
+    p_observed_greater = float((np.count_nonzero(null_vals >= obs_global) + 1) / (null_vals.size + 1))
+    null_center = float(np.mean(null_vals))
+    p_two_sided = float(
+        (np.count_nonzero(np.abs(null_vals - null_center) >= abs(obs_global - null_center)) + 1) / (null_vals.size + 1)
+    )
+    return p_observed_greater, p_two_sided, int(null_vals.size)
+
+
 def _prediction_summary(
     *,
-    obs_session: np.ndarray,
-    rot_session: np.ndarray,
+    obs_window: np.ndarray,
+    rot_window: np.ndarray,
+    window_session_idx: np.ndarray,
+    obs_session_for_p: np.ndarray,
+    rot_session_for_p: np.ndarray,
     rng: np.random.Generator,
     n_bootstrap: int,
 ) -> dict[str, float | int]:
-    obs_s = np.asarray(obs_session, dtype=float)
-    rot_sr = np.asarray(rot_session, dtype=float)
-    rot_mean_s = rotation_null._nanmean(rot_sr, axis=1)
-    paired = np.isfinite(obs_s) & np.isfinite(rot_mean_s)
+    obs_w = np.asarray(obs_window, dtype=float)
+    rot_w = np.asarray(rot_window, dtype=float)
+    paired = np.isfinite(obs_w) & np.isfinite(rot_w)
 
-    obs_mean, obs_lo, obs_hi = rotation_null._bootstrap_ci(obs_s, rng=rng, n_bootstrap=n_bootstrap)
-    rot_mean, rot_lo, rot_hi = rotation_null._bootstrap_ci(rot_mean_s, rng=rng, n_bootstrap=n_bootstrap)
-    diff_mean, diff_lo, diff_hi = rotation_null._bootstrap_ci(
-        obs_s[paired] - rot_mean_s[paired],
-        rng=rng,
-        n_bootstrap=n_bootstrap,
-    )
+    obs_mean, obs_lo, obs_hi = _flat_bootstrap_ci(obs_w, rng=rng, n_bootstrap=n_bootstrap)
+    rot_mean, rot_lo, rot_hi = _flat_bootstrap_ci(rot_w, rng=rng, n_bootstrap=n_bootstrap)
+    diff_window = np.where(paired, obs_w - rot_w, np.nan)
+    diff_mean, diff_lo, diff_hi = _flat_bootstrap_ci(diff_window, rng=rng, n_bootstrap=n_bootstrap)
 
+    obs_s = np.asarray(obs_session_for_p, dtype=float)
+    rot_sr = np.asarray(rot_session_for_p, dtype=float)
     obs_global = float(np.nanmean(obs_s)) if np.isfinite(obs_s).any() else float("nan")
     rot_global_by_rotation = rotation_null._nanmean(rot_sr, axis=0)
-    rot_global_by_rotation = rot_global_by_rotation[np.isfinite(rot_global_by_rotation)]
-    if np.isfinite(obs_global) and rot_global_by_rotation.size:
-        p_observed_greater = float((np.count_nonzero(rot_global_by_rotation >= obs_global) + 1) / (rot_global_by_rotation.size + 1))
-        null_center = float(np.mean(rot_global_by_rotation))
-        p_two_sided = float(
-            (np.count_nonzero(np.abs(rot_global_by_rotation - null_center) >= abs(obs_global - null_center)) + 1)
-            / (rot_global_by_rotation.size + 1)
-        )
-    else:
-        p_observed_greater = float("nan")
-        p_two_sided = float("nan")
+    p_observed_greater, p_two_sided, n_rotation_valid = _permutation_p(obs_global, rot_global_by_rotation)
 
     return {
         "observed_prediction": obs_mean,
@@ -142,8 +175,50 @@ def _prediction_summary(
         "observed_minus_rotated_ci95_high": diff_hi,
         "p_rotation_observed_greater": p_observed_greater,
         "p_rotation_two_sided": p_two_sided,
-        "n_sessions_paired": int(np.count_nonzero(paired)),
-        "n_rotation_replicates_valid": int(rot_global_by_rotation.size),
+        "n_windows_paired": int(np.count_nonzero(paired)),
+        "n_sessions_contributing": int(np.unique(window_session_idx[paired]).size) if np.any(paired) else 0,
+        "n_rotation_replicates_valid": n_rotation_valid,
+    }
+
+
+def _scramble_summary(
+    *,
+    obs_window: np.ndarray,
+    scr_window: np.ndarray,
+    window_session_idx: np.ndarray,
+    obs_session_for_p: np.ndarray,
+    scr_session_for_p: np.ndarray,
+    rng: np.random.Generator,
+    n_bootstrap: int,
+) -> dict[str, float | int]:
+    """Same structure as _prediction_summary, but against the trajectory-image
+    scramble null instead of the axis-rotation null -- observed_prediction
+    isn't repeated here since it's identical to _prediction_summary's (same
+    real data), just paired against a different null."""
+    obs_w = np.asarray(obs_window, dtype=float)
+    scr_w = np.asarray(scr_window, dtype=float)
+    paired = np.isfinite(obs_w) & np.isfinite(scr_w)
+
+    scr_mean, scr_lo, scr_hi = _flat_bootstrap_ci(scr_w, rng=rng, n_bootstrap=n_bootstrap)
+    diff_window = np.where(paired, obs_w - scr_w, np.nan)
+    diff_mean, diff_lo, diff_hi = _flat_bootstrap_ci(diff_window, rng=rng, n_bootstrap=n_bootstrap)
+
+    obs_s = np.asarray(obs_session_for_p, dtype=float)
+    scr_sr = np.asarray(scr_session_for_p, dtype=float)
+    obs_global = float(np.nanmean(obs_s)) if np.isfinite(obs_s).any() else float("nan")
+    scr_global_by_draw = rotation_null._nanmean(scr_sr, axis=0)
+    p_observed_greater, p_two_sided, n_scramble_valid = _permutation_p(obs_global, scr_global_by_draw)
+
+    return {
+        "scrambled_prediction": scr_mean,
+        "scrambled_ci95_low": scr_lo,
+        "scrambled_ci95_high": scr_hi,
+        "observed_minus_scrambled": diff_mean,
+        "observed_minus_scrambled_ci95_low": diff_lo,
+        "observed_minus_scrambled_ci95_high": diff_hi,
+        "p_scramble_observed_greater": p_observed_greater,
+        "p_scramble_two_sided": p_two_sided,
+        "n_scramble_replicates_valid": n_scramble_valid,
     }
 
 
@@ -166,6 +241,17 @@ def run_by_coherence(
     session_lookup = {session: idx for idx, session in enumerate(session_names)}
     coherence_lookup = {coherence: idx for idx, coherence in enumerate(bridge.COHERENCE_ORDER)}
 
+    # Each fixation window has its own local image content (edge coherence,
+    # edge axis at that gaze location), so windows -- not trials -- are the
+    # right atomic unit of image-content variability: pooling same-trial
+    # windows into one value first (as an earlier version of this script did)
+    # wrongly treated them as repeats of "the same" measurement. Sessions are
+    # kept as an outer cluster, since day-to-day behavioral state is a real,
+    # separate correlation source windows don't share with each other across
+    # sessions.
+    n_windows_total = int(len(windows))
+    window_session_idx = windows["session"].astype(str).map(session_lookup).to_numpy(dtype=np.int64)
+
     b = len(bridge.COHERENCE_ORDER)
     p = len(population_keys)
     f = len(metric_keys)
@@ -177,7 +263,25 @@ def run_by_coherence(
     observed_count = np.zeros((b, p, f, c, s), dtype=np.int64)
     rotated_sum = np.zeros((b, p, f, c, s, r), dtype=float)
     rotated_count = np.zeros((b, p, f, c, s, r), dtype=np.int64)
+    # A second, independent null: instead of rotating a window's real
+    # trajectory away from its own true local edge axis (rotated_* above),
+    # keep the trajectory's own axis-relative shape and re-evaluate it
+    # against a *different* window's true edge axis, scrambling the
+    # trajectory-image pairing directly. This is a distinct null hypothesis
+    # from the rotation one -- it asks whether the specific pairing matters,
+    # not just whether the true axis matters -- so it needs its own
+    # accumulators, not a reuse of the rotation ones.
+    scrambled_sum = np.zeros((b, p, f, c, s, r), dtype=float)
+    scrambled_count = np.zeros((b, p, f, c, s, r), dtype=np.int64)
     window_count = np.zeros((b, s), dtype=np.int64)
+    # Window-level twins used for the nested session-then-window bootstrap,
+    # instead of the diagnostic per-session table. Rotations/scrambles are
+    # collapsed to a per-window mean immediately (nan-safe), since the
+    # bootstrap treats each window's mean prediction as one atomic
+    # observation -- no need to carry all r draws per window past this point.
+    observed_val_window = np.full((b, p, f, c, n_windows_total), np.nan, dtype=np.float64)
+    rotated_val_window = np.full((b, p, f, c, n_windows_total), np.nan, dtype=np.float64)
+    scrambled_val_window = np.full((b, p, f, c, n_windows_total), np.nan, dtype=np.float64)
 
     curves = {
         (population_key, metric_key, component_key): bridge._curve_for(
@@ -194,6 +298,18 @@ def run_by_coherence(
     rng = np.random.default_rng(seed)
     random_angles = rng.uniform(0.0, np.pi, size=(len(windows), r))
     observed_angles = np.zeros(1, dtype=float)
+
+    # For the scramble null: for every window, draw r partner windows (with
+    # replacement, from every window with a finite true edge axis) and use
+    # each partner's axis instead of the window's own. Axes are 180-periodic
+    # (an edge orientation, not a directed vector), so the rotation applied
+    # is the signed difference mod 180 -- same domain convention as
+    # random_angles above.
+    all_axis_deg = pd.to_numeric(windows["image_edge_axis_deg"], errors="coerce").to_numpy(dtype=np.float64)
+    valid_axis_pool_idx = np.flatnonzero(np.isfinite(all_axis_deg))
+    partner_pool_positions = rng.integers(0, valid_axis_pool_idx.size, size=(len(windows), r))
+    partner_axis_deg = all_axis_deg[valid_axis_pool_idx[partner_pool_positions]]
+    scramble_angles = np.radians((partner_axis_deg - all_axis_deg[:, None]) % 180.0)
 
     for row_idx, row_tuple in enumerate(windows.itertuples(index=False), start=0):
         row = pd.Series(row_tuple._asdict())
@@ -222,28 +338,50 @@ def run_by_coherence(
             step_across,
             random_angles[row_idx],
         )
+        scrambled_metrics = rotation_null._component_metrics_for_angles(
+            pos_along,
+            pos_across,
+            step_along,
+            step_across,
+            scramble_angles[row_idx],
+        )
 
         for metric_idx, metric_key in enumerate(metric_keys):
             for component_idx, component_key in enumerate(component_keys):
                 x_obs = observed_metrics[(metric_key, component_key)]
                 x_rot = rotated_metrics[(metric_key, component_key)]
+                x_scr = scrambled_metrics[(metric_key, component_key)]
                 for population_idx, population_key in enumerate(population_keys):
                     curve = curves[(population_key, metric_key, component_key)]
                     pred_obs, _outside_obs = bridge._interpolate_curve(x_obs, curve)
                     pred_rot, _outside_rot = bridge._interpolate_curve(x_rot, curve)
+                    pred_scr, _outside_scr = bridge._interpolate_curve(x_scr, curve)
                     pred_obs_scalar = float(pred_obs[0]) if pred_obs.size else float("nan")
                     if np.isfinite(pred_obs_scalar):
                         observed_sum[bin_idx, population_idx, metric_idx, component_idx, session_idx] += pred_obs_scalar
                         observed_count[bin_idx, population_idx, metric_idx, component_idx, session_idx] += 1
+                        observed_val_window[bin_idx, population_idx, metric_idx, component_idx, row_idx] = pred_obs_scalar
                     rot_ok = np.isfinite(pred_rot)
                     rotated_sum[bin_idx, population_idx, metric_idx, component_idx, session_idx, rot_ok] += pred_rot[rot_ok]
                     rotated_count[bin_idx, population_idx, metric_idx, component_idx, session_idx, rot_ok] += 1
+                    if np.any(rot_ok):
+                        rotated_val_window[bin_idx, population_idx, metric_idx, component_idx, row_idx] = float(
+                            np.mean(pred_rot[rot_ok])
+                        )
+                    scr_ok = np.isfinite(pred_scr)
+                    scrambled_sum[bin_idx, population_idx, metric_idx, component_idx, session_idx, scr_ok] += pred_scr[scr_ok]
+                    scrambled_count[bin_idx, population_idx, metric_idx, component_idx, session_idx, scr_ok] += 1
+                    if np.any(scr_ok):
+                        scrambled_val_window[bin_idx, population_idx, metric_idx, component_idx, row_idx] = float(
+                            np.mean(pred_scr[scr_ok])
+                        )
 
         if (row_idx + 1) % 1000 == 0:
             print(f"processed random-rotation coherence bridge windows {row_idx + 1}/{len(windows)}", flush=True)
 
     observed_session = rotation_null._safe_divide(observed_sum, observed_count)
     rotated_session = rotation_null._safe_divide(rotated_sum, rotated_count)
+    scrambled_session = rotation_null._safe_divide(scrambled_sum, scrambled_count)
 
     rows: list[dict[str, Any]] = []
     rng_summary = np.random.default_rng(seed + 10_000)
@@ -253,8 +391,20 @@ def run_by_coherence(
             for metric_idx, metric_key in enumerate(metric_keys):
                 for component_idx, component_key in enumerate(component_keys):
                     score = _prediction_summary(
-                        obs_session=observed_session[bin_idx, population_idx, metric_idx, component_idx],
-                        rot_session=rotated_session[bin_idx, population_idx, metric_idx, component_idx],
+                        obs_window=observed_val_window[bin_idx, population_idx, metric_idx, component_idx],
+                        rot_window=rotated_val_window[bin_idx, population_idx, metric_idx, component_idx],
+                        window_session_idx=window_session_idx,
+                        obs_session_for_p=observed_session[bin_idx, population_idx, metric_idx, component_idx],
+                        rot_session_for_p=rotated_session[bin_idx, population_idx, metric_idx, component_idx],
+                        rng=rng_summary,
+                        n_bootstrap=n_bootstrap,
+                    )
+                    scramble_score = _scramble_summary(
+                        obs_window=observed_val_window[bin_idx, population_idx, metric_idx, component_idx],
+                        scr_window=scrambled_val_window[bin_idx, population_idx, metric_idx, component_idx],
+                        window_session_idx=window_session_idx,
+                        obs_session_for_p=observed_session[bin_idx, population_idx, metric_idx, component_idx],
+                        scr_session_for_p=scrambled_session[bin_idx, population_idx, metric_idx, component_idx],
                         rng=rng_summary,
                         n_bootstrap=n_bootstrap,
                     )
@@ -276,14 +426,31 @@ def run_by_coherence(
                             "observed_valid_fraction": valid_obs / n_windows if n_windows else float("nan"),
                             "rotated_valid_fraction": valid_rot / (n_windows * r) if n_windows else float("nan"),
                             **score,
+                            **scramble_score,
                         }
                     )
 
-                obs_both = rotation_null._nanmean(observed_session[bin_idx, population_idx, metric_idx], axis=0)
-                rot_both = rotation_null._nanmean(rotated_session[bin_idx, population_idx, metric_idx], axis=0)
+                obs_both_window = rotation_null._nanmean(observed_val_window[bin_idx, population_idx, metric_idx], axis=0)
+                rot_both_window = rotation_null._nanmean(rotated_val_window[bin_idx, population_idx, metric_idx], axis=0)
+                scr_both_window = rotation_null._nanmean(scrambled_val_window[bin_idx, population_idx, metric_idx], axis=0)
+                obs_both_session = rotation_null._nanmean(observed_session[bin_idx, population_idx, metric_idx], axis=0)
+                rot_both_session = rotation_null._nanmean(rotated_session[bin_idx, population_idx, metric_idx], axis=0)
+                scr_both_session = rotation_null._nanmean(scrambled_session[bin_idx, population_idx, metric_idx], axis=0)
                 both_score = _prediction_summary(
-                    obs_session=obs_both,
-                    rot_session=rot_both,
+                    obs_window=obs_both_window,
+                    rot_window=rot_both_window,
+                    window_session_idx=window_session_idx,
+                    obs_session_for_p=obs_both_session,
+                    rot_session_for_p=rot_both_session,
+                    rng=rng_summary,
+                    n_bootstrap=n_bootstrap,
+                )
+                both_scramble_score = _scramble_summary(
+                    obs_window=obs_both_window,
+                    scr_window=scr_both_window,
+                    window_session_idx=window_session_idx,
+                    obs_session_for_p=obs_both_session,
+                    scr_session_for_p=scr_both_session,
                     rng=rng_summary,
                     n_bootstrap=n_bootstrap,
                 )
@@ -315,6 +482,7 @@ def run_by_coherence(
                         if n_windows
                         else float("nan"),
                         **both_score,
+                        **both_scramble_score,
                     }
                 )
 

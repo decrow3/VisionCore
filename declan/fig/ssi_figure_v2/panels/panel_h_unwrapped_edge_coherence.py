@@ -25,6 +25,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+try:  # noqa: E402
+    from panels import panel_header
+except ModuleNotFoundError:  # pragma: no cover - direct script path.
+    import panel_header
+
 
 ROOT = Path(__file__).resolve().parents[4]
 OUT_DIR = ROOT / "outputs" / "fig" / "ssi_figure_v2" / "panels"
@@ -49,7 +54,7 @@ WIDE_COHERENCE_BANDS = (
     (0.5, 0.8, "0.5-0.8"),
     (0.8, 1.0, "0.8-1"),
 )
-COLORS = ("#9aa5b1", "#6c8fb5", "#2c7fb8", "#0b4f83")
+COLORS = ("#8DAF8C", "#5D966D", "#2D7C5C", "#0E4E3D")
 GRID = "#d8dde3"
 INK = "#111111"
 
@@ -267,7 +272,7 @@ def draw_panel(
     ax: plt.Axes,
     *,
     label: str = "I",
-    title: str = "Real FEMs are anisotropic\nnear local contours",
+    title: str = "Real FEM spread is\ncontour-anisotropic",
     values: pd.DataFrame | None = None,
     reference: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
@@ -324,11 +329,20 @@ def draw_panel(
         ax.set_ylim(lo - pad, hi + pad)
     ax.set_xticks([0.0, 90.0, 180.0])
     ax.set_xticklabels(["parallel", "orthogonal", "parallel"])
+    # The two "parallel" ticks sit exactly at the data/axes edges, so their
+    # default center-aligned labels overhang past the axes on their outer
+    # side -- bbox_inches="tight" then grows the saved page to include that
+    # overhang, which pushed this panel's real width past its compositing
+    # box and into its neighbor. Align each edge label's outer edge to its
+    # own tick instead, so nothing extends past the axes box.
+    xticklabels = ax.get_xticklabels()
+    xticklabels[0].set_ha("left")
+    xticklabels[-1].set_ha("right")
     ax.set_xlabel("angle from local edge")
-    ax.set_ylabel("position spread RMS (arcmin)")
+    ax.set_ylabel("position spread RMS (arcmin)", labelpad=2.0)
     ax.grid(True, color=GRID, lw=0.8)
     ax.set_axisbelow(True)
-    ax.set_title(f"{label}  {title}", loc="left", fontsize=7.8, fontweight="bold", pad=5, color=INK, linespacing=1.25)
+    panel_header.draw_bottom_row_header(ax, label, title, title_linespacing=panel_header.PANEL_TITLE_LINESPACING, color=INK)
     legend_handles = observed_handles
     if not reference.empty:
         from matplotlib.lines import Line2D
@@ -340,18 +354,29 @@ def draw_panel(
     ax.legend(
         handles=legend_handles,
         frameon=False,
-        fontsize=5.55,
+        fontsize=5.2,
         loc="upper left",
         title="edge coherence",
-        title_fontsize=5.9,
-        handlelength=1.7,
+        title_fontsize=5.6,
+        handlelength=1.3,
+        handletextpad=0.4,
         borderaxespad=0.2,
     )
+    ax.tick_params(labelsize=6.8)
+    ax.xaxis.label.set_size(6.9)
+    ax.yaxis.label.set_size(7.0)
+    panel_header.align_bottom_row_xlabel(ax)
     _clean_axis(ax)
     return values
 
 
-def build_panel(out_dir: Path = OUT_DIR) -> dict[str, Path]:
+def build_panel(
+    out_dir: Path = OUT_DIR,
+    *,
+    figsize: tuple[float, float] = (2.35, 2.25),
+    label: str = "I",
+    title: str = "Real FEM spread is\ncontour-aligned",
+) -> dict[str, Path]:
     configure_matplotlib()
     out_dir.mkdir(parents=True, exist_ok=True)
     values = load_panel_values()
@@ -359,16 +384,17 @@ def build_panel(out_dir: Path = OUT_DIR) -> dict[str, Path]:
     values.to_csv(out_dir / "panel_h_unwrapped_edge_coherence_values.csv", index=False)
     reference.to_csv(out_dir / "panel_h_unwrapped_edge_coherence_random_orientation_reference.csv", index=False)
 
-    fig, ax = plt.subplots(figsize=(2.35, 2.25), constrained_layout=True)
-    draw_panel(ax, values=values, reference=reference)
+    fig = plt.figure(figsize=figsize, constrained_layout=False)
+    ax = panel_header.add_bottom_row_axes(fig)
+    draw_panel(ax, label=label, title=title, values=values, reference=reference)
     paths = {
         "png": out_dir / "panel_h_unwrapped_edge_coherence.png",
         "pdf": out_dir / "panel_h_unwrapped_edge_coherence.pdf",
         "svg": out_dir / "panel_h_unwrapped_edge_coherence.svg",
     }
-    fig.savefig(paths["png"], dpi=220)
-    fig.savefig(paths["pdf"], dpi=300)
-    fig.savefig(paths["svg"], dpi=300)
+    fig.savefig(paths["png"], dpi=220, transparent=True)
+    fig.savefig(paths["pdf"], transparent=True)
+    fig.savefig(paths["svg"], transparent=True)
     plt.close(fig)
     return paths
 
