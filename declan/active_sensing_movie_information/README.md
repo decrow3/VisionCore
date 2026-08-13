@@ -227,6 +227,62 @@ movement scale: raw arcmin, and unit-normalized phase scale
 and high-SF curves ask whether the same retinal displacement is large or small
 relative to each unit's preferred spatial period.
 
+## Temporal-Remapping Counterfactual Pilot
+
+Fixed-geometry retiming and amplitude-duration counterfactuals are implemented
+as a separate wrapper around the existing BackImage RR100 twin/SSI path:
+
+```bash
+MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python -m declan.active_sensing_movie_information.run_backimage_temporal_remapping_pilot \
+  --n-images 4 \
+  --n-traces 8 \
+  --n-timepoints 32 \
+  --traversal-frames 8,12,16,24,32 \
+  --timing-placements terminal,endpoint_hold,centered \
+  --retiming-profiles uniform,natural_speed_profile \
+  --dry-run \
+  --out-dir outputs/active_sensing_movie_information/temporal_remapping/backimage_rr100_retiming_pilot_v1
+```
+
+By default, image patches are sampled from the saved Figure-4 matched-static
+candidate table:
+
+```text
+outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_axis_conditioned_matched_static_percandidate_gpu1_n128_c4_k16_scales_0p5_1_2_bconsistent_v1/candidate_sets.csv
+```
+
+That path pins the temporal-remapping image universe to the Figure-4 candidate
+source rows and applies only basic source-window validity gates. Use
+`--image-pool reviewed_windows` to recover the older behavior, which rebuilds a
+larger reviewed-window pool with the contrast/coherence gates.
+
+Drop `--dry-run` to score the generated counterfactual movies through the
+frozen twin. The runner writes:
+
+- `condition_table.csv`;
+- `image_feature_table.csv`;
+- `trace_feature_table.csv`;
+- `retimed_trajectory_metrics.csv`;
+- `summary.json`;
+- `verification_01_selected_inputs.png`;
+- `verification_02_timing_design.png`;
+- `verification_03_trajectory_metrics.png`;
+- `verification_04_geometry_invariance.png`;
+- `qc/retiming_trace_*.png`;
+- scored runs additionally write `retiming_ssi.npz`,
+  `retiming_population_observations.csv`,
+  `retiming_population_summary.csv`, `retiming_unit_observations.csv`,
+  `verification_05_population_ssi_vs_velocity.png`, and
+  `verification_06_unit_sf_group_curves.png`.
+
+The discrete retiming convention is endpoint-inclusive: a traversal with
+`D` model frames includes both \(\gamma(0)\) and \(\gamma(1)\), so the sampled
+endpoint-to-endpoint interval is `(D - 1) / 120` seconds. The requested
+duration `D / 120` and sampled endpoint interval are both written in the
+metrics table. Continuous path geometry is checked separately from the
+120-Hz model-sampled path, because short traversals necessarily sample fewer
+points and can shortcut curved source paths.
+
 For the current implementation checklist and generated audit summaries, use:
 
 ```text

@@ -67,10 +67,11 @@ displayed bin, the across-minus-along contrast was -5.1 percentage points
 (>3.8 arcmin) is omitted from the display. (F) Real FEM
 position spread was anisotropic around local contours. For each reviewed
 BackImage fixation window, eye positions were projected onto axes at different
-angles relative to the local contour, and RMS spread was averaged within local
-edge-coherence bins. As coherence increased, spread became larger parallel to
-the contour and smaller in the orthogonal direction. Dashed horizontal lines
-show the orientation-scrambled reference. (G) The observed contour-relative
+angles relative to the local contour. Curves show the fixed-animal,
+equal-weight hierarchical estimate in three local edge-coherence bands;
+shading denotes 95% session/trial bootstrap confidence intervals. As coherence
+increased, spread became larger parallel to the contour and smaller in the
+orthogonal direction. (G) The observed contour-relative
 orientation of real FEMs was compared with a random-rotation null by mapping
 measured contour-relative RMS values through the model dose curves. Positive
 values indicate that the real pairing between eye trajectory and local image
@@ -87,8 +88,9 @@ with coherence > 0.3. The estimated slope rose from small patches, reached its
 maximum at a 1.25 degree radius, and remained positive at larger radii,
 indicating that FEM anisotropy is coupled to local contour structure measured
 over degree-scale image neighborhoods. Error bars denote 95% CIs: image
-bootstrap in B, D, and E; paired-window bootstrap in G; and regression CIs in
-H.
+bootstrap in B, D, and E; hierarchical session/trial bootstrap with the two
+fixed animals equally weighted in F; paired-window bootstrap in G; and
+regression CIs in H.
 
 ## Results Replacement Draft
 
@@ -164,12 +166,15 @@ along-contour RMS (p = 0.0004). Thus, contour-relative position spread,
 particularly its across-contour component, was more informative about the
 coding consequence of a trajectory than total path length alone.
 
-Natural FEMs exhibited precisely this directional structure. Around coherent
+Natural FEM position clouds showed this directional structure. Around coherent
 contours, gaze positions were distributed more broadly parallel to the local
 contour and more narrowly in the orthogonal direction, with the anisotropy
-increasing as local edge coherence increased (Fig. 4F). This arrangement
-permits relatively large overall movement while limiting the across-contour
-displacement associated with lower high-spatial-frequency aligned SSI. To
+increasing as local edge coherence increased (Fig. 4F). In the equal-animal
+summary, the parallel-minus-orthogonal difference in the 0.5-1 coherence band
+was 0.224 arcmin (95% CI [0.090, 0.596]), although the effect was stronger in
+Allen than Logan. Such geometry would permit relatively large overall spread
+while limiting the across-contour displacement associated with lower
+high-spatial-frequency aligned SSI. To
 relate this behavioral anisotropy to the model results, we mapped the measured
 contour-relative RMS values through the one-dimensional SSI dose curves and
 compared the resulting predictions with random rotations of the same
@@ -357,31 +362,50 @@ and the percent change was recomputed from those ratios. Unless otherwise
 specified, model SSI confidence intervals in Panels B, D, and E used 10,000
 image bootstrap resamples. P-values for displayed across-versus-along
 contrasts were computed from the bootstrap distribution of the paired residual
-difference between the two contour-relative component groupings. Panel G used
-paired-window bootstrap confidence intervals for behavior-model predictions,
-and Panel H used regression confidence intervals as described below.
+difference between the two contour-relative component groupings. Panel F used
+hierarchical session/trial bootstrap confidence intervals with the two fixed
+animals equally weighted, Panel G used paired-window bootstrap confidence
+intervals for behavior-model predictions, and Panel H used regression
+confidence intervals as described below.
 
 ### Real FEM anisotropy around local contours
 
-To ask whether the animal's natural eye movements were aligned with local
-image structure, we analyzed reviewed BackImage fixation windows from 30
-recording sessions. The primary window set contained 11,749 windows after
-requiring valid gaze samples, valid local image features, and the patch
-contamination criteria described above. Windows came from the mid- and
-late-fixation phases of the BackImage condition. For each window, the local
-contour axis was measured at the mean gaze position, and the eye-position
-cloud within the window was centered and projected onto axes spanning all
-relative angles from parallel to orthogonal to the contour.
+To quantify the association between natural eye-position geometry and local
+image structure, we analyzed 11,749 reviewed BackImage fixation windows from
+1,962 trials and 30 recording sessions (Allen, 14 sessions; Logan, 16
+sessions). Windows were retained after requiring valid gaze samples, valid
+local image features, and the patch-contamination criteria described above,
+and came from the mid- and late-fixation phases of the BackImage condition.
+For each window, the local contour axis was measured at the mean gaze position
+and the eye-position cloud was centered. Let \(\Sigma\) denote the resulting
+two-dimensional position covariance and \(\mathbf{u}_\theta\) the unit vector
+at relative angle \(\theta\) from the local contour. Projected position spread
+was calculated in arcmin as
 
-Position spread along each relative axis was quantified as RMS projected eye
-position in arcmin. Profiles were grouped into four local edge-coherence bins:
-0-0.2, 0.2-0.5, 0.5-0.8, and 0.8-1. Source bins were merged by weighting RMS
-values by the number of contributing windows. The orientation-scrambled
-reference was computed by replacing the relationship between the measured eye
-positions and the local contour axis with randomized relative orientations,
-while preserving the empirical eye-position clouds and coherence labels. This
-control estimates the spread expected if local image orientation carried no
-information about the direction of the measured FEM cloud.
+\[
+s(\theta) = 60\sqrt{\mathbf{u}_\theta^T\Sigma\mathbf{u}_\theta}.
+\]
+
+Profiles were evaluated from 0 to 180 degrees in 3.75-degree increments, where
+0 and 180 degrees are contour-parallel and 90 degrees is contour-orthogonal.
+Individual windows were assigned directly to three local edge-coherence bands:
+0-0.2, 0.2-0.5, and 0.5-1.0. Within each trial and coherence band, the median
+profile was taken across contributing windows. Trial profiles were then
+aggregated by taking the median across trials within each session and the
+median across sessions within each animal. The displayed population profile
+is the arithmetic mean of the Allen and Logan profiles, giving the two fixed
+animals equal weight.
+
+Confidence intervals were computed from 1,000 hierarchical bootstrap draws.
+Sessions were resampled with replacement separately within each animal, and
+trials were resampled with replacement within each selected session. The full
+aggregation procedure was recomputed for every draw, and Allen and Logan were
+then averaged equally. Shading shows the 2.5th and 97.5th percentiles. These
+intervals quantify session- and trial-level uncertainty for the two fixed
+animals and are not an animal-population inference. For the reported
+parallel-minus-orthogonal contrast, parallel spread was the mean of the 0- and
+180-degree profile values, and the contrast was recomputed within every
+bootstrap draw before its interval was calculated.
 
 ### Behavior-model bridge and random-rotation control
 

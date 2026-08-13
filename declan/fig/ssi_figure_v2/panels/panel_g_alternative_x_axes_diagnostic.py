@@ -459,6 +459,8 @@ def _compute_family(
             delta_low = float(delta_stats["population_delta_ci95_low_image_boot"])
             delta_high = float(delta_stats["population_delta_ci95_high_image_boot"])
             cell_ssi = float(pop["cell_ssi"])
+            moving_n_samples = float(pop["moving"]["n_movie_samples"])
+            cell_n_samples = float(pop["cell"]["n_movie_samples"])
             values = pd.to_numeric(metrics.loc[row_mask, metric_col], errors="coerce").to_numpy(dtype=float)
             rows.append(
                 {
@@ -481,6 +483,18 @@ def _compute_family(
                     "n_images_contributing": int(pop["moving"]["n_images_contributing"]),
                     "moving_population_ssi_bits_per_spike": float(pop["moving_ssi"]),
                     "cell_baseline_population_ssi_bits_per_spike": cell_ssi,
+                    "moving_information_bits_per_sample": finite_ratio(
+                        float(pop["moving"]["information_numerator_bits"]), moving_n_samples
+                    ),
+                    "cell_baseline_information_bits_per_sample": finite_ratio(
+                        float(pop["cell"]["information_numerator_bits"]), cell_n_samples
+                    ),
+                    "moving_expected_spikes_per_sample": finite_ratio(
+                        float(pop["moving"]["expected_spikes"]), moving_n_samples
+                    ),
+                    "cell_baseline_expected_spikes_per_sample": finite_ratio(
+                        float(pop["cell"]["expected_spikes"]), cell_n_samples
+                    ),
                     "ssi_percent_vs_cell_baseline": float(pop["ssi_percent_vs_cell_baseline"]),
                     "population_delta_percent_ci95_low_image_boot": 100.0 * delta_low / cell_ssi
                     if math.isfinite(delta_low) and math.isfinite(cell_ssi) and abs(cell_ssi) > EPS

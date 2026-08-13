@@ -57,6 +57,7 @@ upstream checkout, preserving paths.
 ### Handoff documentation
 
 ```text
+declan/fig/ssi_figure_v2/ssi_figure_v4_cache_artifact_manifest.md
 declan/fig/ssi_figure_v2/ssi_figure_v4_legend_methods_draft.md
 ```
 

@@ -113,6 +113,34 @@ outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_cont
 outputs/fixation_statistics_by_stimulus_all_sessions_after_review/backimage_image_structure_reviewed_v2_screenfiltered_yfix/backimage_image_fem_windows.csv  (original descriptive I, still used by panel_i_edge_alignment.py)
 ```
 
+### Updated descriptive Panel F candidate
+
+The current compositor still points to the historical unwrapped profile
+renderer above. The reviewed replacement candidate is generated without
+overwriting that artifact:
+
+```bash
+uv run python declan/fig/ssi_figure_v2/behavior_confounds/build_panel_f_descriptive_hierarchical_profiles.py
+uv run python declan/fig/ssi_figure_v2/behavior_confounds/plot_panel_f_profile_variations.py
+```
+
+The replacement recomputes three coherence bands (0-0.2, 0.2-0.5, and 0.5-1)
+directly from 11,749 reviewed windows. It takes the median profile across
+windows within trial, trials within session, and sessions within each animal,
+then averages Allen and Logan equally. Its 95% intervals use 1,000 hierarchical
+bootstrap draws that resample sessions within animal and trials within selected
+session. The two animals are treated as fixed rather than as a sampled animal
+population. The main candidate and its visual audit are saved under:
+
+```text
+outputs/fig/ssi_figure_v2/behavior_confounds_map_first_v1/
+  panel_f_descriptive_hierarchical_profiles_v1/
+```
+
+The replacement does not display the historical uniform-orientation reference;
+that remains a supporting diagnostic rather than part of the descriptive Panel
+F estimand.
+
 Panel D draws the local contour-axis/coherence aperture from
 `stimulus_row.image_patch_radius_px`. In the reviewed BackImage window table
 this radius is 38 px; with `MODEL_PPD = 37.50476617` this is 1.01 deg, so the
@@ -131,6 +159,37 @@ printed on the figure; the generator writes them to:
 ```text
 outputs/fig/ssi_figure_v2/ssi_figure_v2_methods_provenance.json
 ```
+
+### Parametric-SF half variant
+
+A separately versioned Figure 4 refresh replaces the historical SF threshold
+in displayed panels B, D, and E with the median split of the 85 valid joint
+parametric SF/TF fits. Panels A and C are unchanged; the final row F-H is
+retained without analytical changes. Run:
+
+```bash
+MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python \
+  declan/fig/ssi_figure_v2/compose_ssi_figure_v4_sf_halves.py
+```
+
+This writes only beneath
+`outputs/fig/ssi_figure_v2/sf_halves_v1/`, including
+`ssi_figure_v4_sf_halves_v1.pdf`, its panel-value tables, and provenance. The
+original `outputs/fig/ssi_figure_v2/ssi_figure_v4.pdf` is not modified.
+
+An exploratory outer-thirds variant retains the lowest 28 and highest 28
+preferred-SF units, excludes the middle 29, and omits the complete F-H bottom
+row:
+
+```bash
+MPLCONFIGDIR=/tmp/matplotlib-cache .venv/bin/python \
+  declan/fig/ssi_figure_v2/compose_ssi_figure_v4_sf_outer_thirds.py
+```
+
+It writes only beneath `outputs/fig/ssi_figure_v2/sf_outer_thirds_v1/`.
+Because the outer-thirds spike-weighted curves diverge from their equal-unit
+audit for the bottom-SF group, this version is exploratory rather than a
+drop-in replacement for the half split.
 
 ## Verbose guide: what each analysis is doing
 

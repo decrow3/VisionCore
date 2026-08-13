@@ -1,0 +1,4 @@
+interface:
+  display_name: "Map-first analysis"
+  short_description: "Explore mechanisms through maps before summaries"
+  default_prompt: "Use $map-first-analysis to investigate this question through concrete maps and human checkpoints before population summaries."
