@@ -24,6 +24,12 @@ STIMULUS_REGIME = {
     "gratings": "forage_grating",
 }
 
+# BackImage stores raw eye-position samples at 240 Hz even though the visual
+# model consumes globally even samples at 120 Hz.  Keep the behavioural table
+# in raw acquisition time; callers that need model-time indices must derive
+# those separately rather than changing physical eye kinematics.
+DATASET_SAMPLE_RATE_HZ = {"backimage": 240.0}
+
 
 @dataclass(frozen=True)
 class ExtractionConfig:
@@ -78,10 +84,10 @@ def _contiguous_true_blocks(mask: np.ndarray) -> list[tuple[int, int]]:
     return blocks
 
 
-def _phase_label(samples_since_event: float | None, cfg: ExtractionConfig) -> str:
+def _phase_label(samples_since_event: float | None, cfg: ExtractionConfig, *, dt: float) -> str:
     if samples_since_event is None or not np.isfinite(samples_since_event):
         return "no_recent_event"
-    age_s = float(samples_since_event) * cfg.dt
+    age_s = float(samples_since_event) * float(dt)
     if age_s < cfg.early_s:
         return "early_post_event"
     if age_s < cfg.mid_s:
@@ -148,6 +154,8 @@ def extract_session_stimulus(
         return [], [], inventory
 
     dset = _load_dict_dataset(dset_path)
+    sample_rate_hz = float(DATASET_SAMPLE_RATE_HZ.get(stimulus, 1.0 / float(cfg.dt)))
+    dt = 1.0 / sample_rate_hz
     eyepos = _as_numpy(dset["eyepos"]).astype(np.float64)
     trial_inds = _as_numpy(dset.covariates["trial_inds"]).reshape(-1).astype(int)
     if "dpi_valid" in dset.covariates:
@@ -181,10 +189,10 @@ def extract_session_stimulus(
         if cfg.min_valid_fraction > 0 and valid_fraction < cfg.min_valid_fraction:
             continue
 
-        threshold = _speed_threshold_mad_valid_pairs(trace, valid, dt=cfg.dt, z=cfg.speed_z)
+        threshold = _speed_threshold_mad_valid_pairs(trace, valid, dt=dt, z=cfg.speed_z)
         events, event_mask, _ = detect_microsaccade_events(
             trace,
-            dt=cfg.dt,
+            dt=dt,
             threshold_deg_s=threshold,
             min_samples=1,
             pad_samples=cfg.event_pad_samples,
@@ -195,14 +203,14 @@ def extract_session_stimulus(
             and int(event["offset"]) < valid.size
             and np.all(valid[int(event["onset"]): int(event["offset"]) + 1])
         ]
-        for erow in event_feature_rows(trace, valid_events, dt=cfg.dt):
+        for erow in event_feature_rows(trace, valid_events, dt=dt):
             erow.update({
                 "session": session.name,
                 "stimulus": stimulus,
                 "regime": STIMULUS_REGIME.get(stimulus, stimulus),
                 "trial_idx": int(trial_idx),
                 "event_threshold_deg_s": float(threshold),
-                "trial_valid_duration_s": _event_rate_denominator(valid, cfg.dt),
+                "trial_valid_duration_s": _event_rate_denominator(valid, dt),
             })
             event_rows.append(erow)
 
@@ -220,8 +228,8 @@ def extract_session_stimulus(
             for local_start in starts:
                 local_stop = local_start + int(cfg.window_samples)
                 window = trace[local_start:local_stop]
-                features = fixation_window_features(window, dt=cfg.dt)
-                phase = _phase_label(since_event[local_start], cfg)
+                features = fixation_window_features(window, dt=dt)
+                phase = _phase_label(since_event[local_start], cfg, dt=dt)
                 row: dict[str, Any] = {
                     "session": session.name,
                     "stimulus": stimulus,
@@ -233,7 +241,8 @@ def extract_session_stimulus(
                     "local_stop": int(local_stop),
                     "epoch_start_local": int(block_start),
                     "epoch_stop_local": int(block_stop),
-                    "epoch_duration_s": float((block_stop - block_start) * cfg.dt),
+                    "sample_rate_hz": sample_rate_hz,
+                    "epoch_duration_s": float((block_stop - block_start) * dt),
                     "phase": phase,
                     "samples_since_event": float(since_event[local_start]) if np.isfinite(since_event[local_start]) else np.nan,
                     "event_threshold_deg_s": float(threshold),
@@ -259,7 +268,8 @@ def extract_session_stimulus(
         "status": "ok",
         "n_samples": int(eyepos.shape[0]),
         "n_trials": int(unique_trials.size),
-        "valid_duration_s": float(np.count_nonzero(valid_base) * cfg.dt),
+        "sample_rate_hz": sample_rate_hz,
+        "valid_duration_s": float(np.count_nonzero(valid_base) * dt),
         "valid_fraction": float(np.mean(valid_base)) if valid_base.size else np.nan,
         "n_windows": int(len(window_rows)),
         "n_events": int(len(event_rows)),

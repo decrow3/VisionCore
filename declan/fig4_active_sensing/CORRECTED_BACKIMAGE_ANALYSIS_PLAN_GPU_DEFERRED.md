@@ -517,6 +517,52 @@ Build the final narrative from corrected production artifacts:
 9. Prepare—not launch—the small bridge and large production run manifests.
 10. Pause for GPU scheduling and user approval before neural scoring.
 
+### Implementation status (2026-08-13)
+
+- The balanced 20-image x 50-trace bridge selection is frozen in
+  `outputs/fig4_active_sensing/rr100_interim_bridge_selection_checkpoint_32_v2/`.
+- The lag-zero input renderer passed synthetic and matched actual-data map
+  checks in
+  `outputs/fig4_active_sensing/rr100_input_only_renderer_actual_validation_checkpoint_31_v1/`.
+- The resumable 49-image x 973-trace input-only spectral runner is implemented.
+  After a four-movie CPU smoke, the full 47,677-movie cache completed in
+  `outputs/fig4_active_sensing/rr100_interim49x973_input_spectral_cache_checkpoint_34_v1/`.
+  The input-only population checkpoint is
+  `outputs/fig4_active_sensing/rr100_interim49x973_input_spectral_summary_checkpoint_35_v2/`.
+- The 32--60 Hz fixed-retina F0-first probe and exact dry-run request are frozen
+  in
+  `outputs/fig4_active_sensing/rr100_extended_tf_probe_manifest_checkpoint_33_v6/`;
+  neural scoring has not been launched.
+- Interruption-safe, connected halves for both the extended-TF probe and the
+  20 x 50 neural bridge are frozen and dry-run validated in
+  `outputs/fig4_active_sensing/rr100_gpu_interruption_safe_contract_checkpoint_36_v3/`.
+  Each TF pair will be saved atomically; either completed TF half spans every
+  SF and TF. Each bridge half spans every selected image and trace, while the
+  bridge runner remains gated on atomic all-condition image-trace bundles.
+- The corrected 100 x 1,000 neural response-cache runner and balanced partial
+  assembler are implemented and contract-tested in
+  `run_rr100_corrected_production_cache.py` and
+  `assemble_rr100_corrected_production_cache.py`. The frozen run contract is
+  `outputs/fig4_active_sensing/rr100_corrected_production_cache_contract_checkpoint_37_v1/`.
+  The Cartesian bank is scheduled as 100 balanced 1,000-movie rounds. Each
+  ten-movie image-within-round block is atomic and resumable; every completed
+  round spans all 100 images and all 1,000 traces, and either 50-round half is
+  connected and independently analyzable.
+- The final outcome-independent cohort is now frozen in
+  `outputs/fig4_active_sensing/rr100_corrected100x1000_production_cohort_v1/`:
+  49 retained plus 51 replacement images and 973 retained plus 27 replacement
+  traces. Complete candidate/rejection ledgers and a map-first input QA figure
+  are included. The production cache has frozen all 100 image patches and all
+  1,000 exact `32 history + 40 scored` corrected trajectories in
+  `outputs/fig4_active_sensing/rr100_corrected100x1000_response_cache_v1/`.
+  A bounded one-block GPU preflight then wrote 10 movies with finite
+  40-frame-by-100-unit rate and instantaneous-SSI arrays. A restricted resume
+  pass validated and skipped that shard without writing another. No complete
+  1,000-movie balanced round is yet available for analysis.
+- The next compute gate is resumable scoring of a complete balanced round when
+  GPU time is explicitly approved. The 1,000-movie bridge and extended-TF
+  neural probe remain separately prepared.
+
 ## Estimated effort before the large GPU run
 
 These are working estimates, not guarantees:
