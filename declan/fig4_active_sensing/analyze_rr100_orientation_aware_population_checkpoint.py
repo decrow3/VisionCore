@@ -16,10 +16,14 @@ import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 
+from declan.fig4_active_sensing.spectral_cache_contract import (
+    validate_artifact_not_superseded,
+    validated_spectral_cache_from_environment,
+)
+
 
 ROOT = Path(__file__).resolve().parents[2]
 TUNING = ROOT / "outputs/fig4_active_sensing/rr100_orientation_aware_f0_map_checkpoint_v1"
-SPECTRAL = ROOT / "outputs/fig4_active_sensing/rr100_corrected_three_round_spectral_cache_v1"
 RESPONSES = ROOT / (
     "outputs/fig4_active_sensing/rr100_corrected100x1000_response_cache_v1/"
     "assembled/rounds_000_002_n003"
@@ -152,10 +156,10 @@ def clustered_median_interval(
     return float(np.median(frame.value)), float(np.quantile(draws, 0.025)), float(np.quantile(draws, 0.975))
 
 
-def load_predictors_and_outcomes() -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], pd.DataFrame, pd.DataFrame]:
+def load_predictors_and_outcomes(spectral_dir: Path) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], pd.DataFrame, pd.DataFrame]:
     with np.load(TUNING / "orientation_aware_f0_tuning_and_routing.npz", allow_pickle=False) as data:
         tuning = {key: np.asarray(data[key]) for key in data.files}
-    with np.load(SPECTRAL / "condition_spectra.npz", allow_pickle=False) as data:
+    with np.load(spectral_dir / "condition_spectra.npz", allow_pickle=False) as data:
         spectral = {key: np.asarray(data[key]) for key in data.files}
     condition = pd.read_csv(RESPONSES / "condition_index.csv")
     if not np.array_equal(condition.matrix_row_index.to_numpy(), spectral["matrix_row_index"]):
@@ -840,8 +844,10 @@ def make_gain_figure(gain: pd.DataFrame) -> plt.Figure:
 
 
 def main() -> None:
+    spectral_dir = validated_spectral_cache_from_environment()
+    validate_artifact_not_superseded(TUNING, label="orientation tuning")
     OUT.mkdir(parents=True, exist_ok=True)
-    predictors, outcomes, cohort, condition = load_predictors_and_outcomes()
+    predictors, outcomes, cohort, condition = load_predictors_and_outcomes(spectral_dir)
     split_scores, scores, averaged_predictions = run_outcome_models(predictors, outcomes, cohort, condition)
     increments = build_increment_table(scores, cohort)
     model_summary, increment_summary = population_summaries(scores, increments)

@@ -1,12 +1,40 @@
-# Analysis plan: RF-local power-matched phase surrogates for the FEM–SSI effect
+# Conditional analysis plan: RF-local phase surrogates after the map-support test
 
-Date: 2026-08-13
+Date: 2026-08-13; reframed as conditional follow-up 2026-08-14
 
-Status: planned map-first analysis; input-level controls must pass before neural scoring
+Status: conditional follow-up; checkpoints 49 and 50 rejected for the primary
+question; the map-support amplitude-by-phase factorial in
+`FEM_POWER_ROUTING_ANALYSIS_PLAN.md` now runs first
 
 Scope: corrected natural-image retinal movies, genuine 32-frame model history,
 40 scored frames, RR100 digital-twin activation maps, firing rates, and spatial
 selectivity index (SSI)
+
+## 0. Reframing decision
+
+The original plan matched power inside windows approximating the effective RF
+of one translated readout position. That was a defensible construction for a
+perceptual metamer or a within-position sufficiency test, but it was not the
+smallest justified support for the measured outcome. The digital twin produces
+each unit's activation map by convolving that unit's readout across the full
+core feature map. SSI is then calculated across those translated positions.
+The input object driving one scored map is therefore the complete 32-frame by
+151-by-151 history cube and the union of spatial support across map positions.
+
+The primary phase test is now Stage 2A of
+`FEM_POWER_ROUTING_ANALYSIS_PLAN.md`: a map-support amplitude-by-phase
+factorial. It preserves or replaces the complete raw history-cube Fourier
+magnitude and phase, uses one random phase field shared across paired power
+conditions, and includes the complementary FEM-phase-preserved/stabilized-power
+arm. This directly tests cross-position phase organization and avoids
+renderer-in-the-loop metamer optimization.
+
+Everything below is retained as a documented conditional branch. Run it only
+if the map-support factorial shows that global power is insufficient and the
+remaining scientific question specifically requires distinguishing local-power
+redistribution among tiles from nonlinear phase sensitivity within a tile. Do
+not interpret the completed RF-scale audit as a requirement that every
+whole-map phase control match power within 2.97-pixel windows.
 
 ## 1. Scientific objective
 
@@ -19,8 +47,9 @@ SSI sharpening.
 The missing experiment asks whether the unexplained SSI effect depends on phase
 structure:
 
-> If receptive-field-local spatiotemporal power is held fixed while phase
-> structure is destroyed, does FEM-induced SSI sharpening persist?
+> After a map-support control shows that global power is insufficient, does the
+> residual remain when receptive-field-local spatiotemporal power is also held
+> fixed while phase structure is destroyed?
 
 The control must not introduce a change in local temporal power that could itself
 explain the SSI result. This is especially important because temporal-power
@@ -44,7 +73,7 @@ for either hypothesis.
 
 Several simpler manipulations have already clarified the design.
 
-### 2.1 Global and all-pass controls are diagnostics, not the primary test
+### 2.1 Earlier source/movie-global controls did not use the map-input support
 
 - A coherent all-pass manipulation preserved too much cross-frequency phase
   organization and visually resembled small translations of intact edges.
@@ -59,11 +88,15 @@ Several simpler manipulations have already clarified the design.
   full-block power equality therefore does not imply equality of the
   response-window power used by the mechanistic analysis.
 
-Consequently, the global 3-D scramble can remain an upper-bound or
-out-of-distribution diagnostic, but it cannot provide the decisive phase test.
-Seed-searching for a global scramble with favorable scored-window power is also
-not the primary solution because it conditions the null on the local statistic
-whose mechanistic role is being tested.
+Consequently, the earlier 72-frame global 3-D scramble remains an upper-bound
+or out-of-distribution diagnostic rather than the decisive phase test.
+Seed-searching for a favorable scored-window realization is also rejected
+because it conditions the null on a different, phase-sensitive support.
+
+This failure does not apply to the new Stage-2A map-support construction. The
+new transform and the exact power claim both refer to the same raw 32-frame
+history cube consumed by one activation-map computation. No subsequent Hann
+window or 40-frame restriction defines its primary equality contract.
 
 ### 2.2 Existing local pyramid scrambling is not yet a matched-power control
 
@@ -84,7 +117,7 @@ The pooling distribution for this analysis must instead come from the digital
 twin's effective spatial filters, and the matched representation must include
 temporal frequency and model history.
 
-## 3. Primary experimental construction
+## 3. Conditional RF-local experimental construction
 
 Optimize one static surrogate source image and render it through the exact
 retinal-movie pipeline. Do not optimize an arbitrary collection of unrelated
@@ -381,21 +414,27 @@ Decide from the raw maps whether the phase surrogate preserves, reduces, or
 qualitatively changes the FEM-induced sharpening. Inspect dissociations and
 negative controls rather than advancing based on one attractive unit.
 
-## 9. Contrast double dissociation
+## 9. Complementary power-by-phase dissociation
 
-If the accepted surrogate retains a meaningful contrast or histogram mismatch,
-add a fifth source condition that preserves intact phase structure while matching
-the surrogate's contrast statistics. Render both its stabilized and FEM movies.
+The complementary arm is now primary rather than a reactive contrast control.
+Follow the Stage-2A factorial in `FEM_POWER_ROUTING_ANALYSIS_PLAN.md`:
 
-The intended dissociation is:
+1. FEM power with FEM phase;
+2. FEM power with shared random phase;
+3. stabilized power with FEM phase;
+4. stabilized power with the same shared random phase.
 
-1. phase destroyed, contrast controlled as closely as possible;
-2. phase preserved, contrast reduced to the surrogate level.
+This design separately measures phase effects at each power level, power effects
+at each phase level, and their interaction. Generic contrast reduction or
+spectral whitening is not an interchangeable definition of "power removed."
+The promoted power-reduced arm replaces the complete FEM history-cube amplitude
+spectrum with the stabilized amplitude spectrum while retaining FEM phase.
 
-Interpret phase sensitivity only if the loss of SSI follows phase destruction
-rather than the matched contrast reduction. A direct contrast sweep can be added
-as a secondary diagnostic because SSI may be relatively invariant to modulation
-amplitude, but this should be demonstrated rather than assumed.
+If a later RF-local surrogate changes contrast or histogram despite its local
+power objective, add a phase-preserving contrast-matched sensitivity condition,
+but keep it distinct from the primary amplitude-by-phase factorial. Do not force
+factorial terms into percentages that sum to the original SSI effect when the
+twin response is nonlinear.
 
 ## 10. Stage 6 — scaling and population inference
 
@@ -437,23 +476,63 @@ Every population result must trace back to:
 
 ## 11. Interpretation table
 
+This is a conditional RF-local extension of the authoritative Stage 2A table in
+`FEM_POWER_ROUTING_ANALYSIS_PLAN.md`. If the two documents differ, use the
+primary plan's Stage 2A logic; in particular, its symmetric phase-support and
+structural out-of-distribution gates apply before any row below is interpreted.
+
 | Input outcome | Neural outcome | Interpretation |
 |---|---|---|
-| Power matched, phase destroyed | SSI sharpening persists | Consistent with RF-local power being sufficient for the measured effect |
-| Power matched, phase destroyed | SSI sharpening is reduced or lost | Supports an additional phase-sensitive mechanism, subject to contrast control |
+| Global map-input power matched, phase destroyed | SSI sharpening persists | Strong evidence that global map-input power is sufficient for the example |
+| Global map-input power matched, phase destroyed | SSI sharpening is reduced or lost | Phase-dependent localization beyond global power matters; within-RF phase sensitivity remains unresolved |
+| Stabilized power, FEM phase retained | SSI follows the power-reduced arm | Power reduction is sufficient to reproduce the change under preserved FEM phase |
+| Factorial phase effect remains at both power levels | SSI follows phase rather than power | Evidence for a phase contribution, with the interaction reported separately |
+| RF-local power also matched, phase destroyed | Residual SSI change remains | Conditional evidence for within-position phase sensitivity |
 | Power mismatched | Any response result | Non-diagnostic because the temporal-power mechanism was not controlled |
 | Phase relationships reconstructed | SSI sharpening persists | Non-diagnostic because the surrogate no longer isolates phase |
 | Phase result follows contrast control | SSI changes with contrast in both branches | Contrast, not phase, is the parsimonious explanation |
 | Different units show different outcomes | Structured dissociation by tuning/RF scale | Evidence for heterogeneous mechanisms; preserve rather than collapse it |
 
-## 12. Immediate next action
+## 12. Current checkpoint status and immediate next action
 
-Implement Stage 1 only: the composite input-space effective-RF audit. Present
-the maps, scale distribution, surprises, and recommended pooling-kernel
-parameterization at Human checkpoint 1. After approval, synthesize one
-median-image/representative-trace surrogate and save the Stage-3 eye-check movie.
-Do not score digital-twin responses before that movie passes the input-level
-checkpoint.
+Stage 1 is complete. The composite input-space RF audit supports a first-pass
+median circular Gaussian sigma of 2.97 pixels; the other four measured scale
+quantiles remain held-out audits.
+
+The first Stage-2 implementation, based on Gaussian-windowed local FFT
+magnitudes, was rejected at checkpoint 49. It matched the canonical global
+statistic well but generalized poorly to offset pooling locations and visibly
+reconstructed a local building/edge complex. This is consistent with dense
+overlapping STFT magnitudes acting as a phase-retrieval constraint.
+
+Checkpoint 50 therefore uses global, undecimated complex steerable-pyramid
+filtering followed by temporal quadrature energy and only then Gaussian spatial
+pooling. For the one predeclared image/trace run:
+
+- score-40 pooled-energy cosine is 0.943 on the training grid and 0.925 on the
+  held-out offset grid;
+- canonical supported-power cosine is 0.997, with a power ratio of 0.977;
+- full supported positive-TF power is not treated as a consequence of phase
+  destruction: its ratio is explicitly constrained/audited and equals 1.061
+  when all positive-TF power is included;
+- source Fourier phase-retention coherence is 0.003;
+- the held-out local Fourier-phase coherence median is 0.103, but adjacent
+  frequency-relation coherences are about 0.37;
+- the held-out local edge-correlation median is 0.253, and a recognizable local
+  facade/edge complex is visible near the center of the surrogate.
+
+Checkpoint 50 is rejected for the primary whole-map phase question. It remains
+useful provenance showing that dense RF-local energy constraints can recreate
+recognizable structure. Do not tune its window density further before the
+simpler map-support experiment.
+
+The immediate next action is Stage 2A of
+`FEM_POWER_ROUTING_ANALYSIS_PLAN.md`: synthesize the exact history-cube
+amplitude-by-phase factorial for one development image, one clean-history trace,
+one scored frame, several predeclared shared-phase seeds, and a small unit set;
+then stop after the input and raw activation-map checkpoint. Return to this
+RF-local branch only if that factorial produces an informative loss of SSI that
+cannot be interpreted without controlling translated local power.
 
 ## 13. Relevant existing implementations and artifacts
 
@@ -473,4 +552,3 @@ checkpoint.
   `declan/fig4_active_sensing/make_rr100_local_pyramid_phase_scramble_checkpoint.py`
 - Broader FEM power-routing protocol:
   `declan/fig4_active_sensing/FEM_POWER_ROUTING_ANALYSIS_PLAN.md`
-

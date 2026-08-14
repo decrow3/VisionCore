@@ -21,6 +21,11 @@ import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 from sklearn.model_selection import KFold
 
+from declan.fig4_active_sensing.spectral_cache_contract import (
+    validate_artifact_not_superseded,
+    validated_spectral_cache_from_environment,
+)
+
 
 ROOT = Path(__file__).resolve().parents[2]
 OLD = ROOT / "outputs/redundancy_resolved_v1_twin/rr100_zero_gaze_separable_sf_tf_f0_factorization_v1"
@@ -30,7 +35,6 @@ ASSIGNMENTS = ROOT / (
     "outputs/fig4_active_sensing/backimage_real_trace_sf_halves_recorded_validated_r0p5_v1/"
     "sf_half_recorded_validated_unit_assignments.csv"
 )
-SPECTRAL = ROOT / "outputs/fig4_active_sensing/rr100_corrected_three_round_spectral_cache_v1"
 INPUT_CHECKPOINT = ROOT / "outputs/fig4_active_sensing/rr100_orientation_aware_routing_input_checkpoint_v1"
 OUT = ROOT / "outputs/fig4_active_sensing/rr100_orientation_aware_f0_map_checkpoint_v1"
 
@@ -585,6 +589,8 @@ def make_nested_comparison_page(
 
 
 def main() -> None:
+    spectral = validated_spectral_cache_from_environment()
+    validate_artifact_not_superseded(INPUT_CHECKPOINT, label="orientation-routing input checkpoint")
     OUT.mkdir(parents=True, exist_ok=True)
     units, signed, positive, source_audit = build_measured_tensor()
     coordinates = cell_coordinates(SF_GRID, TF_GRID)
@@ -597,7 +603,7 @@ def main() -> None:
         candidates,
     ) = cross_validate_tuning(positive, coordinates)
 
-    with np.load(SPECTRAL / "condition_spectra.npz", allow_pickle=False) as data:
+    with np.load(spectral / "condition_spectra.npz", allow_pickle=False) as data:
         oriented_all = np.asarray(data["orientation_power"], dtype=float)
         radial_all = np.asarray(data["radial_power"], dtype=float)
         sf_edges = np.asarray(data["sf_edges_cpd"], dtype=float)

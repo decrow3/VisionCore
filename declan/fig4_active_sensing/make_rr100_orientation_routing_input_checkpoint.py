@@ -10,9 +10,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from declan.fig4_active_sensing.spectral_cache_contract import validated_spectral_cache_from_environment
+
 
 ROOT = Path(__file__).resolve().parents[2]
-SPECTRAL = ROOT / "outputs/fig4_active_sensing/rr100_corrected_three_round_spectral_cache_v1"
 OUT = ROOT / "outputs/fig4_active_sensing/rr100_orientation_aware_routing_input_checkpoint_v1"
 GRATING_ORIENTATIONS = np.asarray([0.0, 45.0, 90.0, 135.0])
 
@@ -46,8 +47,9 @@ def relative_db(values: np.ndarray) -> np.ndarray:
 
 
 def main() -> None:
+    spectral = validated_spectral_cache_from_environment()
     OUT.mkdir(parents=True, exist_ok=True)
-    with np.load(SPECTRAL / "condition_spectra.npz", allow_pickle=False) as data:
+    with np.load(spectral / "condition_spectra.npz", allow_pickle=False) as data:
         oriented = np.asarray(data["orientation_power"], dtype=np.float64)
         radial = np.asarray(data["radial_power"], dtype=np.float64)
         sf_edges = np.asarray(data["sf_edges_cpd"], dtype=float)
@@ -92,7 +94,7 @@ def main() -> None:
     patch_path = Path(str(image_row.corrected_patch_npz))
     with np.load(patch_path, allow_pickle=False) as data:
         patch = np.asarray(data[str(image_row.corrected_patch_key)], dtype=float)
-    example_path = SPECTRAL / "example_movies" / f"condition_{selected_row:04d}.npz"
+    example_path = spectral / "example_movies" / f"condition_{selected_row:04d}.npz"
     movie = None
     retinal_trace = None
     if example_path.exists():

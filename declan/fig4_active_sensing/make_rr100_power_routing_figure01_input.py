@@ -18,13 +18,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from declan.fig4_active_sensing.input_only_retinal_renderer import render_retinal_frames_lag_zero
+from declan.fig4_active_sensing.spectral_cache_contract import validated_spectral_cache_from_environment
 from declan.fixation_statistics_by_stimulus.run_backimage_twin_drift_geometry import (
     _load_twin_common,
     _standardize_uint_like,
 )
 
 
-SPECTRAL = ROOT / "outputs/fig4_active_sensing/rr100_corrected_three_round_spectral_cache_v1"
 COHORT = ROOT / "outputs/fig4_active_sensing/rr100_corrected100x1000_production_cohort_v1"
 TRACE_CACHE = ROOT / "outputs/fig4_active_sensing/rr100_corrected100x1000_response_cache_v1/input_cache/corrected_trace_segments.npz"
 OUT = ROOT / "outputs/fig4_active_sensing/rr100_power_routing_figure_series_v1/01_input_redistribution"
@@ -71,10 +71,11 @@ def load_patch(row: pd.Series) -> np.ndarray:
 
 
 def main() -> None:
+    spectral = validated_spectral_cache_from_environment()
     OUT.mkdir(parents=True, exist_ok=True)
-    metrics = pd.read_csv(SPECTRAL / "condition_spectral_metrics.csv")
+    metrics = pd.read_csv(spectral / "condition_spectral_metrics.csv")
     images = pd.read_csv(COHORT / "corrected100_images.csv").set_index("image_index")
-    with np.load(SPECTRAL / "condition_spectra.npz", allow_pickle=False) as data:
+    with np.load(spectral / "condition_spectra.npz", allow_pickle=False) as data:
         radial = np.asarray(data["radial_power"], dtype=float)
         sf_edges = np.asarray(data["sf_edges_cpd"], dtype=float)
         tf = np.asarray(data["tf_hz"], dtype=float)

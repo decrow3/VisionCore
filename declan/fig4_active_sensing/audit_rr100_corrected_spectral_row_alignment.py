@@ -10,6 +10,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from declan.fig4_active_sensing.spectral_cache_contract import validate_spectral_cache
+
 
 ROOT = Path(__file__).resolve().parents[2]
 CONDITIONS = ROOT / (
@@ -32,6 +34,7 @@ def identity(path: Path) -> dict[str, object]:
 
 
 def main() -> None:
+    validate_spectral_cache(CACHE.parent, allow_superseded_for_audit=True)
     if OUT.exists():
         raise FileExistsError(f"Refusing to overwrite audit: {OUT}")
     OUT.mkdir(parents=True)

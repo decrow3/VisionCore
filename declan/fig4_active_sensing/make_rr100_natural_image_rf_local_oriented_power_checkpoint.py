@@ -18,6 +18,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from declan.fig4_active_sensing.spectral_cache_contract import (
+    validate_artifact_not_superseded,
+    validate_spectral_cache,
+)
 import torch
 
 from declan.fig4_active_sensing.input_only_retinal_renderer import render_retinal_frames_lag_zero
@@ -40,24 +44,34 @@ from declan.fixation_statistics_by_stimulus.run_backimage_twin_drift_geometry im
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SPECTRAL = ROOT / "outputs/fig4_active_sensing/rr100_corrected_three_round_spectral_cache_v1"
 COHORT = ROOT / "outputs/fig4_active_sensing/rr100_corrected100x1000_production_cohort_v1"
 RESPONSES = ROOT / "outputs/fig4_active_sensing/rr100_corrected100x1000_response_cache_v1"
+TRACE_FLAGS = RESPONSES / "quality_control/pre_fixation_history_trace_flags.csv"
 RF = ROOT / "outputs/fig4_active_sensing/rr100_recorded_grating_three_way_response_rf_local_v2"
 TUNING = ROOT / "outputs/fig4_active_sensing/rr100_orientation_aware_f0_map_checkpoint_v1"
-OUT = ROOT / "outputs/fig4_active_sensing/rr100_natural_image_rf_local_oriented_power_input_checkpoint_v2"
+OUT = ROOT / "outputs/fig4_active_sensing/rr100_natural_image_rf_local_oriented_power_input_checkpoint_v3_clean_history"
 PPD = 37.50476617
 EPS = np.finfo(float).tiny
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--spectral-dir", type=Path, default=SPECTRAL)
+    parser.add_argument(
+        "--spectral-dir", type=Path, required=True,
+        help="Explicit frozen corrected spectral cache; superseded caches are rejected.",
+    )
     parser.add_argument("--cohort-dir", type=Path, default=COHORT)
     parser.add_argument("--response-cache-dir", type=Path, default=RESPONSES)
+    parser.add_argument("--trace-flags", type=Path, default=TRACE_FLAGS)
     parser.add_argument("--rf-dir", type=Path, default=RF)
     parser.add_argument("--tuning-dir", type=Path, default=TUNING)
     parser.add_argument("--session", default="Logan_2020-02-29")
+    parser.add_argument(
+        "--selection-reference",
+        choices=("clean_history", "all_conditions"),
+        default="clean_history",
+        help="Population used to define input-only quantiles and z scores; candidates always require clean history.",
+    )
     parser.add_argument("--out-dir", type=Path, default=OUT)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--dpi", type=int, default=190)
@@ -97,38 +111,69 @@ def spectral_storage_crosswalk(spectral_dir: Path) -> pd.DataFrame:
     return pd.concat([storage.reset_index(drop=True), declared], axis=1)
 
 
-def select_conditions(spectral_dir: Path) -> tuple[pd.DataFrame, dict[str, np.ndarray], pd.DataFrame]:
+def select_conditions(
+    spectral_dir: Path, trace_flags_path: Path, selection_reference: str
+) -> tuple[pd.DataFrame, dict[str, np.ndarray], pd.DataFrame, pd.DataFrame]:
     with np.load(spectral_dir / "condition_spectra.npz", allow_pickle=False) as archive:
         spectral = {key: np.asarray(archive[key]) for key in archive.files}
     crosswalk = spectral_storage_crosswalk(spectral_dir)
+    trace_flags = pd.read_csv(trace_flags_path)
+    required = {
+        "trace_index",
+        "history_within_selected_fixation",
+        "cache_eligibility",
+        "history_frames_before_fixation",
+        "history_contains_detected_event",
+    }
+    missing = required.difference(trace_flags.columns)
+    if missing:
+        raise ValueError(f"Trace-history flags are missing columns: {sorted(missing)}")
+    clean_flags = trace_flags.loc[
+        trace_flags.history_within_selected_fixation.astype(bool)
+        & trace_flags.cache_eligibility.eq("clean_within_fixation_history")
+    ].copy()
+    clean_trace_ids = set(clean_flags.trace_index.astype(int))
+    eligible = crosswalk.trace_index.astype(int).isin(clean_trace_ids).to_numpy()
+    if not eligible.any():
+        raise ValueError("No clean-history conditions overlap the spectral crosswalk")
+    reference = eligible if selection_reference == "clean_history" else np.ones(len(eligible), dtype=bool)
+    reference_label = "clean-history" if selection_reference == "clean_history" else "original all-condition"
     channels = four_grating_channels(spectral["orientation_power"], spectral["orientation_edges_deg"])
     channel_power = channels.sum(axis=(1, 2))
     fractions = channel_power / np.maximum(channel_power.sum(axis=1, keepdims=True), EPS)
     concentration = fractions.max(axis=1)
     total = spectral["radial_power"].sum(axis=(1, 2)).astype(float)
-    middle = (total >= np.quantile(total, 0.25)) & (total <= np.quantile(total, 0.75))
+    lower, upper = np.quantile(total[reference], [0.25, 0.75])
+    middle = eligible & (total >= lower) & (total <= upper)
     candidates = np.flatnonzero(middle)
     roles = [
         (
             "orientation-concentrated input",
             int(candidates[np.argmax(concentration[candidates])]),
-            "largest four-channel concentration among middle-50% total-power conditions",
+            f"largest four-channel concentration among clean-history candidates inside the {reference_label} middle-50% total-power range",
         ),
         (
             "orientation-balanced input",
             int(candidates[np.argmin(concentration[candidates])]),
-            "smallest four-channel concentration among middle-50% total-power conditions",
+            f"smallest four-channel concentration among clean-history candidates inside the {reference_label} middle-50% total-power range",
         ),
     ]
-    z_power = (np.log10(np.maximum(total, EPS)) - np.median(np.log10(np.maximum(total, EPS)))) / max(
-        float(np.std(np.log10(np.maximum(total, EPS)))), 1e-12
+    log_power = np.log10(np.maximum(total, EPS))
+    z_power = (log_power - np.median(log_power[reference])) / max(
+        float(np.std(log_power[reference])), 1e-12
     )
-    z_concentration = (concentration - np.median(concentration)) / max(float(np.std(concentration)), 1e-12)
+    z_concentration = (concentration - np.median(concentration[reference])) / max(
+        float(np.std(concentration[reference])), 1e-12
+    )
     typical_score = np.abs(z_power) + np.abs(z_concentration)
     used = {row for _, row, _ in roles}
-    typical_order = np.argsort(typical_score)
+    typical_order = np.flatnonzero(eligible)[np.argsort(typical_score[eligible])]
     typical = int(next(row for row in typical_order if int(row) not in used))
-    roles.append(("typical input control", typical, "closest jointly to median log-power and orientation concentration"))
+    roles.append((
+        "typical input control",
+        typical,
+        f"closest clean-history candidate to the {reference_label} median log-power and orientation concentration",
+    ))
     selected = []
     for role, row_index, criterion in roles:
         row = crosswalk.iloc[row_index].copy()
@@ -136,10 +181,17 @@ def select_conditions(spectral_dir: Path) -> tuple[pd.DataFrame, dict[str, np.nd
         row["selection_criterion"] = criterion
         row["selection_value"] = float(concentration[row_index] if "orientation" in role else typical_score[row_index])
         row["four_channel_concentration"] = float(concentration[row_index])
+        flag = clean_flags.set_index("trace_index").loc[int(row.trace_index)]
+        row["history_within_selected_fixation"] = bool(flag.history_within_selected_fixation)
+        row["history_frames_before_fixation"] = int(flag.history_frames_before_fixation)
+        row["history_contains_detected_event"] = bool(flag.history_contains_detected_event)
+        row["cache_eligibility"] = str(flag.cache_eligibility)
         for index, orientation in enumerate(GRATING_ORIENTATIONS):
             row[f"global_power_fraction_{int(orientation)}deg"] = float(fractions[row_index, index])
         selected.append(row)
-    return pd.DataFrame(selected), spectral, crosswalk
+    eligibility_audit = crosswalk[["spectral_storage_row", "matrix_row_index", "image_index", "trace_index", "round_index"]].copy()
+    eligibility_audit["clean_history_eligible"] = eligible
+    return pd.DataFrame(selected), spectral, crosswalk, eligibility_audit
 
 
 def load_selected_movies(
@@ -314,7 +366,10 @@ def plot_checkpoint(
         aperture_strip = np.concatenate([aperture, aperture, aperture], axis=1)
         axes[row_number, 1].imshow(strip, cmap="gray")
         axes[row_number, 1].imshow(aperture_strip, cmap="viridis", alpha=0.42 * aperture_strip / max(float(aperture_strip.max()), EPS))
-        axes[row_number, 1].set_title(f"exact retinal frames + RF aperture\nRR100 {unit}: start · middle · end")
+        axes[row_number, 1].set_title(
+            f"exact retinal frames + receptive-field aperture\n"
+            f"digital-twin unit {unit}: start · middle · end"
+        )
         axes[row_number, 1].axis("off")
 
         fractions = np.asarray([getattr(selection, f"rf_local_power_fraction_{int(value)}deg") for value in GRATING_ORIENTATIONS])
@@ -323,24 +378,31 @@ def plot_checkpoint(
         axes[row_number, 2].set(ylabel="fraction of supported power", title="derived RF-local orientation composition")
 
         for column, values, title in (
-            (3, radial_map, "radial SF×TF accepted power"),
-            (4, oriented_map, "oriented SF×θ×TF accepted power"),
+            (3, radial_map, "orientation-collapsed accepted power"),
+            (4, oriented_map, "orientation-aware accepted power"),
         ):
             image = axes[row_number, column].imshow(relative_db(values, maximum), origin="lower", aspect="auto", cmap="magma", vmin=-50, vmax=0)
             axes[row_number, column].set_xticks(range(len(sf)), [f"{value:.2g}" for value in sf], rotation=45)
             axes[row_number, column].set_yticks([0, 5, 10, 15, 17], [f"{tf[index]:g}" for index in [0, 5, 10, 15, 17]])
-            axes[row_number, column].set(xlabel="SF (cpd)", ylabel="TF (Hz)" if column == 3 else "", title=title)
+            axes[row_number, column].set(
+                xlabel="spatial frequency (cycles/degree)",
+                ylabel="temporal frequency (Hz)" if column == 3 else "",
+                title=title,
+            )
         figure.colorbar(image, ax=[axes[row_number, 3], axes[row_number, 4]], label="dB (shared row scale)", fraction=0.03)
 
         scale = max(float(np.max(np.abs(difference))), EPS)
         image = axes[row_number, 5].imshow(difference, origin="lower", aspect="auto", cmap="coolwarm", vmin=-scale, vmax=scale)
         axes[row_number, 5].set_xticks(range(len(sf)), [f"{value:.2g}" for value in sf], rotation=45)
         axes[row_number, 5].set_yticks([0, 5, 10, 15, 17], [f"{tf[index]:g}" for index in [0, 5, 10, 15, 17]])
-        axes[row_number, 5].set(xlabel="SF (cpd)", title="orientation correction\noriented − radial")
+        axes[row_number, 5].set(
+            xlabel="spatial frequency (cycles/degree)",
+            title="orientation contribution\norientation-aware minus orientation-collapsed",
+        )
         figure.colorbar(image, ax=axes[row_number, 5], label="signed accepted power", fraction=0.046)
 
         axes[row_number, 6].bar(
-            ["radial", "oriented"],
+            ["orientation\ncollapsed", "orientation\naware"],
             [selection.radial_direct_f0_drive, selection.oriented_direct_f0_drive],
             color=["0.58", "#D55E00"],
         )
@@ -348,7 +410,7 @@ def plot_checkpoint(
         axes[row_number, 6].set_title(f"{selection.selection_role}\nratio={selection.orientation_to_radial_ratio:.2f}")
 
     figure.suptitle(
-        "Natural-image RF-local orientation checkpoint: exact gaze-cropped movies routed through the grating-validated SF×orientation×TF filters\n"
+        "Clean-history natural-image input checkpoint: exact retinal movies routed through receptive-field-local, grating-derived spectral filters\n"
         "Observed inputs are kept separate from derived power; no neural response is fit or selected",
         fontsize=15,
         fontweight="bold",
@@ -360,8 +422,12 @@ def plot_checkpoint(
 
 def main() -> None:
     args = parse_args()
+    validate_spectral_cache(args.spectral_dir)
+    validate_artifact_not_superseded(args.tuning_dir, label="orientation tuning")
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    selected_conditions, spectral, crosswalk = select_conditions(args.spectral_dir)
+    selected_conditions, spectral, crosswalk, eligibility_audit = select_conditions(
+        args.spectral_dir, args.trace_flags, args.selection_reference
+    )
     payload = load_selected_movies(selected_conditions, args.cohort_dir, args.response_cache_dir, args.device)
     reconstruction = verify_reconstruction(selected_conditions, payload, spectral)
     units, apertures, radial_weights, oriented_weights, sf, tf = load_rf_and_tuning(
@@ -381,6 +447,7 @@ def main() -> None:
     selected_pairs = select_pairs(metrics)
     selected_conditions.to_csv(args.out_dir / "selected_conditions.csv", index=False)
     crosswalk.to_csv(args.out_dir / "spectral_storage_crosswalk.csv", index=False)
+    eligibility_audit.to_csv(args.out_dir / "condition_history_eligibility.csv", index=False)
     reconstruction.to_csv(args.out_dir / "movie_reconstruction_audit.csv", index=False)
     metrics.to_csv(args.out_dir / "selected_condition_unit_metrics.csv", index=False)
     selected_pairs.to_csv(args.out_dir / "selected_condition_unit_examples.csv", index=False)
@@ -413,15 +480,19 @@ def main() -> None:
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "analysis": "rr100_natural_image_rf_local_oriented_power_input_checkpoint",
         "status": "input_mechanism_checkpoint_complete",
+        "history_contract": "all selected traces have the full 32-frame model history within the selected fixation",
         "supersedes": "rr100_natural_image_rf_local_oriented_power_input_checkpoint_v1 (failed reconstruction because the source spectral cache's arrays are image-major but its saved identity axes are matrix-row-major)",
         "scope": {
             "source_condition_bank": 3000,
+            "clean_history_eligible_conditions": int(eligibility_audit.clean_history_eligible.sum()),
             "selected_conditions": int(len(selected_conditions)),
             "rf_local_units": int(len(units)),
             "selected_condition_unit_pairs": int(len(metrics)),
         },
         "contracts": {
             "condition_selection": "input-only global spectral quantities; no neural outcomes",
+            "selection_reference_population": args.selection_reference,
+            "history_eligibility": "selection restricted before ranking to traces marked clean_within_fixation_history by the applied quarantine policy",
             "spectral_row_mapping": "corrected image-major storage order reconstructed from the cache builder; the cache's embedded condition identity arrays are not aligned",
             "movie": "exact corrected lag-zero 40-frame gaze-cropped natural-image movie reconstructed from frozen image and trace caches",
             "spatial_localization": "same frozen unit-specific RF apertures verified on recorded gratings",
@@ -447,6 +518,8 @@ def main() -> None:
             "spectral_cache": file_identity(args.spectral_dir / "condition_spectra.npz"),
             "image_cohort": file_identity(args.cohort_dir / "corrected100_images.csv"),
             "trace_cache": file_identity(args.response_cache_dir / "input_cache/corrected_trace_segments.npz"),
+            "trace_history_flags": file_identity(args.trace_flags),
+            "quarantine_manifest": file_identity(args.response_cache_dir / "quality_control/pre_fixation_history_quarantine_manifest.json"),
             "rf_apertures": file_identity(args.rf_dir / "unit_rf_apertures.npz"),
             "orientation_tuning": file_identity(args.tuning_dir / "orientation_aware_f0_tuning_and_routing.npz"),
         },
@@ -455,6 +528,7 @@ def main() -> None:
             "figure_pdf": figure_base.with_suffix(".pdf").name,
             "selected_conditions": "selected_conditions.csv",
             "spectral_storage_crosswalk": "spectral_storage_crosswalk.csv",
+            "condition_history_eligibility": "condition_history_eligibility.csv",
             "reconstruction_audit": "movie_reconstruction_audit.csv",
             "pair_metrics": "selected_condition_unit_metrics.csv",
             "selected_examples": "selected_condition_unit_examples.csv",

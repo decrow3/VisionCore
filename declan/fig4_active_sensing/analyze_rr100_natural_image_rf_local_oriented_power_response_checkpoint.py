@@ -25,12 +25,13 @@ from declan.fig4_active_sensing.make_rr100_natural_image_rf_local_oriented_power
 
 
 ROOT = Path(__file__).resolve().parents[2]
-INPUT = ROOT / "outputs/fig4_active_sensing/rr100_natural_image_rf_local_oriented_power_input_checkpoint_v2"
+INPUT = ROOT / "outputs/fig4_active_sensing/rr100_natural_image_rf_local_oriented_power_input_checkpoint_v3_clean_history"
 RESPONSES = ROOT / "outputs/fig4_active_sensing/rr100_corrected100x1000_response_cache_v1"
+TRACE_FLAGS = RESPONSES / "quality_control/pre_fixation_history_trace_flags.csv"
 ASSEMBLED = RESPONSES / "assembled/rounds_000_002_n003"
 COHORT = ROOT / "outputs/fig4_active_sensing/rr100_corrected100x1000_production_cohort_v1"
 RF = ROOT / "outputs/fig4_active_sensing/rr100_recorded_grating_three_way_response_rf_local_v2"
-OUT = ROOT / "outputs/fig4_active_sensing/rr100_natural_image_rf_local_oriented_power_response_checkpoint_v1"
+OUT = ROOT / "outputs/fig4_active_sensing/rr100_natural_image_rf_local_oriented_power_response_checkpoint_v2_clean_history"
 FRAME_RATE_HZ = 120.0
 EPS = np.finfo(float).tiny
 
@@ -39,6 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-dir", type=Path, default=INPUT)
     parser.add_argument("--response-cache-dir", type=Path, default=RESPONSES)
+    parser.add_argument("--trace-flags", type=Path, default=TRACE_FLAGS)
     parser.add_argument("--assembled-dir", type=Path, default=ASSEMBLED)
     parser.add_argument("--cohort-dir", type=Path, default=COHORT)
     parser.add_argument("--rf-dir", type=Path, default=RF)
@@ -68,6 +70,35 @@ def safe_correlation(left: np.ndarray, right: np.ndarray) -> float:
 def zscore(values: np.ndarray) -> np.ndarray:
     values = np.asarray(values, dtype=float)
     return (values - values.mean()) / max(float(values.std()), 1e-12)
+
+
+def audit_clean_history(conditions: pd.DataFrame, trace_flags_path: Path) -> pd.DataFrame:
+    flags = pd.read_csv(trace_flags_path)
+    columns = [
+        "trace_index",
+        "history_frames_before_fixation",
+        "history_within_selected_fixation",
+        "history_contains_detected_event",
+        "cache_eligibility",
+    ]
+    missing = set(columns).difference(flags.columns)
+    if missing:
+        raise ValueError(f"Trace-history flags are missing columns: {sorted(missing)}")
+    audit = conditions[["matrix_row_index", "image_index", "trace_index", "selection_role"]].merge(
+        flags[columns], on="trace_index", how="left", validate="many_to_one"
+    )
+    clean = (
+        audit.history_within_selected_fixation.eq(True)
+        & audit.history_frames_before_fixation.eq(0)
+        & audit.cache_eligibility.eq("clean_within_fixation_history")
+    )
+    if audit[columns].isna().any().any() or not clean.all():
+        raise ValueError(
+            "Selected conditions include missing or quarantined trace histories:\n"
+            + audit.to_string(index=False)
+        )
+    audit["clean_history_gate_pass"] = clean
+    return audit
 
 
 def load_response_rows(
@@ -196,25 +227,25 @@ def add_scale_free_comparisons(frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.Da
 def select_examples(frame: pd.DataFrame) -> pd.DataFrame:
     definitions = [
         (
-            "orientation improves activation match",
+            "orientation-aware improvement",
             frame.orientation_pair_error_improvement,
             "max",
             "largest reduction in absolute across-condition activation z-error from radial to oriented drive",
         ),
         (
-            "local condition mismatch despite unit-level improvement",
+            "orientation-aware local mismatch",
             frame.orientation_pair_error_improvement,
             "min",
             "largest single-condition increase in activation z-error, retained despite the unit's overall oriented-power improvement",
         ),
         (
-            "radial-equivalent power control",
+            "matched-power control",
             frame.log2_orientation_to_radial.abs(),
             "min",
             "smallest absolute log2 oriented/radial drive",
         ),
         (
-            "large full-twin activation",
+            "large response modulation",
             frame.full_twin_activation_rms_hz,
             "max",
             "largest full-twin moving-versus-stabilized activation RMS",
@@ -243,7 +274,7 @@ def plot_checkpoint(
     out: Path,
     dpi: int,
 ) -> None:
-    figure, axes = plt.subplots(len(selected), 7, figsize=(26, 3.55 * len(selected)), constrained_layout=True)
+    figure, axes = plt.subplots(len(selected), 7, figsize=(30, 3.8 * len(selected)), constrained_layout=True)
     axes = np.atleast_2d(axes)
     condition_labels = {
         int(row.matrix_row_index): str(row.condition_selection_role).replace(" input", "")
@@ -264,15 +295,16 @@ def plot_checkpoint(
             alpha=0.42 * aperture_strip / max(float(aperture_strip.max()), EPS),
         )
         axes[row_number, 0].set_title(
-            f"exact retinal frames + RF\nimage {int(selection.image_index)}, trace {int(selection.trace_index)}, RR100 {unit}"
+            f"exact retinal frames + receptive-field aperture\n"
+            f"image {int(selection.image_index)}, eye-movement trace {int(selection.trace_index)}, digital-twin unit {unit}"
         )
         axes[row_number, 0].axis("off")
 
         unit_rows = all_rows.loc[all_rows.rr100_index.eq(unit)].sort_values("matrix_row_index")
         x = np.arange(len(unit_rows))
-        axes[row_number, 1].plot(x, unit_rows.radial_drive_z_across_conditions, "o-", color="0.5", label="radial power")
-        axes[row_number, 1].plot(x, unit_rows.oriented_drive_z_across_conditions, "o-", color="#D55E00", label="oriented power")
-        axes[row_number, 1].plot(x, unit_rows.activation_rms_z_across_conditions, "o-", color="#0072B2", label="full-twin activation")
+        axes[row_number, 1].plot(x, unit_rows.radial_drive_z_across_conditions, "o-", color="0.5", label="orientation-collapsed power")
+        axes[row_number, 1].plot(x, unit_rows.oriented_drive_z_across_conditions, "o-", color="#D55E00", label="orientation-aware power")
+        axes[row_number, 1].plot(x, unit_rows.activation_rms_z_across_conditions, "o-", color="#0072B2", label="digital-twin modulation magnitude")
         axes[row_number, 1].set_xticks(
             x,
             [condition_labels[int(value)] for value in unit_rows.matrix_row_index],
@@ -280,15 +312,15 @@ def plot_checkpoint(
             ha="right",
             fontsize=7,
         )
-        axes[row_number, 1].set(ylabel="within-unit z-score across 3 inputs", title=f"condition ordering\n{selection.selection_role}")
+        axes[row_number, 1].set(ylabel="standardized value across 3 inputs", title=f"condition ordering\n{selection.selection_role}")
         axes[row_number, 1].axhline(0, color="0.75", lw=0.8)
         axes[row_number, 1].legend(frameon=False, fontsize=7)
 
         tc = timecourses[(condition, unit)]
         time_ms = np.arange(len(tc["moving_rate_hz"])) / FRAME_RATE_HZ * 1000.0
         axes[row_number, 2].plot(time_ms, tc["stabilized_rate_hz"], color="0.45", lw=1.5, label="stabilized")
-        axes[row_number, 2].plot(time_ms, tc["moving_rate_hz"], color="#0072B2", lw=1.5, label="moving full twin")
-        axes[row_number, 2].set(xlabel="time (ms)", ylabel="rate (Hz)", title="observed full-twin timecourses")
+        axes[row_number, 2].plot(time_ms, tc["moving_rate_hz"], color="#0072B2", lw=1.5, label="moving retinal input")
+        axes[row_number, 2].set(xlabel="time (ms)", ylabel="digital-twin firing rate (Hz)", title="exact digital-twin response timecourses")
         axes[row_number, 2].legend(frameon=False, fontsize=7)
 
         axes[row_number, 3].plot(time_ms, tc["delta_rate_hz"], color="#0072B2", lw=1.5)
@@ -297,7 +329,7 @@ def plot_checkpoint(
         axes[row_number, 3].set(
             xlabel="time (ms)",
             ylabel="moving − stabilized rate (Hz)",
-            title=f"activation RMS={selection.full_twin_activation_rms_hz:.3f} Hz\nmean change={selection.full_twin_delta_mean_rate_hz:+.3f} Hz",
+            title=f"response-modulation RMS={selection.full_twin_activation_rms_hz:.3f} Hz\nmean firing-rate change={selection.full_twin_delta_mean_rate_hz:+.3f} Hz",
         )
 
         axes[row_number, 4].scatter(
@@ -314,7 +346,11 @@ def plot_checkpoint(
                 textcoords="offset points",
                 fontsize=7,
             )
-        axes[row_number, 4].set(xlabel="radial drive z", ylabel="activation RMS z", title=f"radial: r={selection.radial_vs_activation_r:+.2f}")
+        axes[row_number, 4].set(
+            xlabel="orientation-collapsed power (standardized)",
+            ylabel="response-modulation RMS (standardized)",
+            title=f"orientation-collapsed power: r={selection.radial_vs_activation_r:+.2f}",
+        )
 
         axes[row_number, 5].scatter(
             unit_rows.oriented_drive_z_across_conditions,
@@ -330,7 +366,11 @@ def plot_checkpoint(
                 textcoords="offset points",
                 fontsize=7,
             )
-        axes[row_number, 5].set(xlabel="oriented drive z", ylabel="activation RMS z", title=f"oriented: r={selection.oriented_vs_activation_r:+.2f}")
+        axes[row_number, 5].set(
+            xlabel="orientation-aware power (standardized)",
+            ylabel="response-modulation RMS (standardized)",
+            title=f"orientation-aware power: r={selection.oriented_vs_activation_r:+.2f}",
+        )
         for axis in axes[row_number, 4:6]:
             axis.axhline(0, color="0.8", lw=0.8)
             axis.axvline(0, color="0.8", lw=0.8)
@@ -340,11 +380,11 @@ def plot_checkpoint(
         axes[row_number, 6].text(
             0.02,
             0.76,
-            f"RR100 {unit}\n"
-            f"oriented/radial drive = {selection.orientation_to_radial_ratio:.2f}\n"
+            f"digital-twin unit {unit}\n"
+            f"orientation-aware/collapsed power = {selection.orientation_to_radial_ratio:.2f}\n"
             f"pair error improvement = {selection.orientation_pair_error_improvement:+.2f}\n"
-            f"radial activation r = {selection.radial_vs_activation_r:+.2f}\n"
-            f"oriented activation r = {selection.oriented_vs_activation_r:+.2f}\n\n"
+            f"collapsed-power correlation = {selection.radial_vs_activation_r:+.2f}\n"
+            f"orientation-aware correlation = {selection.oriented_vs_activation_r:+.2f}\n\n"
             "Only 3 conditions: correlations are\nexample diagnostics, not inference.",
             va="top",
             fontsize=9.5,
@@ -352,8 +392,8 @@ def plot_checkpoint(
         )
 
     figure.suptitle(
-        "Concrete natural-image response checkpoint: does RF-local orientation-aware power track full-twin activation better than radial power?\n"
-        "Exact moving and stabilized full-twin timecourses · three input-selected conditions · no recorded responses or population claim",
+        "Clean-history natural-image checkpoint: does receptive-field-local orientation-aware power track digital-twin response-modulation magnitude?\n"
+        "Exact moving and stabilized digital-twin timecourses · three input-selected conditions · descriptive examples, not a population test",
         fontsize=15,
         fontweight="bold",
     )
@@ -367,6 +407,7 @@ def main() -> None:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     power = pd.read_csv(args.input_dir / "selected_condition_unit_metrics.csv")
     conditions = pd.read_csv(args.input_dir / "selected_conditions.csv")
+    history_audit = audit_clean_history(conditions, args.trace_flags)
     response_rows, timecourses, audit = load_response_rows(
         power, conditions, args.response_cache_dir, args.assembled_dir
     )
@@ -389,6 +430,7 @@ def main() -> None:
     unit_summary.to_csv(args.out_dir / "unit_three_condition_summary.csv", index=False)
     selected.to_csv(args.out_dir / "selected_response_examples.csv", index=False)
     audit.to_csv(args.out_dir / "response_join_audit.csv", index=False)
+    history_audit.to_csv(args.out_dir / "selected_condition_history_audit.csv", index=False)
     ordered_keys = [(int(row.matrix_row_index), int(row.rr100_index)) for row in response_rows.itertuples(index=False)]
     np.savez_compressed(
         args.out_dir / "selected_full_twin_timecourses.npz",
@@ -405,6 +447,7 @@ def main() -> None:
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "analysis": "rr100_natural_image_rf_local_oriented_power_full_twin_response_checkpoint",
         "status": "concrete_response_checkpoint_complete",
+        "history_contract": "all selected traces pass the quarantined-cache clean-history gate",
         "scope": {"conditions": int(response_rows.matrix_row_index.nunique()), "units": int(response_rows.rr100_index.nunique()), "pairs": int(len(response_rows))},
         "response_contract": {
             "primary": "full-twin RMS over 40 frames of moving rate minus matched stabilized rate",
@@ -421,11 +464,14 @@ def main() -> None:
         "verification": {
             "maximum_response_join_or_formula_error_hz": float(audit[audit_columns].to_numpy(float).max()),
             "all_response_values_finite": bool(np.isfinite(response_rows.select_dtypes("number")).all().all()),
+            "all_selected_histories_within_fixation": bool(history_audit.clean_history_gate_pass.all()),
         },
         "inputs": {
             "power_metrics": file_identity(args.input_dir / "selected_condition_unit_metrics.csv"),
             "condition_index": file_identity(args.assembled_dir / "condition_index.csv"),
             "assembled_manifest": file_identity(args.assembled_dir / "manifest.json"),
+            "trace_history_flags": file_identity(args.trace_flags),
+            "quarantine_manifest": file_identity(args.response_cache_dir / "quality_control/pre_fixation_history_quarantine_manifest.json"),
         },
         "artifacts": {
             "figure_png": figure_base.with_suffix(".png").name,
@@ -434,6 +480,7 @@ def main() -> None:
             "unit_summary": "unit_three_condition_summary.csv",
             "selected_examples": "selected_response_examples.csv",
             "join_audit": "response_join_audit.csv",
+            "history_audit": "selected_condition_history_audit.csv",
             "timecourses": "selected_full_twin_timecourses.npz",
         },
         "next_checkpoint": "expand only after deciding whether the visible positive, failure, and control cases support a population-scale RF-local rerun",

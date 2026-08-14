@@ -31,6 +31,10 @@ import pandas as pd
 from declan.fig4_active_sensing.input_only_retinal_renderer import (
     render_retinal_frames_lag_zero,
 )
+from declan.fig4_active_sensing.spectral_cache_contract import (
+    validate_artifact_not_superseded,
+    validate_spectral_cache,
+)
 from declan.fig4_active_sensing.run_interim_input_spectral_cache import (
     FRAME_RATE_HZ,
     SF_EDGES_CPD,
@@ -49,7 +53,6 @@ SELECTIONS = ROOT / (
     "03_response_examples/selected_response_examples.csv"
 )
 INPUT_CACHE = ROOT / "outputs/fig4_active_sensing/rr100_corrected100x1000_response_cache_v1/input_cache"
-SPECTRAL_CACHE = ROOT / "outputs/fig4_active_sensing/rr100_corrected_three_round_spectral_cache_v1"
 OUT = ROOT / "outputs/fig4_active_sensing/rr100_phase_surrogate_input_checkpoint_40_v1"
 N_SCORE = 40
 PPD = 37.5047661706098
@@ -60,7 +63,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--selections", type=Path, default=SELECTIONS)
     parser.add_argument("--input-cache", type=Path, default=INPUT_CACHE)
-    parser.add_argument("--spectral-cache", type=Path, default=SPECTRAL_CACHE)
+    parser.add_argument(
+        "--spectral-cache", type=Path, required=True,
+        help="Explicit frozen corrected spectral cache; superseded caches are rejected.",
+    )
     parser.add_argument("--out-dir", type=Path, default=OUT)
     parser.add_argument("--seed", type=int, default=20260813)
     parser.add_argument("--kernel-sigma-px", type=float, default=2.5)
@@ -386,6 +392,8 @@ def plot_power_audit(
 
 def main() -> None:
     args = parse_args()
+    validate_spectral_cache(args.spectral_cache)
+    validate_artifact_not_superseded(args.selections, label="condition-selection table")
     if args.out_dir.exists():
         raise FileExistsError(f"Refusing to overwrite checkpoint: {args.out_dir}")
     args.out_dir.mkdir(parents=True)

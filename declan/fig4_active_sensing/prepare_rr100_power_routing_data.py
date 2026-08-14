@@ -9,9 +9,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from declan.fig4_active_sensing.spectral_cache_contract import validated_spectral_cache_from_environment
+
 
 ROOT = Path(__file__).resolve().parents[2]
-SPECTRAL = ROOT / "outputs/fig4_active_sensing/rr100_corrected_three_round_spectral_cache_v1"
 RESPONSES = ROOT / "outputs/fig4_active_sensing/rr100_corrected100x1000_response_cache_v1/assembled/rounds_000_002_n003"
 TUNING = ROOT / "outputs/redundancy_resolved_v1_twin/rr100_native_extended_tf_f0_analysis_v1"
 ASSIGNMENTS = ROOT / "outputs/fig4_active_sensing/backimage_real_trace_sf_halves_recorded_validated_r0p5_v1/sf_half_recorded_validated_unit_assignments.csv"
@@ -24,8 +25,9 @@ def log_interp(frequency: np.ndarray, values: np.ndarray, target: np.ndarray) ->
 
 
 def main() -> None:
+    spectral = validated_spectral_cache_from_environment()
     OUT.mkdir(parents=True, exist_ok=True)
-    with np.load(SPECTRAL / "condition_spectra.npz", allow_pickle=False) as data:
+    with np.load(spectral / "condition_spectra.npz", allow_pickle=False) as data:
         condition_rows = np.asarray(data["matrix_row_index"], dtype=int)
         image_ids = np.asarray(data["image_index"], dtype=int)
         trace_ids = np.asarray(data["trace_index"], dtype=int)
